@@ -25,9 +25,36 @@
       "dependencies": [
         "catch2"
       ]
+    },
+    "gui": {
+      "description": "Build the annotation GUI (Dear ImGui + SDL3)",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [
+            "sdl3-binding",
+            "sdl3-renderer-binding"
+          ]
+        },
+        {
+          "name": "sdl3",
+          "default-features": false,
+          "features": [
+            {
+              "name": "wayland",
+              "platform": "linux"
+            },
+            {
+              "name": "x11",
+              "platform": "linux"
+            }
+          ]
+        }
+      ]
     }
   },
   "default-features": [
+    "gui",
     "tests"
   ],
   "builtin-baseline": "434307da09bc05b2c86996dccc8b2351fc0d5d37"

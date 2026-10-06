@@ -47,3 +47,9 @@ add_test(NAME "architecture: violations are detected"
     COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/architecture/fixtures/violation
             -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture/check_dependencies.cmake)
 set_tests_properties("architecture: violations are detected" PROPERTIES WILL_FAIL TRUE)
+
+if(TTRALLY_BUILD_GUI)
+    ttrally_test(gui_tests
+        SOURCES gui/test_annotator_smoke.cpp
+        DEPENDS ttrally_gui ttrally_media_infrastructure)
+endif()

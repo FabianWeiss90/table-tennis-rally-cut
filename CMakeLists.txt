@@ -8,6 +8,7 @@ project(ttrally
     LANGUAGES CXX)
 
 option(TTRALLY_BUILD_TESTS "Build the unit tests" ON)
+option(TTRALLY_BUILD_GUI "Build the annotation GUI (needs the vcpkg feature \"gui\")" ON)
 option(TTRALLY_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TTRALLY_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
 

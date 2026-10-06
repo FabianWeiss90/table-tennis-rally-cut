@@ -105,6 +105,20 @@ ttrally_layer(ttrally_annotation_infrastructure
         annotation/infrastructure/csv_review_state_store.cpp
     DEPENDS ttrally_annotation_application ttrally_shared_io)
 
+# Annotation GUI (presentation layer, Dear ImGui + SDL3)
+if(TTRALLY_BUILD_GUI)
+    find_package(SDL3 CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+    add_library(ttrally_gui STATIC
+        gui/annotator_app.cpp
+        gui/frame_texture.cpp
+        gui/timeline_view.cpp)
+    target_include_directories(ttrally_gui PUBLIC ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(ttrally_gui
+        PUBLIC ttrally_annotation_application ttrally_media_application
+        PRIVATE ttrally_options SDL3::SDL3 imgui::imgui)
+endif()
+
 # Command-line interface: composition root
 find_package(CLI11 CONFIG REQUIRED)
 add_executable(ttrally
@@ -116,3 +130,8 @@ target_link_libraries(ttrally PRIVATE
     ttrally_alignment_infrastructure
     ttrally_media_infrastructure
     CLI11::CLI11)
+if(TTRALLY_BUILD_GUI)
+    target_sources(ttrally PRIVATE cli/annotate_command.cpp)
+    target_compile_definitions(ttrally PRIVATE TTRALLY_WITH_GUI)
+    target_link_libraries(ttrally PRIVATE ttrally_gui ttrally_annotation_infrastructure)
+endif()

@@ -10,6 +10,8 @@
 #   <context>/application-> the above, shared/application, <any context>/application
 #   <context>/infrastructure -> anything except cli; the only layer allowed to use
 #                           third-party libraries (FFmpeg, pocketfft) besides cli
+#   gui                  -> shared, <any context>/domain and application, gui; may use the GUI
+#                           libraries (SDL3, Dear ImGui) but no infrastructure (wired in cli)
 #   cli                  -> anything
 #
 # Usage: cmake -DSOURCE_DIR=<src> -P check_dependencies.cmake
@@ -19,7 +21,7 @@ if(NOT SOURCE_DIR)
 endif()
 get_filename_component(SOURCE_DIR "${SOURCE_DIR}" ABSOLUTE)
 
-set(third_party "^(libav|libsw|pocketfft|CLI/|catch2/)")
+set(third_party "^(libav|libsw|pocketfft|CLI/|catch2/|SDL3/|imgui)")
 
 function(allowed_includes file out_project out_third_party)
     if(file MATCHES "^shared/kernel/")
@@ -34,6 +36,9 @@ function(allowed_includes file out_project out_third_party)
         set(project "^(shared/(kernel|application)/|[a-z_]+/(domain|application)/)")
     elseif(file MATCHES "^[a-z_]+/infrastructure/")
         set(project "^(shared/|[a-z_]+/(domain|application|infrastructure)/)")
+        set(${out_third_party} TRUE PARENT_SCOPE)
+    elseif(file MATCHES "^gui/")
+        set(project "^(shared/|[a-z_]+/(domain|application)/|gui/)")
         set(${out_third_party} TRUE PARENT_SCOPE)
     elseif(file MATCHES "^cli/")
         set(project ".*")

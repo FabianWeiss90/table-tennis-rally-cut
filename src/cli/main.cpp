@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "cli/align_command.hpp"
+#ifdef TTRALLY_WITH_GUI
+#include "cli/annotate_command.hpp"
+#endif
 #include "cli/devices_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "shared/kernel/version.hpp"
@@ -18,6 +21,9 @@ int main(int argc, char** argv) {
     app.add_flag("-v,--verbose", verbose, "Show FFmpeg diagnostics");
 
     ttrally::cli::AlignCommand align(app);
+#ifdef TTRALLY_WITH_GUI
+    ttrally::cli::AnnotateCommand annotate(app);
+#endif
     ttrally::cli::DevicesCommand devices(app);
 
     CLI11_PARSE(app, argc, argv);
@@ -27,6 +33,11 @@ int main(int argc, char** argv) {
         if (align.selected()) {
             return align.run();
         }
+#ifdef TTRALLY_WITH_GUI
+        if (annotate.selected()) {
+            return annotate.run();
+        }
+#endif
         if (devices.selected()) {
             return devices.run();
         }

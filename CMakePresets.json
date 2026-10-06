@@ -103,13 +103,34 @@
     }
   ],
   "buildPresets": [
-    { "name": "linux-release", "configurePreset": "linux-release" },
-    { "name": "linux-debug", "configurePreset": "linux-debug" },
-    { "name": "linux-debug-sanitize", "configurePreset": "linux-debug-sanitize" },
-    { "name": "ci-linux", "configurePreset": "ci-linux" },
-    { "name": "windows-release", "configurePreset": "windows-release" },
-    { "name": "windows-debug", "configurePreset": "windows-debug" },
-    { "name": "ci-windows", "configurePreset": "ci-windows" }
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-debug-sanitize",
+      "configurePreset": "linux-debug-sanitize"
+    },
+    {
+      "name": "ci-linux",
+      "configurePreset": "ci-linux"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug"
+    },
+    {
+      "name": "ci-windows",
+      "configurePreset": "ci-windows"
+    }
   ],
   "testPresets": [
     {
@@ -119,12 +140,43 @@
         "outputOnFailure": true
       }
     },
-    { "name": "linux-release", "inherits": "test-base", "configurePreset": "linux-release" },
-    { "name": "linux-debug", "inherits": "test-base", "configurePreset": "linux-debug" },
-    { "name": "linux-debug-sanitize", "inherits": "test-base", "configurePreset": "linux-debug-sanitize" },
-    { "name": "ci-linux", "inherits": "test-base", "configurePreset": "ci-linux" },
-    { "name": "windows-release", "inherits": "test-base", "configurePreset": "windows-release" },
-    { "name": "windows-debug", "inherits": "test-base", "configurePreset": "windows-debug" },
-    { "name": "ci-windows", "inherits": "test-base", "configurePreset": "ci-windows" }
+    {
+      "name": "linux-release",
+      "inherits": "test-base",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "test-base",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-debug-sanitize",
+      "inherits": "test-base",
+      "configurePreset": "linux-debug-sanitize",
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/sanitizer/lsan.supp"
+      }
+    },
+    {
+      "name": "ci-linux",
+      "inherits": "test-base",
+      "configurePreset": "ci-linux"
+    },
+    {
+      "name": "windows-release",
+      "inherits": "test-base",
+      "configurePreset": "windows-release"
+    },
+    {
+      "name": "windows-debug",
+      "inherits": "test-base",
+      "configurePreset": "windows-debug"
+    },
+    {
+      "name": "ci-windows",
+      "inherits": "test-base",
+      "configurePreset": "ci-windows"
+    }
   ]
 }

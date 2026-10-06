@@ -1,0 +1,4 @@
+# LeakSanitizer suppressions for third-party code (used by the linux-debug-sanitize test preset).
+
+# Mesa's EGL driver allocates once per process (pthread_once) and never frees it.
+leak:SDL_EGL_InitializeOffscreen

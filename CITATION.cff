@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "table-tennis-rally-cut: rally detection for table tennis videos from a hobby camera perspective"
+authors:
+  - family-names: "Weiß"
+    given-names: "Fabian"
+repository-code: "https://github.com/FabianWeiss90/table-tennis-rally-cut"
+license: PolyForm-Noncommercial-1.0.0
+keywords:
+  - table tennis
+  - rally detection
+  - temporal action segmentation
+  - video analysis
+references:
+  - type: article
+    title: "Annotation-Free Rally Detection in Table Tennis Match Video: From Signal Fusion to Supervised Refinement"
+    authors:
+      - family-names: "Ba"
+        given-names: "Yuwei"
+    year: 2026
+  - type: software
+    title: "spin-detector"
+    authors:
+      - family-names: "Ba"
+        given-names: "Yuwei"
+    repository-code: "https://github.com/ibigbug/spin-detector"
+    license: MIT
+  - type: conference-paper
+    title: "MS-TCN: Multi-Stage Temporal Convolutional Network for Action Segmentation"
+    authors:
+      - family-names: "Abu Farha"
+        given-names: "Yazan"
+      - family-names: "Gall"
+        given-names: "Juergen"
+    collection-title: "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    year: 2019

@@ -19,6 +19,20 @@ your own work or that you are otherwise allowed to submit it under these conditi
 Do not submit code under licenses that are incompatible with the above (for example GPL or AGPL),
 and do not submit data whose license does not allow this use.
 
+## Architecture
+
+The code follows Domain-Driven Design with Clean Architecture layers. Each bounded context
+(`src/alignment`, `src/media`, later more) has the layers `domain`, `application` and
+`infrastructure`; `src/shared/kernel` is the shared kernel and `src/cli` the composition root.
+
+- Dependencies point inwards only: infrastructure -> application -> domain -> shared kernel.
+- Domain and application code must not use FFmpeg, pocketfft, CLI11, files or other I/O. They
+  talk to the outside world through ports (abstract classes in `application/`), which
+  infrastructure implements and `cli/` wires together.
+- Each context and layer is a separate CMake library, and the CTest test
+  `architecture: layer dependencies` checks the include rules.
+- Use cases are tested with in-memory fakes of their ports (see `tests/support/`).
+
 ## Guidelines
 
 - All code, comments, documentation and commit messages are written in **English**.

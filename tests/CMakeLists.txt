@@ -31,3 +31,12 @@ ttrally_test(alignment_tests
 ttrally_test(integration_tests
     SOURCES integration/test_align_media.cpp
     DEPENDS ttrally_alignment_infrastructure ttrally_media_infrastructure)
+
+# Architecture: layer rules, plus a self-test proving that violations are detected
+add_test(NAME "architecture: layer dependencies"
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}/src
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture/check_dependencies.cmake)
+add_test(NAME "architecture: violations are detected"
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/architecture/fixtures/violation
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture/check_dependencies.cmake)
+set_tests_properties("architecture: violations are detected" PROPERTIES WILL_FAIL TRUE)

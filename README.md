@@ -12,15 +12,16 @@ neighbouring tables are audible. Audio is used only to align videos during datas
 
 ## Status
 
-**Early and experimental.** The first tool, `align`, is implemented and tested on synthetic and
-generated media, but not yet verified on real match footage. Nothing here is ready for end users
-yet, and commands, file formats and results may change without notice.
+**Early and experimental.** `align` is implemented and has been checked on a real Liimba cut;
+`annotate` is implemented but has not been used for real annotation yet. Nothing here is ready
+for end users yet, and commands, file formats and results may change without notice.
 
 | Phase | Component | Status |
 |---|---|---|
 | 0 | Repository skeleton, build system, licensing | done |
-| 1 | `align`, `devices` | implemented, verification on real footage pending |
-| later | `annotate`, `features`, training, `detect`, `refine`, `cut`, `benchmark` | planned |
+| 1 | `align`, `devices` | done |
+| 2 | `annotate` (GUI) | implemented, in testing |
+| later | `features`, training, `detect`, `refine`, `cut`, `benchmark` | planned |
 
 ## Pipeline overview
 
@@ -74,15 +75,17 @@ sudo dnf swap ffmpeg-free ffmpeg --allowerasing
 sudo dnf install ffmpeg-devel
 sudo dnf swap mesa-va-drivers mesa-va-drivers-freeworld
 
-# Compiler, build tools, and the tools vcpkg needs
-sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config git git-lfs curl zip unzip tar
+# Compiler, build tools, and the tools vcpkg needs (autotools for the GUI dependencies)
+sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config git git-lfs curl zip unzip tar \
+    autoconf autoconf-archive automake libtool
 ```
 
 #### Debian / Ubuntu
 
 ```sh
-# Compiler, build tools, and the tools vcpkg needs
-sudo apt install build-essential cmake ninja-build pkg-config git git-lfs curl zip unzip tar
+# Compiler, build tools, and the tools vcpkg needs (autotools for the GUI dependencies)
+sudo apt install build-essential cmake ninja-build pkg-config git git-lfs curl zip unzip tar \
+    autoconf autoconf-archive automake libtool
 
 # FFmpeg development headers and VAAPI drivers
 sudo apt install libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev \
@@ -95,7 +98,8 @@ ship suitable versions.
 #### Arch Linux
 
 ```sh
-sudo pacman -S --needed base-devel cmake ninja git git-lfs curl zip unzip tar ffmpeg libva-utils
+sudo pacman -S --needed base-devel cmake ninja git git-lfs curl zip unzip tar ffmpeg libva-utils \
+    autoconf-archive
 ```
 
 On Arch, the FFmpeg package includes the development headers, and the VAAPI driver for AMD and
@@ -170,7 +174,13 @@ ctest --preset linux-release
 The executable is then at `build/linux-release/src/ttrally`.
 
 Available presets: `linux-release`, `linux-debug`, `linux-debug-sanitize` (ASan/UBSan) and
-`ci-linux` (release with warnings as errors). On Fedora, the sanitizer preset additionally needs
+`ci-linux` (release with warnings as errors).
+
+The annotation GUI (Dear ImGui + SDL3) is built by default. On Linux, vcpkg compiles SDL3 with
+D-Bus and parts of systemd from source the first time, which takes a few minutes and needs the
+autotools listed above. To build without the GUI (e.g. on a server), add
+`-DTTRALLY_BUILD_GUI=OFF -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES=tests`
+to the configure command. On Fedora, the sanitizer preset additionally needs
 `sudo dnf install libasan libubsan`.
 
 **Windows:** open a **Developer PowerShell for VS** (from the Start menu) in the repository
@@ -321,6 +331,59 @@ Video decode backends (probe order on this platform):
   cpu      always available
 auto -> vaapi
 ```
+
+### `annotate`
+
+Opens a window to set the exact start and end frame of every rally, starting from the
+candidates found by `align`:
+
+```sh
+ttrally annotate data/original.mp4 --segments data/align/<video_id>.csv
+```
+
+The window shows the original frame by frame (hardware decoding as in `align`), a timeline of the
+current segment or gap, and the list of all segments and gaps with their status.
+
+Annotating a rally takes three keys, anywhere in the video (inside a segment, in a gap, or
+elsewhere):
+
+1. **S** on the first frame in which the ball leaves the palm,
+2. **E** on the frame in which the point is decided,
+3. **Enter**: the rally is saved to `annotations/<video_id>.csv` and the window jumps to the next
+   segment that has no rally yet.
+
+Marks are never lost: if start and end are set, they are also saved when you switch to another
+segment or close the window. Marks that are not saved yet are shown in red on the video. Segments
+and gaps that contain a rally are marked as done automatically; X (segment without a rally) and
+R (gap checked) only keep the progress list tidy and are optional. The progress is kept locally
+in `data/annotate/`. Closing the window ends the session; starting it again continues at the
+first open segment or gap. When you close the window while segments still have no rally (and were
+not marked with X), a dialog lists them; you can close anyway or go back to the first of them.
+
+Keyboard shortcuts (always shown below the video, together with a legend of the timeline colours):
+
+| Keys | Action |
+|---|---|
+| Left / Right | one frame back / forward (Shift: 10 frames, Ctrl: 1 second) |
+| Space, `[` / `]` | play / pause, slower / faster (0.1x to 4x) |
+| S / E / C | mark start / end / serve hit at the current frame |
+| A | toggle "aborted toss" |
+| Enter / Esc | save the rally and go to the next segment / discard the marks |
+| X | the segment contains no rally (optional) |
+| R | the gap was checked and contains no rally (optional) |
+| O | reopen the item |
+| Del | delete the saved rally at the current frame |
+| N / P | next / previous open item |
+| Home / End | start / end of the current item |
+| Mouse wheel | zoom into the video (drag to pan, double-click to reset) |
+
+Options: `--gaps` (default `<segments>.gaps.csv`), `--video-id` (default: name of the segments
+CSV), `--annotations-dir` (default `annotations`), `--state-dir` (default `data/annotate`),
+`--decode-backend`, `--display-height` (default 1080) and `--frame-memory` (MB for decoded frames,
+default 1024; more memory allows longer steps back without decoding again).
+
+Saved rallies must follow the annotation rules below; the window refuses, for example,
+overlapping rallies or an end before the start.
 
 ## Annotation definitions and label format
 

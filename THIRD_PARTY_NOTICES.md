@@ -13,6 +13,15 @@ under CC BY-NC 4.0 (see [`weights/LICENSE`](weights/LICENSE)).
 | [pocketfft](https://github.com/mreineck/pocketfft) (C++ header-only) | FFT for audio alignment | BSD-3-Clause | vcpkg |
 | [CLI11](https://github.com/CLIUtils/CLI11) | Command-line parsing | BSD-3-Clause | vcpkg |
 | [Catch2](https://github.com/catchorg/Catch2) v3 | Unit tests (not part of the shipped tool) | BSL-1.0 | vcpkg |
+| [Dear ImGui](https://github.com/ocornut/imgui) | Annotation GUI | MIT | vcpkg (feature `gui`) |
+| [SDL3](https://www.libsdl.org/) | Window, input and rendering of the annotation GUI | Zlib | vcpkg (feature `gui`) |
+
+On Linux, vcpkg builds SDL3 with its default dependencies, among them
+[D-Bus](https://www.freedesktop.org/wiki/Software/dbus/) (AFL-2.1 or GPL-2.0-or-later; used under
+the AFL-2.1) and parts of [systemd](https://systemd.io/) (libsystemd, LGPL-2.1-or-later). They are
+linked by SDL3 and are not modified. The default vcpkg triplet on Linux links them statically;
+anyone who **redistributes** `ttrally` binaries must meet the LGPL requirements of libsystemd
+(e.g. by providing the object files for relinking) or build without the GUI.
 
 ### FFmpeg (LGPL)
 
@@ -31,8 +40,6 @@ builds but not for redistributing binaries.
 | Component | Purpose | License |
 |---|---|---|
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) incl. WebGPU execution provider | Neural network inference | MIT |
-| [Dear ImGui](https://github.com/ocornut/imgui) | Annotation GUI | MIT |
-| [SDL2](https://www.libsdl.org/) | Windowing/input for the annotation GUI | Zlib |
 
 This file will be updated when these components are integrated.
 

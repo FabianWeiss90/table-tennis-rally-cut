@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "ttrally",
+  "version-semver": "0.1.0",
+  "description": "Rally detection for table tennis videos from a hobby camera perspective",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "dependencies": [
+    "cli11",
+    "pocketfft",
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat",
+        "swresample",
+        "swscale"
+      ],
+      "platform": "windows"
+    }
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the unit tests",
+      "dependencies": [
+        "catch2"
+      ]
+    }
+  },
+  "default-features": [
+    "tests"
+  ],
+  "builtin-baseline": "434307da09bc05b2c86996dccc8b2351fc0d5d37"
+}

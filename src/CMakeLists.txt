@@ -89,6 +89,22 @@ ttrally_layer(ttrally_alignment_infrastructure
     DEPENDS ttrally_alignment_application ttrally_shared_io)
 target_include_directories(ttrally_alignment_infrastructure SYSTEM PRIVATE ${POCKETFFT_INCLUDE_DIR})
 
+# Annotation context (phase 2: exact rally boundaries set by a person)
+ttrally_layer(ttrally_annotation_domain
+    SOURCES annotation/domain/annotation_sheet.cpp annotation/domain/review_plan.cpp
+    DEPENDS ttrally_shared_kernel)
+
+ttrally_layer(ttrally_annotation_application
+    SOURCES annotation/application/annotation_session.cpp
+    DEPENDS ttrally_annotation_domain)
+
+ttrally_layer(ttrally_annotation_infrastructure
+    SOURCES
+        annotation/infrastructure/alignment_review_source.cpp
+        annotation/infrastructure/csv_annotation_repository.cpp
+        annotation/infrastructure/csv_review_state_store.cpp
+    DEPENDS ttrally_annotation_application ttrally_shared_io)
+
 # Command-line interface: composition root
 find_package(CLI11 CONFIG REQUIRED)
 add_executable(ttrally

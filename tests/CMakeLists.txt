@@ -20,6 +20,13 @@ ttrally_test(media_tests
     SOURCES media/test_decode_backend.cpp media/test_frame_prefetcher.cpp
     DEPENDS ttrally_media_application)
 
+ttrally_test(annotation_tests
+    SOURCES
+        annotation/test_annotation_domain.cpp
+        annotation/test_annotation_files.cpp
+        annotation/test_annotation_session.cpp
+    DEPENDS ttrally_annotation_infrastructure)
+
 ttrally_test(alignment_tests
     SOURCES
         alignment/test_align_videos.cpp

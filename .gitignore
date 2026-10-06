@@ -1,0 +1,30 @@
+# Build output
+build/
+out/
+vcpkg_installed/
+
+# Local data: videos, audio, caches (never versioned)
+data/
+*.mp4
+*.mov
+*.mts
+*.mkv
+*.wav
+*.f32
+.cache/
+runs/
+
+# Numpy arrays, except small test fixtures
+*.npy
+*.npz
+!tests/fixtures/**/*.npy
+!tests/fixtures/**/*.npz
+
+# Python
+training/.venv/
+__pycache__/
+*.pyc
+
+# Editors
+.vscode/
+.idea/

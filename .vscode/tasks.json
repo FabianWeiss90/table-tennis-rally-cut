@@ -1,0 +1,44 @@
+{
+  // Build tasks used as preLaunchTask by launch.json.
+  // The first configuration of a preset needs VCPKG_ROOT; later builds do not.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build: linux-debug",
+      "type": "shell",
+      "command": "cmake --preset linux-debug && cmake --build --preset linux-debug",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build: linux-debug-sanitize",
+      "type": "shell",
+      "command": "cmake --preset linux-debug-sanitize && cmake --build --preset linux-debug-sanitize",
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build: linux-release",
+      "type": "shell",
+      "command": "cmake --preset linux-release && cmake --build --preset linux-release",
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build: windows-debug",
+      "type": "shell",
+      "command": "cmake --preset windows-debug; if ($?) { cmake --build --preset windows-debug }",
+      "options": { "shell": { "executable": "powershell.exe" } },
+      "group": "build",
+      "problemMatcher": ["$msCompile"]
+    },
+    {
+      "label": "test: linux-debug (all)",
+      "type": "shell",
+      "command": "ctest --preset linux-debug",
+      "dependsOn": "build: linux-debug",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -25,6 +25,8 @@ training/.venv/
 __pycache__/
 *.pyc
 
-# Editors
-.vscode/
+# Editors (shared VS Code debug configurations are versioned)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/

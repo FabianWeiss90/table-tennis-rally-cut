@@ -1,0 +1,258 @@
+{
+  // Debug configurations for ttrally (C/C++ extension "ms-vscode.cpptools" required).
+  // Linux uses gdb, Windows the Visual Studio debugger. Each configuration builds first.
+  "version": "0.2.0",
+  "configurations": [
+    // ---------------------------------------------------------------- ttrally (Linux)
+    // Normal run of `ttrally align` with the debug build. Asks for the original, the cut video
+    // and a video id; writes data/align/<id>.csv, <id>.gaps.csv and <id>.html.
+    {
+      "name": "ttrally align",
+      "presentation": { "group": "1 ttrally", "order": 1 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/src/ttrally",
+      "args": [
+        "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Like `ttrally align`, but ignores data/cache (decodes everything again) and shows
+    // FFmpeg's own messages. Use it to investigate decoding problems or stale cache entries.
+    {
+      "name": "ttrally align (fresh: no cache, verbose)",
+      "presentation": { "group": "1 ttrally", "order": 2 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/src/ttrally",
+      "args": [
+        "--verbose", "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html",
+        "--no-cache"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Like `ttrally align`, but without hardware decoding and with one worker thread, so the
+    // code runs sequentially and is easy to step through. Rules out GPU driver issues.
+    {
+      "name": "ttrally align (software decoding, single thread)",
+      "presentation": { "group": "1 ttrally", "order": 3 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/src/ttrally",
+      "args": [
+        "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html",
+        "--decode-backend", "cpu", "--threads", "1"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Runs the optimised release build to see realistic run times (debug builds are much
+    // slower). Breakpoints and variable inspection are unreliable in this build.
+    {
+      "name": "ttrally align (release build, timing)",
+      "presentation": { "group": "1 ttrally", "order": 4 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-release/src/ttrally",
+      "args": [
+        "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-release",
+      "MIMode": "gdb"
+    },
+    // Runs the build with AddressSanitizer and UndefinedBehaviorSanitizer. Stops at the first
+    // memory error (out-of-bounds access, use after free, ...) or undefined behaviour.
+    {
+      "name": "ttrally align (ASan/UBSan)",
+      "presentation": { "group": "1 ttrally", "order": 5 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug-sanitize/src/ttrally",
+      "args": [
+        "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html"
+      ],
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        { "name": "ASAN_OPTIONS", "value": "detect_leaks=0:abort_on_error=1" },
+        { "name": "UBSAN_OPTIONS", "value": "print_stacktrace=1:halt_on_error=1" }
+      ],
+      "preLaunchTask": "build: linux-debug-sanitize",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Lists the hardware decode backends (VAAPI, CUDA, Vulkan) and the one `auto` selects.
+    {
+      "name": "ttrally devices",
+      "presentation": { "group": "1 ttrally", "order": 6 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/src/ttrally",
+      "args": ["devices"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb"
+    },
+
+    // ---------------------------------------------------------------- tests (Linux)
+    // Unit tests of the alignment context (aligner on synthetic audio, AlignVideos use case with
+    // fakes, signal matcher, segmentation). Asks for a Catch2 filter, e.g. "*boundaries*";
+    // '*' runs all. --break stops in the debugger at the first failing assertion.
+    {
+      "name": "tests: alignment",
+      "presentation": { "group": "2 tests", "order": 7 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/tests/alignment_tests",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Unit tests of the media context (decode backend selection). Filter as above.
+    {
+      "name": "tests: media",
+      "presentation": { "group": "2 tests", "order": 8 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/tests/media_tests",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Unit tests of the shared kernel and io helpers (time-to-frame mapping, CSV, NPY,
+    // formatting, cache keys). Filter as above.
+    {
+      "name": "tests: shared",
+      "presentation": { "group": "2 tests", "order": 9 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/tests/shared_tests",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // End-to-end test with real FFmpeg adapters: generates clips with the ffmpeg command-line
+    // tool and aligns them. Skipped if ffmpeg is not installed. Filter as above.
+    {
+      "name": "tests: integration (needs ffmpeg CLI)",
+      "presentation": { "group": "2 tests", "order": 10 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/tests/integration_tests",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+
+    // ---------------------------------------------------------------- Windows (MSVC)
+    // Like `ttrally align`, built with MSVC (windows-debug preset) and the Visual Studio debugger.
+    {
+      "name": "Windows: ttrally align",
+      "presentation": { "group": "3 windows", "order": 11 },
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/windows-debug/src/ttrally.exe",
+      "args": [
+        "align", "${input:original}", "${input:cut}",
+        "--out", "data/align/${input:videoId}.csv",
+        "--report", "data/align/${input:videoId}.html"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: windows-debug",
+      "console": "integratedTerminal"
+    },
+    // Like `ttrally devices` on Windows (probes D3D12VA, D3D11VA, CUDA).
+    {
+      "name": "Windows: ttrally devices",
+      "presentation": { "group": "3 windows", "order": 12 },
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/windows-debug/src/ttrally.exe",
+      "args": ["devices"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: windows-debug",
+      "console": "integratedTerminal"
+    },
+    // Like `tests: alignment` on Windows.
+    {
+      "name": "Windows: tests (alignment)",
+      "presentation": { "group": "3 windows", "order": 13 },
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/windows-debug/tests/alignment_tests.exe",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: windows-debug",
+      "console": "integratedTerminal"
+    }
+  ],
+  // Values asked for when a configuration starts; the defaults can be changed here.
+  "inputs": [
+    {
+      "id": "original",
+      "type": "promptString",
+      "description": "Original video (untrimmed 4K)",
+      "default": "data/original.mp4"
+    },
+    {
+      "id": "cut",
+      "type": "promptString",
+      "description": "Cut video (e.g. from Liimba)",
+      "default": "data/liimba.mp4"
+    },
+    {
+      "id": "videoId",
+      "type": "promptString",
+      "description": "Video id (name of the output files in data/align/)",
+      "default": "match_a"
+    },
+    {
+      "id": "testFilter",
+      "type": "promptString",
+      "description": "Catch2 test filter, e.g. \"*boundaries*\" or [tag]; '*' runs all",
+      "default": "*"
+    }
+  ]
+}

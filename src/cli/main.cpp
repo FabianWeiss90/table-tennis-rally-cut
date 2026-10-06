@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+#include "cli/devices_command.hpp"
+#include "media/infrastructure/ffmpeg_logging.hpp"
+#include "shared/kernel/version.hpp"
+
+#include <CLI/CLI.hpp>
+#include <exception>
+#include <iostream>
+#include <string>
+
+int main(int argc, char** argv) {
+    CLI::App app{"ttrally - rally detection for table tennis videos"};
+    app.set_version_flag("--version", std::string{ttrally::version()});
+    app.require_subcommand(1);
+    bool verbose = false;
+    app.add_flag("-v,--verbose", verbose, "Show FFmpeg diagnostics");
+
+    ttrally::cli::DevicesCommand devices(app);
+
+    CLI11_PARSE(app, argc, argv);
+    ttrally::media::configure_ffmpeg_logging(verbose);
+
+    try {
+        if (devices.selected()) {
+            return devices.run();
+        }
+    } catch (const std::exception& error) {
+        std::cerr << "error: " << error.what() << '\n';
+        return 1;
+    }
+    return 0;
+}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
-#include "common/version.hpp"
+#include "shared/kernel/version.hpp"
 
 namespace ttrally {
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
+#include "cli/align_command.hpp"
 #include "cli/devices_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "shared/kernel/version.hpp"
@@ -16,12 +17,16 @@ int main(int argc, char** argv) {
     bool verbose = false;
     app.add_flag("-v,--verbose", verbose, "Show FFmpeg diagnostics");
 
+    ttrally::cli::AlignCommand align(app);
     ttrally::cli::DevicesCommand devices(app);
 
     CLI11_PARSE(app, argc, argv);
     ttrally::media::configure_ffmpeg_logging(verbose);
 
     try {
+        if (align.selected()) {
+            return align.run();
+        }
         if (devices.selected()) {
             return devices.run();
         }

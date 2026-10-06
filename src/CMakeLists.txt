@@ -62,12 +62,39 @@ ttrally_layer(ttrally_media_infrastructure
     DEPENDS ttrally_media_application ttrally_shared_io
     PRIVATE_DEPENDS ttrally_ffmpeg)
 
+# Alignment context (core domain of phase 1)
+ttrally_layer(ttrally_alignment_domain
+    SOURCES
+        alignment/domain/alignment_settings.cpp
+        alignment/domain/audio_aligner.cpp
+        alignment/domain/boundary_refinement.cpp
+        alignment/domain/candidate_mapping.cpp
+        alignment/domain/consistency_check.cpp
+        alignment/domain/segmentation.cpp
+        alignment/domain/visual_verification.cpp
+        alignment/domain/window_search.cpp
+    DEPENDS ttrally_shared_kernel ttrally_media_domain)
+
+ttrally_layer(ttrally_alignment_application
+    SOURCES alignment/application/align_videos.cpp
+    DEPENDS ttrally_alignment_domain ttrally_media_application)
+
+ttrally_layer(ttrally_alignment_infrastructure
+    SOURCES
+        alignment/infrastructure/csv_alignment_writer.cpp
+        alignment/infrastructure/html_report_writer.cpp
+        alignment/infrastructure/pocketfft_signal_matcher.cpp
+    DEPENDS ttrally_alignment_application ttrally_shared_io)
+target_include_directories(ttrally_alignment_infrastructure SYSTEM PRIVATE ${POCKETFFT_INCLUDE_DIR})
+
 # Command-line interface: composition root
 find_package(CLI11 CONFIG REQUIRED)
 add_executable(ttrally
+    cli/align_command.cpp
     cli/devices_command.cpp
     cli/main.cpp)
 target_link_libraries(ttrally PRIVATE
     ttrally_options
+    ttrally_alignment_infrastructure
     ttrally_media_infrastructure
     CLI11::CLI11)

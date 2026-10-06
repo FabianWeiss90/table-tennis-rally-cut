@@ -12,14 +12,14 @@ neighbouring tables are audible. Audio is used only to align videos during datas
 
 ## Status
 
-**Early and experimental.** Only the repository skeleton exists so far. The first tool, `align`,
-is under development. Nothing here is ready for end users yet, and commands, file formats and
-results may change without notice.
+**Early and experimental.** The first tool, `align`, is implemented and tested on synthetic and
+generated media, but not yet verified on real match footage. Nothing here is ready for end users
+yet, and commands, file formats and results may change without notice.
 
 | Phase | Component | Status |
 |---|---|---|
 | 0 | Repository skeleton, build system, licensing | done |
-| 1 | `align`, `devices` | in development |
+| 1 | `align`, `devices` | implemented, verification on real footage pending |
 | later | `annotate`, `features`, training, `detect`, `refine`, `cut`, `benchmark` | planned |
 
 ## Pipeline overview
@@ -167,7 +167,7 @@ cmake --build --preset linux-release
 ctest --preset linux-release
 ```
 
-The executable is then at `build/linux-release/src/app/ttrally`.
+The executable is then at `build/linux-release/src/ttrally`.
 
 Available presets: `linux-release`, `linux-debug`, `linux-debug-sanitize` (ASan/UBSan) and
 `ci-linux` (release with warnings as errors). On Fedora, the sanitizer preset additionally needs
@@ -182,7 +182,7 @@ cmake --build --preset windows-release
 ctest --preset windows-release
 ```
 
-The executable is then at `build\windows-release\src\app\ttrally.exe`. The first configuration
+The executable is then at `build\windows-release\src\ttrally.exe`. The first configuration
 takes a while because vcpkg builds FFmpeg.
 
 Available presets: `windows-release`, `windows-debug` and `ci-windows`.
@@ -253,8 +253,6 @@ Without a supported GPU, decoding and inference run on the CPU.
 
 ## Usage
 
-> The commands in this section are being implemented in Phase 1 and are not available yet.
-
 ### `align`
 
 Aligns a Liimba cut video with the 4K original via audio cross-correlation:
@@ -270,13 +268,41 @@ Outputs:
   ```
   segment_id,cut_start_s,cut_end_s,orig_start_s,orig_end_s,orig_start_frame,orig_end_frame,orig_fps,offset_s,confidence
   ```
-- `<video_id>.csv.gaps.csv`: the gaps in the original between consecutive segments, for checking
-  for missed rallies.
-- Optional HTML report: a single self-contained file with a summary, a segment table, gaps,
-  warnings and an offset-over-time plot.
+- `<video_id>.gaps.csv`: the parts of the original that are not in the cut video (between
+  consecutive segments, before the first and after the last one), for checking for missed
+  rallies:
+  ```
+  gap_id,after_segment_id,orig_start_s,orig_end_s,orig_start_frame,orig_end_frame,duration_s
+  ```
+- Optional HTML report: a single self-contained file with a summary, warnings, file properties
+  (including audio and video start times), an offset-over-time plot, the segments and the gaps.
 
-`align` aborts with an error if a file has no audio stream, or if the audio cannot be matched
-reliably, for example because of a music overlay. Visual alignment is not implemented.
+Times are presentation times in seconds on each file's own timeline. Frame indices are 0-based,
+refer to the decoded frames of the original, and `orig_end_frame` is inclusive. The original's
+frame rate is read from the file; variable frame rate is detected and handled via the frame
+timestamps.
+
+Options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--report FILE` | – | Write the HTML report |
+| `--cache-dir DIR` | `data/cache` | Cache for decoded audio and frame timestamps |
+| `--no-cache` | – | Neither read nor write the cache |
+| `--decode-backend NAME` | `auto` | Video decoding for the visual spot check (see [GPU support](#gpu-support)) |
+| `--no-visual-check` | – | Skip comparing one frame from the middle of each segment in both videos |
+| `--min-confidence X` | `2` | Peak ratio below which a 2 s audio window counts as uncertain |
+| `--local-search S` | `120` | Seconds searched after the previous match before searching the whole original |
+| `--threads N` | all cores | Worker threads |
+| `-v`, `--verbose` | – | Show FFmpeg diagnostics |
+
+The first run reads the whole original once (decoding the audio and collecting the frame
+timestamps), which is limited by disk speed for large 4K files. Later runs use the cache.
+
+`align` aborts with an error if a file cannot be opened or has no audio stream, or if the audio
+cannot be matched reliably, for example because of a music overlay. Visual alignment is not
+implemented. Segment boundaries can be affected by fades in the cut video; they are only
+candidates and are set exactly during annotation.
 
 ### `devices`
 
@@ -284,7 +310,17 @@ reliably, for example because of a music overlay. Visual alignment is not implem
 ttrally devices
 ```
 
-Lists the available hardware decode backends and which one `auto` would select.
+Lists the hardware decode backends of this platform, whether they are available, and which one
+`auto` selects. Example on Linux with an AMD GPU:
+
+```
+Video decode backends (probe order on this platform):
+  vaapi    available
+  cuda     not available (Operation not permitted)
+  vulkan   available
+  cpu      always available
+auto -> vaapi
+```
 
 ## Annotation definitions and label format
 

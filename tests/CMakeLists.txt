@@ -19,3 +19,15 @@ ttrally_test(shared_tests
 ttrally_test(media_tests
     SOURCES media/test_decode_backend.cpp
     DEPENDS ttrally_media_application)
+
+ttrally_test(alignment_tests
+    SOURCES
+        alignment/test_align_videos.cpp
+        alignment/test_audio_aligner.cpp
+        alignment/test_candidate_mapping.cpp
+        alignment/test_signal_matcher.cpp
+    DEPENDS ttrally_alignment_infrastructure)
+
+ttrally_test(integration_tests
+    SOURCES integration/test_align_media.cpp
+    DEPENDS ttrally_alignment_infrastructure ttrally_media_infrastructure)

@@ -47,7 +47,7 @@ ttrally_layer(ttrally_media_domain
     DEPENDS ttrally_shared_kernel)
 
 ttrally_layer(ttrally_media_application
-    SOURCES media/application/list_decode_backends.cpp
+    SOURCES media/application/frame_prefetcher.cpp media/application/list_decode_backends.cpp
     DEPENDS ttrally_media_domain)
 
 ttrally_layer(ttrally_media_infrastructure
@@ -55,10 +55,12 @@ ttrally_layer(ttrally_media_infrastructure
         media/infrastructure/caching_media_reader.cpp
         media/infrastructure/ffmpeg_api.cpp
         media/infrastructure/ffmpeg_decode_backend_probe.cpp
+        media/infrastructure/ffmpeg_frame_decoder.cpp
         media/infrastructure/ffmpeg_frame_sampler.cpp
         media/infrastructure/ffmpeg_logging.cpp
         media/infrastructure/ffmpeg_media_probe.cpp
         media/infrastructure/ffmpeg_media_reader.cpp
+        media/infrastructure/ffmpeg_video_stream.cpp
     DEPENDS ttrally_media_application ttrally_shared_io
     PRIVATE_DEPENDS ttrally_ffmpeg)
 

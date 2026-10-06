@@ -17,7 +17,7 @@ ttrally_test(shared_tests
     DEPENDS ttrally_shared_io)
 
 ttrally_test(media_tests
-    SOURCES media/test_decode_backend.cpp
+    SOURCES media/test_decode_backend.cpp media/test_frame_prefetcher.cpp
     DEPENDS ttrally_media_application)
 
 ttrally_test(alignment_tests
@@ -29,7 +29,7 @@ ttrally_test(alignment_tests
     DEPENDS ttrally_alignment_infrastructure)
 
 ttrally_test(integration_tests
-    SOURCES integration/test_align_media.cpp
+    SOURCES integration/test_align_media.cpp integration/test_frame_decoder.cpp
     DEPENDS ttrally_alignment_infrastructure ttrally_media_infrastructure)
 
 # Architecture: layer rules, plus a self-test proving that violations are detected

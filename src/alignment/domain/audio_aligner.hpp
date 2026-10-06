@@ -14,8 +14,9 @@ namespace ttrally::alignment {
 ///
 /// 1. Split the cut into overlapping windows and match each in the original (WindowSearch).
 /// 2. Group windows with equal offsets into segments.
-/// 3. Locate the segment boundaries with sample accuracy.
-/// 4. Check the segments for consistency.
+/// 3. Remove spurious segments that would break the increasing order in the original.
+/// 4. Locate the segment boundaries with sample accuracy.
+/// 5. Check the segments for consistency.
 ///
 /// Results are deterministic regardless of the number of threads.
 class AudioAligner {

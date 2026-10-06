@@ -35,6 +35,11 @@ std::vector<WindowMatch> create_windows(std::size_t cut_length, std::size_t wind
     return windows;
 }
 
+void add_warnings(SignalAlignment& result, std::vector<std::string> warnings) {
+    result.warnings.insert(result.warnings.end(), std::make_move_iterator(warnings.begin()),
+                           std::make_move_iterator(warnings.end()));
+}
+
 bool should_abort_early(std::size_t processed, std::size_t total, std::size_t confident,
                         double min_fraction) {
     const double fraction = static_cast<double>(confident) / static_cast<double>(processed);
@@ -63,11 +68,12 @@ SignalAlignment AudioAligner::align(std::span<const float> original, std::span<c
         return result;
     }
 
-    result.segments =
-        group_into_segments(result.windows, settings.samples(settings.offset_tolerance_s));
+    const std::size_t tolerance = settings.samples(settings.offset_tolerance_s);
+    result.segments = group_into_segments(result.windows, tolerance);
+    add_warnings(result, remove_out_of_order_segments(result.segments, result.windows, tolerance,
+                                                      settings.sample_rate));
     refine_segment_boundaries(result.segments, result.windows, original, cut, settings);
-    auto warnings = check_consistency(result.segments, original.size(), settings.sample_rate);
-    result.warnings.insert(result.warnings.end(), warnings.begin(), warnings.end());
+    add_warnings(result, check_consistency(result.segments, original.size(), settings.sample_rate));
     return result;
 }
 

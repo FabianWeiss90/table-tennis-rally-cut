@@ -91,6 +91,37 @@ TEST_CASE("consecutive windows with equal offsets form one segment") {
     CHECK(segments[1].offset == 900);
 }
 
+TEST_CASE("a weak segment that breaks the order in the original is removed") {
+    // Mirrors a real case: two windows straddling a cut matched the start of the previous rally.
+    std::vector<WindowMatch> windows(4);
+    for (std::size_t i = 0; i < windows.size(); ++i) {
+        windows[i].cut_index = i * 4000;
+    }
+    auto strong_a = segment(0.0, 10.0, 225.0);
+    strong_a.window_count = 15;
+    auto spurious = segment(10.0, 11.0, 218.0);
+    spurious.window_count = 2;
+    spurious.first_window = 2;
+    auto strong_b = segment(11.0, 16.0, 234.0);
+    strong_b.window_count = 9;
+    std::vector<MatchedSegment> segments{strong_a, spurious, strong_b};
+
+    const auto warnings = remove_out_of_order_segments(segments, windows, 40, kRate);
+    REQUIRE(segments.size() == 2);
+    CHECK(segments[0].offset == strong_a.offset);
+    CHECK(segments[1].offset == strong_b.offset);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("at 1.0 s (2 window(s)") != std::string::npos);
+}
+
+TEST_CASE("segments in increasing order are kept") {
+    std::vector<MatchedSegment> segments{segment(0.0, 5.0, 10.0), segment(5.0, 9.0, 10.0),
+                                         segment(9.0, 12.0, 30.0)};
+    const std::vector<WindowMatch> windows(1);
+    CHECK(remove_out_of_order_segments(segments, windows, 40, kRate).empty());
+    CHECK(segments.size() == 3);
+}
+
 TEST_CASE("overlapping segments in the original are reported") {
     auto a = segment(0.0, 10.0, 20.0);  // original 20..30
     auto b = segment(10.0, 20.0, 15.0); // original 25..35 overlaps

@@ -96,6 +96,8 @@ CodecPtr open_decoder(const AVStream* stream, AVBufferRef* hw_device,
         ctx->hw_device_ctx = av_buffer_ref(hw_device);
         ctx->get_format = get_format;
         ctx->opaque = opaque;
+    } else {
+        ctx->thread_count = 0; // software decoding: one thread per core (libavcodec default: 1)
     }
     check(avcodec_open2(ctx.get(), codec, nullptr),
           std::string("cannot open decoder ") + codec->name);

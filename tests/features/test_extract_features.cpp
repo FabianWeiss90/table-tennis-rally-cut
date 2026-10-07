@@ -4,13 +4,16 @@
 
 #include "features/application/extract_features.hpp"
 #include "features/infrastructure/npy_feature_store.hpp"
+#include "media/application/media_error.hpp"
 #include "shared/io/npy.hpp"
 #include "support/fake_media.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
+#include <optional>
 #include <random>
+#include <stdexcept>
 
 using namespace ttrally;
 using namespace ttrally::features;
@@ -24,8 +27,9 @@ constexpr int kFrames = 120; // 2 s
 /// list owned by the caller, since the use case destroys the decoder when it is done.
 class PatternDecoder final : public media::FrameDecoder {
   public:
-    PatternDecoder(media::FrameSize size, std::vector<std::int64_t>& decoded)
-        : decoded_(decoded), size_(size) {}
+    PatternDecoder(media::FrameSize size, std::vector<std::int64_t>& decoded,
+                   std::optional<std::int64_t> broken_frame)
+        : decoded_(decoded), size_(size), broken_frame_(broken_frame) {}
     media::DecodeBackend backend() const override { return media::DecodeBackend::Cpu; }
     std::int64_t frame_count() const override { return kFrames; }
     media::FrameSize frame_size() const override { return size_; }
@@ -39,6 +43,9 @@ class PatternDecoder final : public media::FrameDecoder {
     void decode_selected(std::span<const std::int64_t> indices,
                          const FrameConsumer& consume) override {
         for (const std::int64_t i : indices) {
+            if (i == broken_frame_) {
+                throw media::MediaError("broken frame");
+            }
             decoded_.push_back(i);
             if (!consume(frame(i))) {
                 return;
@@ -57,6 +64,7 @@ class PatternDecoder final : public media::FrameDecoder {
     }
     std::vector<std::int64_t>& decoded_;
     media::FrameSize size_;
+    std::optional<std::int64_t> broken_frame_;
 };
 
 class PatternDecoders final : public media::FrameDecoderFactory {
@@ -68,8 +76,9 @@ class PatternDecoders final : public media::FrameDecoderFactory {
         CHECK(output.layout == media::PixelLayout::Rgb24);
         decoded.clear();
         return std::make_unique<PatternDecoder>(media::FrameSize{output.width, output.height},
-                                                decoded);
+                                                decoded, broken_frame);
     }
+    std::optional<std::int64_t> broken_frame; ///< Decoding this frame fails
     std::vector<std::int64_t> decoded; ///< Frames decoded by the most recently opened decoder
 };
 
@@ -85,6 +94,9 @@ class FirstValueEmbedder final : public ImageEmbedder {
     }
     const EmbedderInfo& info() const override { return info_; }
     std::vector<float> embed(std::span<const float> images, std::size_t batch) override {
+        if (runs == failing_run) {
+            throw std::runtime_error("model failed");
+        }
         ++runs;
         const std::size_t image_size = 3 * 4 * 2;
         std::vector<float> output;
@@ -95,6 +107,7 @@ class FirstValueEmbedder final : public ImageEmbedder {
         return output;
     }
     int runs = 0;
+    int failing_run = -1; ///< This model run throws
     EmbedderInfo info_;
 };
 
@@ -172,4 +185,20 @@ TEST_CASE("current features are not recomputed unless forced") {
     fixture.embedder.info_.model_fingerprint = "f2"; // another model file
     CHECK_FALSE(fixture.run().skipped);
     CHECK_FALSE(fixture.run(true).skipped);
+}
+
+TEST_CASE("decoding errors stop the feature extraction") {
+    Fixture fixture;
+    fixture.decoders.broken_frame = 60;
+    CHECK_THROWS_AS(fixture.run(), media::MediaError);
+    CHECK_FALSE(std::filesystem::exists(fixture.dir / "clip" / "features.npy"));
+}
+
+TEST_CASE("model errors stop the decoding") {
+    Fixture fixture;
+    fixture.embedder.failing_run = 0;
+    CHECK_THROWS_AS(fixture.run(), std::runtime_error);
+    // At most the failed batch, two queued ones and the one waiting for room: 4 of 5 batches
+    CHECK(fixture.decoders.decoded.size() <= 16);
+    CHECK_FALSE(std::filesystem::exists(fixture.dir / "clip" / "features.npy"));
 }

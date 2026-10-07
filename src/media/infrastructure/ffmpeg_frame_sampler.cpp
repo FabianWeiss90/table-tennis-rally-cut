@@ -35,7 +35,7 @@ class FfmpegFrameSampler final : public FrameSampler {
             }
             const double time = ff::to_seconds(frame->best_effort_timestamp, stream_.time_base());
             if (!std::isnan(time) && time >= earliest) {
-                return to_gray(*frame, width, height);
+                return to_gray(*stream_.to_system_memory(std::move(frame)), width, height);
             }
         }
         return std::nullopt;

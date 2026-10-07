@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
-// Internal: decodes the best video stream of a file with optional hardware acceleration and
-// returns software frames. Shared by the frame sampler and the frame decoder.
+// Internal: decodes the best video stream of a file with optional hardware acceleration. Shared by the frame sampler and the frame decoder.
 
 #pragma once
 
@@ -29,15 +28,18 @@ class VideoStream {
     /// Seeks to the keyframe at or before `timestamp` (stream time base).
     void seek(std::int64_t timestamp);
 
-    /// Next frame in presentation order, transferred to system memory; nullptr at the end.
+    /// Next frame in presentation order, possibly still in GPU memory; nullptr at the end.
     [[nodiscard]] FramePtr next_frame();
+
+    /// The frame in system memory. Copying a frame from the GPU is expensive, so callers do
+    /// this only for frames they actually use.
+    [[nodiscard]] FramePtr to_system_memory(FramePtr frame) const;
 
   private:
     void open_decoder(DecodeBackend requested);
     bool try_hardware(DecodeBackend candidate);
     /// Sends the next packet to the decoder; returns false (after flushing) at the end.
     bool feed_next_packet();
-    [[nodiscard]] FramePtr to_software(FramePtr frame) const;
 
     FormatPtr format_;
     CodecPtr decoder_;

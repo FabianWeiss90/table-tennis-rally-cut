@@ -59,7 +59,8 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         }
         auto decoded = advance_to(first);
         while (decoded.frame) {
-            if (!consume(convert(*decoded.frame, decoded.index)) || decoded.index >= last) {
+            const std::int64_t index = decoded.index;
+            if (!consume(convert(std::move(decoded))) || index >= last) {
                 return;
             }
             decoded = next();
@@ -72,8 +73,8 @@ class FfmpegFrameDecoder final : public FrameDecoder {
             if (target < 0 || target >= frame_count()) {
                 continue;
             }
-            const auto decoded = advance_to(target);
-            if (!decoded.frame || !consume(convert(*decoded.frame, decoded.index))) {
+            auto decoded = advance_to(target);
+            if (!decoded.frame || !consume(convert(std::move(decoded)))) {
                 return;
             }
         }
@@ -142,7 +143,10 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         return it - list.begin();
     }
 
-    [[nodiscard]] VideoFrame convert(const AVFrame& frame, std::int64_t index) {
+    [[nodiscard]] VideoFrame convert(Decoded decoded) {
+        const auto software = stream_.to_system_memory(std::move(decoded.frame));
+        const AVFrame& frame = *software;
+        const std::int64_t index = decoded.index;
         const AVPixelFormat target_format =
             layout_ == PixelLayout::Rgb24 ? AV_PIX_FMT_RGB24 : AV_PIX_FMT_YUV420P;
         scaler_.reset(sws_getCachedContext(scaler_.release(), frame.width, frame.height,

@@ -127,7 +127,7 @@ FramePtr VideoStream::next_frame() {
             continue;
         }
         check(result, "video decoding");
-        return to_software(std::move(frame));
+        return frame;
     }
 }
 
@@ -147,7 +147,7 @@ bool VideoStream::feed_next_packet() {
     return true;
 }
 
-FramePtr VideoStream::to_software(FramePtr frame) const {
+FramePtr VideoStream::to_system_memory(FramePtr frame) const {
     if (hardware_format_ == AV_PIX_FMT_NONE || frame->format != hardware_format_) {
         return frame;
     }

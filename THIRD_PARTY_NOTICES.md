@@ -54,6 +54,8 @@ ONNX Runtime is linked dynamically. An own build with the WebGPU execution provi
 | [Hugging Face Transformers](https://github.com/huggingface/transformers) | Loading DINOv2 | Apache-2.0 |
 | [ONNX](https://github.com/onnx/onnx) | Model export | Apache-2.0 |
 | [NumPy](https://numpy.org/) | Training | BSD-3-Clause |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) (Python) | Checking exported models | MIT |
+| [pytest](https://pytest.org/) | Tests of the training code (development only) | MIT |
 
 ## Code adapted from spin-detector (MIT License)
 
@@ -65,13 +67,16 @@ file and the changes made, and its SPDX identifier is
 
 ### Adopted files
 
-None yet. Planned (later phases):
-
-| Original file in spin-detector | Target in this project | Changes |
+| Original file in spin-detector | File in this project | Changes |
 |---|---|---|
-| `src/supervised/mstcn_model.py` | `training/` | adapted to embedding input |
-| `src/evaluation/metrics.py` | `training/` and C++ evaluation | fps-independent parameters |
-| `src/supervised/common.py` (`viterbi_decode`), `Rally` segment logic | C++ (`detect`) | ported to C++, fps-independent parameters |
+| `src/supervised/mstcn_model.py` (`DilatedLayer`, `PredictionStage`, `MSTCN`) | `training/ttrally_training/model.py` | image feature input with normalisation and input dropout; temperature in the export wrapper; variants removed |
+| `src/supervised/mstcn_model.py` (`focal_loss`, `smooth_labels_boundary`) | `training/ttrally_training/losses.py` | padding mask; smoothing width in seconds, without SciPy |
+| `src/supervised/common.py` (`SignalDataset`) | `training/ttrally_training/windows.py` | window length and shift in seconds; random offsets; padding mask; relative noise |
+| `src/fusion/combine.py` (`scores_to_segments`), `src/supervised/common.py` (`viterbi_decode`, `viterbi_to_rallies`) | `training/ttrally_training/decoding.py` | parameters in seconds; Viterbi with mean durations; serialisable parameters |
+| `src/evaluation/metrics.py` (`SegmentMetrics`, `evaluate`) | `training/ttrally_training/metrics.py` | boundary errors in seconds; aggregation |
+| `src/supervised/mstcn_model.py` (`train_one_fold`, `_calibrate_temperature`, `run_lovo`), `src/supervised/common.py` (`sweep_params`) | `training/ttrally_training/training.py` | normalisation, masks, leave-one-group-out, decoding tuned on the other groups only |
+
+Planned (later phases): the decoding and the metrics are ported to C++ for `ttrally detect`.
 
 ### MIT License text of spin-detector
 

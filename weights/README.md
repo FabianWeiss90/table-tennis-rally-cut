@@ -11,8 +11,9 @@ Per-frame rally / no-rally segmentation of table tennis videos recorded from a f
 
 ## Model
 
-- Architecture: MS-TCN on per-frame embeddings of a pretrained image backbone (to be decided)
-- Input: embeddings at 10 fps
+- Architecture: MS-TCN (adapted from spin-detector) on per-frame features of DINOv2 ViT-B/14
+  (class token, mean and 2x2 quadrant means of the patch tokens; 4608 values)
+- Input: features at 10 per second, as written by `ttrally features`
 - Output: per-frame rally probability, decoded into segments by `ttrally detect`
 - Format: ONNX (`*.onnx`); optional training checkpoints as `*.safetensors` (stored via Git LFS)
 

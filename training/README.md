@@ -46,6 +46,69 @@ uv run python -m ttrally_training.make_test_model --out ../tests/fixtures/tiny_b
 
 Writes the tiny model with the same interface that the C++ tests use instead of the large one.
 
-## Training
+## Training the rally detector
 
-Not written yet (phase 4).
+```sh
+uv run python -m ttrally_training.train
+```
+
+Trains the rally detector (an MS-TCN, adapted from spin-detector) on the features of all
+annotated videos and exports it to `../weights/rally-detector.onnx`, with a report next to it
+(`rally-detector.report.json`).
+
+**Which videos are used.** Every video with labels in `../annotations/<video_id>.csv`, features in
+`../data/features/<video_id>/` and a **complete review** in `annotate` (every segment and gap
+done, see `annotations/<video_id>.review.csv`). Videos with open items are skipped with a note,
+because an unchecked gap may hide a missed rally that would be learned as "no rally". All rallies
+count, including those flagged `aborted_toss` or `let`. All features must come from the same
+image model variant, execution provider and settings (e.g. all from the fp16 model on WebGPU);
+mixed features are refused.
+
+**What happens.**
+
+1. Cross-validation: each video is held out once, a model is trained on the others and predicts
+   it. The decoding parameters (threshold or Viterbi, see below) for a held-out video are tuned on
+   the predictions of the other videos only. The output shows segment F1, precision, recall and
+   the mean boundary error in seconds per video and on average; these numbers estimate how well
+   the detector works on a new video.
+2. The decoding parameters that work best on all held-out predictions are chosen.
+3. The final model is trained on all videos, calibrated (temperature scaling) and exported.
+
+Per row of the features (10 per second), the model returns a rally probability; `ttrally detect`
+turns these into rallies with the stored decoding: either a threshold with merging of short
+interruptions and a minimum length, or a two-state Viterbi decoder with mean rally and pause
+durations. All durations are in seconds, independent of the frame rate.
+
+**Options.**
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--groups FILE` | one group per video | CSV `video_id,group`: videos of one group (e.g. one YouTube channel or the same players) are held out together, so the evaluation is not flattered by near-identical videos |
+| `--runs N` | 1 | cross-validation runs with different seeds, averaged (more stable numbers) |
+| `--epochs`, `--hidden`, `--levels`, `--stages` | 120, 128, 8, 4 | training length and model size |
+| `--skip-evaluation` | – | train only the final model, with default decoding (also used automatically with fewer than two groups) |
+| `--videos ID ...` | all annotated | restrict the videos |
+| `--device` | `auto` | `cuda` if PyTorch sees a GPU (CUDA or ROCm build), else `cpu` |
+| `--out`, `--report` | `../weights/rally-detector.onnx` | output files |
+
+**Duration.** On a CPU with 12 threads, one epoch takes about 7 s per 30 minutes of training
+video. Six videos of 10 minutes: about 30 minutes per model, about 3 hours including the
+cross-validation (one model per held-out video). PyTorch is installed as a CPU build; a GPU build
+shortens this considerably.
+
+**Exported model.** Input `features` (1, rows, 4608) float32 exactly as `ttrally features` writes
+them (normalisation is part of the model), output `rally_probability` (1, rows). Metadata:
+`ttrally.kind`, `ttrally.backbone` (e.g. `facebook/dinov2-base (fp16)`),
+`ttrally.backbone_execution_provider`, `ttrally.parts`, `ttrally.part_dims`, `ttrally.input_size`,
+`ttrally.sample_rate_hz`, `ttrally.decoding` (JSON) and `ttrally.training` (JSON: videos, rallies,
+temperature, cross-validation results). `ttrally detect` uses them to refuse features of another
+model variant.
+
+## Tests
+
+```sh
+uv run pytest
+```
+
+Synthetic data only (no videos needed): label derivation, video selection, decoding, metrics,
+training windows, a short training with cross-validation and the ONNX export.

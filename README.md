@@ -262,7 +262,9 @@ uv sync
 
 Training runs on the CPU. A GPU is optional: CUDA, or ROCm builds of PyTorch on Linux. ROCm on
 Fedora is best-effort, because Fedora is not an officially supported ROCm distribution.
-The training code is not written yet; `training/README.md` describes the model export.
+`training/README.md` describes the export of the image model and the training of the rally
+detector (`uv run python -m ttrally_training.train`); only videos whose review in `annotate` is
+complete are used.
 
 ## GPU support
 

@@ -403,12 +403,22 @@ elsewhere):
    segment that has no rally yet.
 
 Marks are never lost: if start and end are set, they are also saved when you switch to another
-segment or close the window. Marks that are not saved yet are shown in red on the video. Segments
-and gaps that contain a rally are marked as done automatically; X (segment without a rally) and
-R (gap checked) only keep the progress list tidy and are optional. The progress is kept locally
-in `data/annotate/`. Closing the window ends the session; starting it again continues at the
-first open segment or gap. When you close the window while segments still have no rally (and were
-not marked with X), a dialog lists them; you can close anyway or go back to the first of them.
+segment or close the window. Marks that are not saved yet are shown in red on the video.
+
+**A video is finished when every segment and gap is done**, shown as `Segments n/n   Gaps m/m`
+and "Complete" at the top of the list. Only finished videos are used for training, because an
+unchecked gap may hide a missed rally that would be learned as "no rally":
+
+- Segments and gaps that contain a saved rally are done automatically.
+- **X** marks a segment that contains no rally (e.g. a false match of the pre-cut).
+- **R** marks a gap that you watched (e.g. at 4x speed) and that contains no rally.
+
+The progress is saved next to the labels in `annotations/<video_id>.review.csv` (every segment
+and gap with its frame range and status) and versioned with them; progress kept by earlier
+versions in `data/annotate/` is taken over on the next start. Closing the window ends the
+session; starting it again continues at the first open segment or gap. When you close the window
+while segments have no rally or gaps were not checked, a dialog lists them; you can close anyway
+or go back to the first of them.
 
 Keyboard shortcuts (always shown below the video, together with a legend of the timeline colours):
 
@@ -419,8 +429,8 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 | S / E / C | mark start / end / serve hit at the current frame |
 | A / L | toggle "aborted toss" / "let" |
 | Enter / Esc | save the rally and go to the next segment / discard the marks |
-| X | the segment contains no rally (optional) |
-| R | the gap was checked and contains no rally (optional) |
+| X | the segment contains no rally |
+| R | the gap was checked and contains no rally |
 | O | reopen the item |
 | Del | delete the saved rally at the current frame |
 | N / P | next / previous open item |

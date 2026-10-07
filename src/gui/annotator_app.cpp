@@ -48,7 +48,7 @@ constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
     {"A / L", "toggle aborted toss / let"},
     {"Enter", "save rally, go to next segment"},
     {"Esc", "discard marks"},
-    {"X / R", "no rally here (optional)"},
+    {"X / R", "segment without rally / gap checked"},
     {"N / P", "next / previous open item"},
     {"O", "reopen item"},
     {"Del", "delete the rally at this frame"},
@@ -58,6 +58,7 @@ constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
 const ImVec4 kErrorColor{1.0F, 0.45F, 0.4F, 1.0F};
 const ImVec4 kKeyColor{1.0F, 0.85F, 0.45F, 1.0F};
 const ImVec4 kMutedColor{0.6F, 0.6F, 0.65F, 1.0F};
+const ImVec4 kDoneColor{0.5F, 0.85F, 0.5F, 1.0F};
 
 ImVec4 status_color(ReviewStatus status) {
     switch (status) {
@@ -196,11 +197,11 @@ class AnnotatorApp {
         ImGui::End();
     }
 
-    /// Closing: saves complete marks, then asks for confirmation if segments have no rally or
-    /// incomplete marks would be lost.
+    /// Closing: saves complete marks, then asks for confirmation if segments have no rally,
+    /// gaps were not checked or incomplete marks would be lost.
     void request_close() {
         const bool saved = save_pending_marks();
-        if (saved && session_.draft().empty() && session_.segments_without_rally().empty()) {
+        if (saved && session_.draft().empty() && session_.plan().progress().complete()) {
             close_confirmed_ = true;
         } else {
             close_dialog_requested_ = true;
@@ -578,6 +579,12 @@ class AnnotatorApp {
         ImGui::Text("Segments %zu/%zu   Gaps %zu/%zu   Rallies %zu", progress.candidates_done,
                     progress.candidates, progress.gaps_done, progress.gaps,
                     session_.sheet().rallies().size());
+        if (progress.complete()) {
+            ImGui::TextColored(kDoneColor, "Complete: the video can be used for training.");
+        } else {
+            ImGui::TextColored(kMutedColor,
+                               "Training uses the video once every segment and gap is done.");
+        }
         ImGui::Separator();
     }
 
@@ -768,12 +775,23 @@ class AnnotatorApp {
         } else if (!session_.draft().empty()) {
             ImGui::TextColored(kErrorColor, "The current marks are incomplete and will be lost.");
         }
-        const auto open = session_.segments_without_rally();
-        if (!open.empty()) {
-            ImGui::Text("%zu segment(s) have no rally:", open.size());
-            ImGui::TextWrapped("%s", segment_list(open).c_str());
+        const auto segments = session_.segments_without_rally();
+        if (!segments.empty()) {
+            ImGui::Text("%zu segment(s) have no rally:", segments.size());
+            ImGui::TextWrapped("%s", segment_list(segments).c_str());
             ImGui::TextColored(kMutedColor, "Press X on a segment that really has no rally.");
         }
+        const auto gaps = session_.unchecked_gaps();
+        if (!gaps.empty()) {
+            ImGui::Text("%zu gap(s) were not checked:", gaps.size());
+            ImGui::TextWrapped("%s", segment_list(gaps).c_str());
+            ImGui::TextColored(kMutedColor, "Watch each gap and press R if it has no rally.");
+        }
+        if (!segments.empty() || !gaps.empty()) {
+            ImGui::TextColored(kErrorColor,
+                               "Training skips this video until every item is done.");
+        }
+        const auto first_open = session_.plan().first_open();
         ImGui::Spacing();
         if (ImGui::Button("Close anyway")) {
             close_confirmed_ = true;
@@ -782,8 +800,8 @@ class AnnotatorApp {
         ImGui::SameLine();
         if (ImGui::Button("Back") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
             ImGui::CloseCurrentPopup();
-            if (!open.empty()) {
-                session_.select_item(open.front());
+            if (first_open) {
+                session_.select_item(*first_open);
                 show_current_item();
             }
         }

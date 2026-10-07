@@ -37,17 +37,21 @@ TEST_CASE("label files use the documented format") {
     AnnotationSheet sheet("match_a", {60000, 1001}, 20000);
     sheet.add({12950, 13104, {}, true, ""});
     sheet.add({10234, 10811, 10262, false, ""});
+    sheet.add({14000, 14100, {}, false, "net", true});
     repository.save(sheet);
 
     CHECK(read_file(dir / "match_a.csv") ==
           "video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes\n"
           "match_a,1,10234,10811,59.94,10262,,\n"
-          "match_a,2,12950,13104,59.94,,aborted_toss,\n");
+          "match_a,2,12950,13104,59.94,,aborted_toss,\n"
+          "match_a,3,14000,14100,59.94,,let,net\n");
 
     const auto loaded = repository.load("match_a");
-    REQUIRE(loaded.size() == 2);
+    REQUIRE(loaded.size() == 3);
     CHECK(loaded[0].serve_contact_frame == 10262);
     CHECK(loaded[1].aborted_toss);
+    CHECK_FALSE(loaded[1].let);
+    CHECK(loaded[2].let);
     CHECK(repository.load("other_video").empty());
     std::filesystem::remove_all(dir);
 }

@@ -20,11 +20,12 @@ struct RallyDraft {
     std::optional<std::int64_t> serve_contact_frame;
     bool aborted_toss = false;
     std::string notes;
+    bool let = false;
 
     [[nodiscard]] bool complete() const noexcept { return start_frame && end_frame; }
     [[nodiscard]] bool empty() const noexcept {
         return !editing && !start_frame && !end_frame && !serve_contact_frame && !aborted_toss &&
-               notes.empty();
+               !let && notes.empty();
     }
 };
 
@@ -61,6 +62,7 @@ class AnnotationSession {
     void mark_serve_contact(std::int64_t frame);
     void clear_serve_contact();
     void set_aborted_toss(bool aborted);
+    void set_let(bool let);
     void set_notes(std::string notes);
     void discard_draft();
     /// Loads a saved rally into the draft for editing.

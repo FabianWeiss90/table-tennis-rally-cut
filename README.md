@@ -367,7 +367,7 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 | Left / Right | one frame back / forward (Shift: 10 frames, Ctrl: 1 second) |
 | Space, `[` / `]` | play / pause, slower / faster (0.1x to 4x) |
 | S / E / C | mark start / end / serve hit at the current frame |
-| A | toggle "aborted toss" |
+| A / L | toggle "aborted toss" / "let" |
 | Enter / Esc | save the rally and go to the next segment / discard the marks |
 | X | the segment contains no rally (optional) |
 | R | the gap was checked and contains no rally (optional) |
@@ -397,6 +397,9 @@ Labels follow these binding definitions:
 - **Bouncing the ball before serving** is not part of the rally.
 - **Aborted toss** (ball tossed and caught again): counts as a very short rally with the flag
   `aborted_toss`.
+- **Let** (serve touching the net, replayed): counts as its own rally with the flag `let`. It
+  starts with the toss like every rally and ends when play is stopped. A rally cannot be both an
+  aborted toss and a let.
 - **Serve contact** (optional): the frame of racket contact on the serve.
 - Padding for nicer cuts is added only when cutting, never in the labels.
 - Annotation is always done at the original's **native frame rate**. Lower rates, such as 10 fps

@@ -74,13 +74,14 @@ void AnnotationSession::mark_serve_contact(std::int64_t frame) {
 }
 void AnnotationSession::clear_serve_contact() { draft_.serve_contact_frame.reset(); }
 void AnnotationSession::set_aborted_toss(bool aborted) { draft_.aborted_toss = aborted; }
+void AnnotationSession::set_let(bool let) { draft_.let = let; }
 void AnnotationSession::set_notes(std::string notes) { draft_.notes = std::move(notes); }
 void AnnotationSession::discard_draft() { draft_ = RallyDraft{}; }
 
 void AnnotationSession::edit_rally(int id) {
     const RallyLabel& rally = sheet_.rally(id);
     draft_ = RallyDraft{id,           rally.start_frame,  rally.end_frame,
-                        rally.serve_contact_frame, rally.aborted_toss, rally.notes};
+                        rally.serve_contact_frame, rally.aborted_toss, rally.notes, rally.let};
 }
 
 int AnnotationSession::save_draft() {
@@ -88,7 +89,7 @@ int AnnotationSession::save_draft() {
         throw AnnotationRuleViolation("Mark the start and the end of the rally first.");
     }
     RallyLabel rally{*draft_.start_frame, *draft_.end_frame, draft_.serve_contact_frame,
-                     draft_.aborted_toss, draft_.notes};
+                     draft_.aborted_toss, draft_.notes, draft_.let};
     const int id = draft_.editing ? sheet_.replace(*draft_.editing, std::move(rally))
                                   : sheet_.add(std::move(rally));
     annotations_.save(sheet_);

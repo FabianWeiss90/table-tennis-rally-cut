@@ -45,7 +45,7 @@ constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
     {"Home / End", "start / end of the item"},
     {"S / E", "mark rally start / end"},
     {"C", "mark serve hit (optional)"},
-    {"A", "toggle aborted toss"},
+    {"A / L", "toggle aborted toss / let"},
     {"Enter", "save rally, go to next segment"},
     {"Esc", "discard marks"},
     {"X / R", "no rally here (optional)"},
@@ -362,6 +362,9 @@ class AnnotatorApp {
         if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
             session_.set_aborted_toss(!session_.draft().aborted_toss);
         }
+        if (ImGui::IsKeyPressed(ImGuiKey_L, false)) {
+            session_.set_let(!session_.draft().let);
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
             ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
             save_draft();
@@ -659,6 +662,11 @@ class AnnotatorApp {
         if (ImGui::Checkbox("Aborted toss (A)", &aborted)) {
             session_.set_aborted_toss(aborted);
         }
+        ImGui::SameLine();
+        bool let = draft.let;
+        if (ImGui::Checkbox("Let (L)", &let)) {
+            session_.set_let(let);
+        }
         draw_notes_field();
 
         if (ImGui::Button("Save rally (Enter)")) {
@@ -726,7 +734,7 @@ class AnnotatorApp {
             const auto& rally = session_.sheet().rally(id);
             ImGui::Text("%d: %lld-%lld%s", id, static_cast<long long>(rally.start_frame),
                         static_cast<long long>(rally.end_frame),
-                        rally.aborted_toss ? " (aborted toss)" : "");
+                        rally.aborted_toss ? " (aborted toss)" : (rally.let ? " (let)" : ""));
             ImGui::SameLine();
             if (ImGui::SmallButton(std::format("Go##rally{}", id).c_str())) {
                 step(rally.start_frame - current_);

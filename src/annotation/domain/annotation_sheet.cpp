@@ -63,6 +63,9 @@ void AnnotationSheet::validate(const RallyLabel& rally, std::optional<std::size_
     if (rally.serve_contact_frame && !rally.contains(*rally.serve_contact_frame)) {
         throw AnnotationRuleViolation("The serve contact must lie inside the rally.");
     }
+    if (rally.aborted_toss && rally.let) {
+        throw AnnotationRuleViolation("A rally cannot be both an aborted toss and a let.");
+    }
     if (rally.notes.find_first_of("\r\n") != std::string::npos) {
         throw AnnotationRuleViolation("Notes must not contain line breaks.");
     }

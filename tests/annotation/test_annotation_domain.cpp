@@ -40,6 +40,10 @@ TEST_CASE("annotation rules are enforced") {
     RallyLabel line_break = rally(400, 500);
     line_break.notes = "two\nlines";
     CHECK_THROWS_AS(sheet.add(line_break), AnnotationRuleViolation);
+    RallyLabel both = rally(400, 500);
+    both.aborted_toss = true;
+    both.let = true;
+    CHECK_THROWS_AS(sheet.add(both), AnnotationRuleViolation);
     CHECK(sheet.add(rally(201, 201)) == 2); // a one-frame aborted toss is allowed
 }
 

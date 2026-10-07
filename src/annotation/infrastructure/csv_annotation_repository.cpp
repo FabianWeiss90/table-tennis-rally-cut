@@ -15,6 +15,7 @@ namespace {
 const io::CsvRow kHeader{"video_id", "rally_id",           "start_frame", "end_frame",
                          "fps",      "serve_contact_frame", "flags",       "notes"};
 constexpr std::string_view kAbortedToss = "aborted_toss";
+constexpr std::string_view kLet = "let";
 
 enum Column { VideoId, RallyId, StartFrame, EndFrame, Fps, ServeContact, Flags, Notes };
 
@@ -54,8 +55,21 @@ RallyLabel parse_row(const io::CsvRow& row, const std::filesystem::path& file) {
         rally.serve_contact_frame = parse_frame(row[ServeContact], file);
     }
     rally.aborted_toss = has_flag(row[Flags], kAbortedToss);
+    rally.let = has_flag(row[Flags], kLet);
     rally.notes = row[Notes];
     return rally;
+}
+
+/// Flags column: names separated by ";".
+std::string flags_of(const RallyLabel& rally) {
+    std::string flags;
+    for (const auto& [set, name] : {std::pair{rally.aborted_toss, kAbortedToss},
+                                    std::pair{rally.let, kLet}}) {
+        if (set) {
+            flags += (flags.empty() ? "" : ";") + std::string(name);
+        }
+    }
+    return flags;
 }
 
 } // namespace
@@ -105,7 +119,7 @@ void CsvAnnotationRepository::save(const AnnotationSheet& sheet) {
                         std::to_string(rally.end_frame), fps,
                         rally.serve_contact_frame ? std::to_string(*rally.serve_contact_frame)
                                                   : "",
-                        rally.aborted_toss ? std::string(kAbortedToss) : "", rally.notes});
+                        flags_of(rally), rally.notes});
     }
     const auto file = file_for(sheet.video_id());
     auto temporary = file;

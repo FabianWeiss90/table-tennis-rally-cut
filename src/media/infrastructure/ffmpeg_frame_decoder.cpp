@@ -20,6 +20,44 @@ constexpr std::int64_t kMaxForwardDecode = 90;
 /// If a seek lands after the wanted frame, seek again this many frames earlier (then further).
 constexpr std::array<std::int64_t, 3> kSeekBackoff{30, 240, 2400};
 
+/// Formats that mark full-range YUV by their name (deprecated in FFmpeg, but still produced by
+/// software decoders for camera footage).
+bool is_full_range_format(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUVJ444P:
+    case AV_PIX_FMT_YUVJ440P:
+    case AV_PIX_FMT_YUVJ411P:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/// Tells the scaler the colour matrix and value range of the frame. Without this, swscale assumes
+/// BT.601 and, for formats such as NV12 from hardware decoders, limited range (16-235), which
+/// shifts colours and clips full-range camera footage, so that hardware and software decoding
+/// would give different images.
+void use_frame_colors(SwsContext* scaler, const AVFrame& frame) {
+    int* source_table = nullptr;
+    int source_full_range = 0;
+    int* target_table = nullptr;
+    int target_full_range = 0;
+    int brightness = 0;
+    int contrast = 0;
+    int saturation = 0;
+    if (sws_getColorspaceDetails(scaler, &source_table, &source_full_range, &target_table,
+                                 &target_full_range, &brightness, &contrast, &saturation) < 0) {
+        return; // not a YUV source
+    }
+    const auto format = static_cast<AVPixelFormat>(frame.format);
+    const bool full_range = frame.color_range == AVCOL_RANGE_JPEG || is_full_range_format(format);
+    // swscale numbers its colour matrices like AVColorSpace and falls back to BT.601
+    sws_setColorspaceDetails(scaler, sws_getCoefficients(frame.colorspace), full_range ? 1 : 0,
+                             target_table, target_full_range, brightness, contrast, saturation);
+}
+
 /// Output size: as requested, or derived from the height keeping the aspect ratio (never
 /// upscaled). Planar YUV needs even sizes.
 FrameSize output_size(int source_width, int source_height, const FrameOutput& output) {
@@ -156,6 +194,7 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         if (!scaler_) {
             throw MediaError("cannot create a scaler for this frame format");
         }
+        use_frame_colors(scaler_.get(), frame);
         VideoFrame output;
         output.index = index;
         output.time_s = static_cast<double>(timestamps_.pts[static_cast<std::size_t>(index)]) *

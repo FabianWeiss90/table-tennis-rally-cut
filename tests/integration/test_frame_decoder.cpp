@@ -9,6 +9,7 @@
 #include "media/infrastructure/ffmpeg_media_reader.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -104,3 +105,50 @@ TEST_CASE("random access delivers exactly the requested frame") {
     }
     std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("hardware and software decoding give the same small RGB frames") {
+    if (!run("ffmpeg -hide_banner -version")) {
+        SKIP("ffmpeg command-line tool not found");
+    }
+    configure_ffmpeg_logging(false);
+    std::random_device device;
+    const auto dir = std::filesystem::temp_directory_path() /
+                     std::format("ttrally_gpu_scale_test_{:08x}", device());
+    std::filesystem::create_directories(dir);
+    const auto clip = dir / "clip.mp4";
+    // H.264 in full range, like camera footage; hardware decoders support H.264 everywhere
+    if (!run(std::format("ffmpeg -hide_banner -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 "
+                         "-vf format=yuvj420p -c:v libx264 -color_range pc -colorspace bt709 "
+                         "-color_primaries bt709 -color_trc bt709 \"{}\"",
+                         clip.string()))) {
+        std::filesystem::remove_all(dir);
+        SKIP("ffmpeg cannot encode H.264");
+    }
+    FfmpegMediaReader reader;
+    const auto content = reader.read(clip, {.audio_sample_rate = std::nullopt,
+                                            .video_stream_index = 0});
+    const FrameOutput output{.height = 224, .width = 392, .layout = PixelLayout::Rgb24};
+    FfmpegFrameDecoderFactory factory;
+    auto frame_of = [&](DecodeBackend backend) {
+        std::vector<std::uint8_t> pixels;
+        factory.open(clip, *content.video_timestamps, backend, output)
+            ->decode_selected(std::vector<std::int64_t>{15}, [&](VideoFrame&& frame) {
+                pixels = std::move(frame.planes);
+                return true;
+            });
+        return pixels;
+    };
+    const auto software = frame_of(DecodeBackend::Cpu);
+    const auto hardware = frame_of(DecodeBackend::Auto); // software again without hardware
+    REQUIRE(software.size() == hardware.size());
+    REQUIRE_FALSE(software.empty());
+    double difference = 0.0;
+    for (std::size_t i = 0; i < software.size(); ++i) {
+        difference += std::abs(static_cast<int>(software[i]) - static_cast<int>(hardware[i]));
+    }
+    // GPU scaling and the decoders' rounding differ slightly; wrong colour range or matrix, or
+    // aliasing, would give a much larger difference
+    CHECK(difference / static_cast<double>(software.size()) < 2.0);
+    std::filesystem::remove_all(dir);
+}
+

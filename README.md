@@ -2,7 +2,7 @@
 
 Automatic rally detection for untrimmed table tennis videos recorded from a **hobby/club camera
 perspective**: a fixed camera on a tripod, looking **diagonally from behind the table**, typically
-recording 4K at 60 fps. The goal is a tool (`ttrally`) that cuts long recordings down to the
+recording Full HD at 60 fps. The goal is a tool (`ttrally`) that cuts long recordings down to the
 rallies.
 
 Existing work such as spin-detector and OpenTTGames targets a **side view**. Its hand-crafted
@@ -28,7 +28,7 @@ for end users yet, and commands, file formats and results may change without not
 
 1. **External pre-cut:** the untrimmed video is uploaded to [Liimba](https://liimba.com), which
    cuts it to rallies (with padding, Full HD). This happens outside this project.
-2. **`align`:** aligns the Liimba cut against the 4K original via audio cross-correlation. The
+2. **`align`:** aligns the Liimba cut against the original via audio cross-correlation. The
    result is a list of segments with times and frame indices in the original, which serve as
    annotation candidates.
 3. **`annotate`:** a small GUI that jumps to each candidate in the original. The user sets the
@@ -40,7 +40,7 @@ for end users yet, and commands, file formats and results may change without not
 6. **`detect`:** C++ inference of the ONNX model and decoding into rally segments.
 7. **`refine`** (optional): frame-accurate boundaries using all native-rate frames around each
    predicted boundary.
-8. **`cut`:** cuts the 4K video according to the resulting cut list.
+8. **`cut`:** cuts the original video according to the resulting cut list.
 
 Everything that touches video runs in C++. Python is only needed to **train** models, never to
 **use** the tool. Because the C++ tool also produces the training features, preprocessing is
@@ -307,7 +307,7 @@ Without a supported GPU, decoding and inference run on the CPU.
 
 ### `align`
 
-Aligns a Liimba cut video with the 4K original via audio cross-correlation:
+Aligns a Liimba cut video with the original via audio cross-correlation:
 
 ```sh
 ttrally align ORIGINAL CUT --out data/align/<video_id>.csv [--report data/align/<video_id>.html]
@@ -349,7 +349,7 @@ Options:
 | `-v`, `--verbose` | – | Show FFmpeg diagnostics |
 
 The first run reads the whole original once (decoding the audio and collecting the frame
-timestamps), which is limited by disk speed for large 4K files. Later runs use the cache.
+timestamps), which is limited by disk speed for long recordings. Later runs use the cache.
 
 `align` aborts with an error if a file cannot be opened or has no audio stream, or if the audio
 cannot be matched reliably, for example because of a music overlay. Visual alignment is not

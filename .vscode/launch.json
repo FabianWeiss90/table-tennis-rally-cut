@@ -299,7 +299,7 @@
     {
       "id": "original",
       "type": "promptString",
-      "description": "Original video (untrimmed 4K)",
+      "description": "Original video (untrimmed)",
       "default": "data/original.mp4"
     },
     {

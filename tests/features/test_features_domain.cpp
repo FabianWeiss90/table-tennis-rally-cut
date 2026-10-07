@@ -64,3 +64,15 @@ TEST_CASE("execution provider names round trip") {
     }
     CHECK(automatic_provider_order().back() == ExecutionProvider::Cpu);
 }
+
+TEST_CASE("features are decoded on the CPU while the model runs on a GPU") {
+    using ttrally::media::DecodeBackend;
+    CHECK(feature_decode_backend(DecodeBackend::Auto, ExecutionProvider::WebGpu) ==
+          DecodeBackend::Cpu);
+    CHECK(feature_decode_backend(DecodeBackend::Auto, ExecutionProvider::Cuda) ==
+          DecodeBackend::Cpu);
+    CHECK(feature_decode_backend(DecodeBackend::Auto, ExecutionProvider::Cpu) ==
+          DecodeBackend::Auto);
+    CHECK(feature_decode_backend(DecodeBackend::Vaapi, ExecutionProvider::WebGpu) ==
+          DecodeBackend::Vaapi);
+}

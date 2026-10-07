@@ -282,6 +282,10 @@ With hardware decoding, frames that are needed much smaller than recorded are fi
 the GPU (FFmpeg filters such as `scale_vaapi`) and only then copied to system memory; the rest of
 the scaling happens on the CPU, because GPU scalers alias visibly at larger factors.
 
+Exception: while the image model of `features` runs on a GPU, `auto` decodes on the CPU (with all
+cores). Hardware decoding would compete with the model for the GPU and slow both down, while the
+CPU would sit idle; on an RX 7800 XT this makes `features` about 1.6 times faster.
+
 **Neural network inference** (ONNX Runtime execution providers):
 
 1. CUDA / TensorRT (NVIDIA)

@@ -200,7 +200,8 @@ ExtractFeaturesResult ExtractFeatures::execute(const ExtractFeaturesRequest& req
     features.values.assign(samples.size() * model.dims(), 0.0F);
 
     const std::vector<std::int64_t> frames = frames_to_decode(samples);
-    auto decoder = decoders_.open(request.video, timestamps, request.decode_backend,
+    auto decoder = decoders_.open(request.video, timestamps,
+                                  feature_decode_backend(request.decode_backend, model.provider),
                                   {.height = model.input.size.height,
                                    .width = model.input.size.width,
                                    .layout = media::PixelLayout::Rgb24});

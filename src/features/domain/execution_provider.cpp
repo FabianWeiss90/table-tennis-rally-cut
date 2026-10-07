@@ -51,4 +51,12 @@ std::vector<ExecutionProvider> automatic_provider_order() {
             ExecutionProvider::WebGpu, ExecutionProvider::Cpu};
 }
 
+media::DecodeBackend feature_decode_backend(media::DecodeBackend requested,
+                                            ExecutionProvider model) noexcept {
+    if (requested != media::DecodeBackend::Auto) {
+        return requested;
+    }
+    return model == ExecutionProvider::Cpu ? media::DecodeBackend::Auto : media::DecodeBackend::Cpu;
+}
+
 } // namespace ttrally::features

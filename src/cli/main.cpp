@@ -4,6 +4,9 @@
 #ifdef TTRALLY_WITH_GUI
 #include "cli/annotate_command.hpp"
 #endif
+#ifdef TTRALLY_WITH_ORT
+#include "cli/features_command.hpp"
+#endif
 #include "cli/devices_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "shared/kernel/version.hpp"
@@ -24,6 +27,9 @@ int main(int argc, char** argv) {
 #ifdef TTRALLY_WITH_GUI
     ttrally::cli::AnnotateCommand annotate(app);
 #endif
+#ifdef TTRALLY_WITH_ORT
+    ttrally::cli::FeaturesCommand features(app);
+#endif
     ttrally::cli::DevicesCommand devices(app);
 
     CLI11_PARSE(app, argc, argv);
@@ -36,6 +42,11 @@ int main(int argc, char** argv) {
 #ifdef TTRALLY_WITH_GUI
         if (annotate.selected()) {
             return annotate.run();
+        }
+#endif
+#ifdef TTRALLY_WITH_ORT
+        if (features.selected()) {
+            return features.run();
         }
 #endif
         if (devices.selected()) {

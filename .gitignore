@@ -1,5 +1,7 @@
 # Build output
 build/
+# Downloaded tools and third-party builds (ONNX Runtime, uv, Python environments)
+external/
 out/
 vcpkg_installed/
 

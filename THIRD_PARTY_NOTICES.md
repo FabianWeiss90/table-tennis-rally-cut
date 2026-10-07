@@ -35,13 +35,25 @@ The project requires FFmpeg features that are available under the LGPL only. Bin
 on Fedora, Debian/Ubuntu) are built with `--enable-gpl`; this is fine for local, private
 builds but not for redistributing binaries.
 
-### Planned components (later phases, not used yet)
+### ONNX Runtime
+
+| Component | Purpose | License | How it is obtained |
+|---|---|---|---|
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Runs the image model in `ttrally features` | MIT | prebuilt release or own build, provided locally (`TTRALLY_ORT_ROOT`) |
+
+ONNX Runtime is linked dynamically. An own build with the WebGPU execution provider also contains
+[Dawn](https://dawn.googlesource.com/dawn) (BSD-3-Clause) and further components listed in the
+`ThirdPartyNotices.txt` of ONNX Runtime; they must be credited when such a build is distributed.
+
+## Models and Python tools (not part of the shipped tool)
 
 | Component | Purpose | License |
 |---|---|---|
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) incl. WebGPU execution provider | Neural network inference | MIT |
-
-This file will be updated when these components are integrated.
+| [DINOv2](https://github.com/facebookresearch/dinov2) weights (`facebook/dinov2-base`) | Image model for the features; downloaded and exported locally, not in the repository | Apache-2.0 |
+| [PyTorch](https://pytorch.org/) | Model export and training | BSD-3-Clause |
+| [Hugging Face Transformers](https://github.com/huggingface/transformers) | Loading DINOv2 | Apache-2.0 |
+| [ONNX](https://github.com/onnx/onnx) | Model export | Apache-2.0 |
+| [NumPy](https://numpy.org/) | Training | BSD-3-Clause |
 
 ## Code adapted from spin-detector (MIT License)
 

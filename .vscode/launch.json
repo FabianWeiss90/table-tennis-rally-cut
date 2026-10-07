@@ -127,10 +127,23 @@
         { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
       ]
     },
+    // Computes the image features of the original (10 per second, DINOv2) for training; uses the
+    // release build because the model is slow in debug builds. Writes data/features/<id>/.
+    {
+      "name": "ttrally features",
+      "presentation": { "group": "1 ttrally", "order": 7 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-release/src/ttrally",
+      "args": ["features", "${input:original}", "--video-id", "${input:videoId}"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-release",
+      "MIMode": "gdb"
+    },
     // Lists the hardware decode backends (VAAPI, CUDA, Vulkan) and the one `auto` selects.
     {
       "name": "ttrally devices",
-      "presentation": { "group": "1 ttrally", "order": 7 },
+      "presentation": { "group": "1 ttrally", "order": 8 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/src/ttrally",
@@ -146,7 +159,7 @@
     // '*' runs all. --break stops in the debugger at the first failing assertion.
     {
       "name": "tests: alignment",
-      "presentation": { "group": "2 tests", "order": 8 },
+      "presentation": { "group": "2 tests", "order": 9 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/tests/alignment_tests",
@@ -162,10 +175,26 @@
     // fakes, label file format). Filter as above.
     {
       "name": "tests: annotation",
-      "presentation": { "group": "2 tests", "order": 9 },
+      "presentation": { "group": "2 tests", "order": 10 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/tests/annotation_tests",
+      "args": ["${input:testFilter}", "--break"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: linux-debug",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    },
+    // Unit tests of the features context (time grid, model input, ExtractFeatures with fakes).
+    // Filter as above.
+    {
+      "name": "tests: features",
+      "presentation": { "group": "2 tests", "order": 11 },
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug/tests/features_tests",
       "args": ["${input:testFilter}", "--break"],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "build: linux-debug",
@@ -178,7 +207,7 @@
     // Filter as above.
     {
       "name": "tests: media",
-      "presentation": { "group": "2 tests", "order": 10 },
+      "presentation": { "group": "2 tests", "order": 12 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/tests/media_tests",
@@ -194,7 +223,7 @@
     // formatting, cache keys). Filter as above.
     {
       "name": "tests: shared",
-      "presentation": { "group": "2 tests", "order": 11 },
+      "presentation": { "group": "2 tests", "order": 13 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/tests/shared_tests",
@@ -210,7 +239,7 @@
     // tool and aligns them. Skipped if ffmpeg is not installed. Filter as above.
     {
       "name": "tests: integration (needs ffmpeg CLI)",
-      "presentation": { "group": "2 tests", "order": 12 },
+      "presentation": { "group": "2 tests", "order": 14 },
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/linux-debug/tests/integration_tests",
@@ -227,7 +256,7 @@
     // Like `ttrally align`, built with MSVC (windows-debug preset) and the Visual Studio debugger.
     {
       "name": "Windows: ttrally align",
-      "presentation": { "group": "3 windows", "order": 13 },
+      "presentation": { "group": "3 windows", "order": 15 },
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/windows-debug/src/ttrally.exe",
@@ -243,7 +272,7 @@
     // Like `ttrally devices` on Windows (probes D3D12VA, D3D11VA, CUDA).
     {
       "name": "Windows: ttrally devices",
-      "presentation": { "group": "3 windows", "order": 14 },
+      "presentation": { "group": "3 windows", "order": 16 },
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/windows-debug/src/ttrally.exe",
@@ -255,7 +284,7 @@
     // Like `tests: alignment` on Windows.
     {
       "name": "Windows: tests (alignment)",
-      "presentation": { "group": "3 windows", "order": 15 },
+      "presentation": { "group": "3 windows", "order": 17 },
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/windows-debug/tests/alignment_tests.exe",

@@ -27,6 +27,10 @@ ttrally_test(annotation_tests
         annotation/test_annotation_session.cpp
     DEPENDS ttrally_annotation_infrastructure)
 
+ttrally_test(features_tests
+    SOURCES features/test_extract_features.cpp features/test_features_domain.cpp
+    DEPENDS ttrally_features_infrastructure)
+
 ttrally_test(alignment_tests
     SOURCES
         alignment/test_align_videos.cpp
@@ -47,6 +51,14 @@ add_test(NAME "architecture: violations are detected"
     COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/architecture/fixtures/violation
             -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture/check_dependencies.cmake)
 set_tests_properties("architecture: violations are detected" PROPERTIES WILL_FAIL TRUE)
+
+if(TTRALLY_HAS_ORT)
+    ttrally_test(onnx_tests
+        SOURCES integration/test_onnx_features.cpp
+        DEPENDS ttrally_features_onnx ttrally_features_infrastructure ttrally_media_infrastructure)
+    target_compile_definitions(onnx_tests
+        PRIVATE TTRALLY_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+endif()
 
 if(TTRALLY_BUILD_GUI)
     ttrally_test(gui_tests

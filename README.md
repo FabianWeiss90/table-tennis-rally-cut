@@ -20,8 +20,9 @@ for end users yet, and commands, file formats and results may change without not
 |---|---|---|
 | 0 | Repository skeleton, build system, licensing | done |
 | 1 | `align`, `devices` | done |
-| 2 | `annotate` (GUI) | implemented, in testing |
-| later | `features`, training, `detect`, `refine`, `cut`, `benchmark` | planned |
+| 2 | `annotate` (GUI) | done |
+| 3 | `features` (image features with DINOv2) | implemented, in testing |
+| later | training, `detect`, `refine`, `cut`, `benchmark` | planned |
 
 ## Pipeline overview
 
@@ -202,9 +203,48 @@ Available presets: `windows-release`, `windows-debug` and `ci-windows`.
 > building and using `ttrally` locally. Anyone who **redistributes** `ttrally` binaries must use
 > an LGPL-only FFmpeg build. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
+### Step 4: ONNX Runtime (for `features`)
+
+`ttrally features` runs the image model with [ONNX Runtime](https://onnxruntime.ai/), which is
+not installed by vcpkg but provided as a prebuilt directory. CMake looks for it in
+`TTRALLY_ORT_ROOT` (`-DTTRALLY_ORT_ROOT=/path/to/onnxruntime`) or, if that is not set, in
+`external/onnxruntime` and then `external/onnxruntime-cpu` inside the repository (`external/` is
+not versioned). Without ONNX Runtime the build succeeds, but the `features` command is missing.
+
+**CPU only** (simplest, works everywhere): the official release.
+
+```sh
+mkdir -p external/onnxruntime-cpu
+curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz \
+    | tar -xz -C external/onnxruntime-cpu --strip-components=1
+```
+
+On Windows, use `onnxruntime-win-x64-1.30.0.zip` from the same release page.
+
+**GPU via WebGPU** (AMD and Intel GPUs without ROCm, e.g. the RX 7800 XT): there is no official
+Linux build with WebGPU, so ONNX Runtime is built from source. This takes a long time (about an
+hour) and needs `patch` (`sudo dnf install patch` / `sudo apt install patch`) in addition to the
+build tools above; the build downloads Dawn (Google's WebGPU implementation) by itself.
+
+```sh
+git clone --depth 1 --branch v1.30.0 --recurse-submodules --shallow-submodules \
+    https://github.com/microsoft/onnxruntime.git external/onnxruntime-src
+cd external/onnxruntime-src
+python3 tools/ci_build/build.py --build_dir ../onnxruntime-build --config Release \
+    --build_shared_lib --parallel 12 --use_webgpu --skip_tests --skip_submodule_sync \
+    --cmake_generator Ninja --compile_no_warning_as_error \
+    --cmake_extra_defines CMAKE_INSTALL_PREFIX=$PWD/../onnxruntime onnxruntime_BUILD_UNIT_TESTS=OFF
+cmake --install ../onnxruntime-build/Release
+```
+
+Reduce `--parallel` if the machine runs out of memory. After a new ONNX Runtime has been put in
+place, configure again (`cmake --preset ...`). `ttrally devices` shows which execution providers
+the ONNX Runtime in use offers.
+
 ### Training environment (optional)
 
-Only needed for training models. Requires Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
+Needed to export the image model for `features` and for training. Requires Python 3.11–3.13 and
+[uv](https://docs.astral.sh/uv/).
 
 | OS | Install uv |
 |---|---|
@@ -222,7 +262,7 @@ uv sync
 
 Training runs on the CPU. A GPU is optional: CUDA, or ROCm builds of PyTorch on Linux. ROCm on
 Fedora is best-effort, because Fedora is not an officially supported ROCm distribution.
-The training code is not written yet.
+The training code is not written yet; `training/README.md` describes the model export.
 
 ## GPU support
 
@@ -238,7 +278,7 @@ be overridden on the command line.
 
 Override: `--decode-backend auto|vaapi|cuda|d3d11va|d3d12va|vulkan|cpu`
 
-**Neural network inference** (ONNX Runtime execution providers, later phases):
+**Neural network inference** (ONNX Runtime execution providers):
 
 1. CUDA / TensorRT (NVIDIA)
 2. MIGraphX (AMD, Linux only, requires ROCm; optional)
@@ -248,7 +288,9 @@ Override: `--decode-backend auto|vaapi|cuda|d3d11va|d3d12va|vulkan|cpu`
 Override: `--ep auto|cuda|tensorrt|migraphx|webgpu|cpu`
 
 AMD Radeon cards such as the **RX 7800 XT** are supported through **VAAPI** for decoding and
-**WebGPU** for inference, with no ROCm installation required.
+**WebGPU** for inference, with no ROCm installation required. Only providers compiled into the
+ONNX Runtime in use are available: the official CPU release offers just the CPU, WebGPU needs the
+own build described in [Step 4](#step-4-onnx-runtime-for-features).
 
 **Drivers:**
 
@@ -384,6 +426,35 @@ default 1024; more memory allows longer steps back without decoding again).
 
 Saved rallies must follow the annotation rules below; the window refuses, for example,
 overlapping rallies or an end before the start.
+
+### `features`
+
+Computes the image features that the rally detector is trained on and later runs on: every 0.1 s
+of the video (on a regular time grid, independent of the frame rate), the frame shown at that
+time is scaled to 392x224 pixels and described by the image model DINOv2 ViT-B/14. Per frame,
+6 x 768 values are stored: the overall description, the average over the whole image and the
+averages over its four quadrants (e.g. near and far player).
+
+```sh
+ttrally features data/original.mp4 --video-id <video_id>
+```
+
+The model is exported once with the training environment (see `training/README.md`) to
+`data/models/dinov2-vitb14.onnx`. Results go to `data/features/<video_id>/`:
+
+| File | Content |
+|---|---|
+| `features.npy` | float32, one row per 0.1 s, 4608 values per row |
+| `times.npy` | float64, time of each row on the video's timeline (seconds) |
+| `frames.npy` | int64, frame of the original used for each row |
+| `manifest.json` | video, model and settings the features were computed with |
+
+Use the same `<video_id>` as for the labels, so that training can match features and labels. A
+second run with the same video, model and settings does nothing; `--force` recomputes.
+
+Options: `--model`, `--out-dir` (default `data/features`), `--ep` (execution provider, see
+[GPU support](#gpu-support)), `--decode-backend`, `--rate` (samples per second, default 10) and
+`--batch` (images per model run, default 16).
 
 ## Annotation definitions and label format
 

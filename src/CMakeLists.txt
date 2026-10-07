@@ -105,6 +105,57 @@ ttrally_layer(ttrally_annotation_infrastructure
         annotation/infrastructure/csv_review_state_store.cpp
     DEPENDS ttrally_annotation_application ttrally_shared_io)
 
+# Features context (phase 3: per-frame image features for training and detection)
+ttrally_layer(ttrally_features_domain
+    SOURCES
+        features/domain/execution_provider.cpp
+        features/domain/model_input.cpp
+        features/domain/sampling.cpp
+    DEPENDS ttrally_shared_kernel ttrally_media_domain)
+
+ttrally_layer(ttrally_features_application
+    SOURCES features/application/extract_features.cpp
+    DEPENDS ttrally_features_domain ttrally_media_application)
+
+ttrally_layer(ttrally_features_infrastructure
+    SOURCES features/infrastructure/npy_feature_store.cpp
+    DEPENDS ttrally_features_application ttrally_shared_io)
+
+# ONNX Runtime (prebuilt, never downloaded by the build). Default: external/onnxruntime (own
+# build with WebGPU), else external/onnxruntime-cpu (official CPU release).
+set(TTRALLY_ORT_ROOT "" CACHE PATH "ONNX Runtime directory with include/ and lib/")
+set(ort_roots ${TTRALLY_ORT_ROOT})
+if(NOT TTRALLY_ORT_ROOT)
+    set(ort_roots ${PROJECT_SOURCE_DIR}/external/onnxruntime ${PROJECT_SOURCE_DIR}/external/onnxruntime-cpu)
+endif()
+# Search again on every configure, so a newly installed ONNX Runtime replaces the cached one
+unset(ORT_INCLUDE_DIR CACHE)
+unset(ORT_LIBRARY CACHE)
+foreach(root IN LISTS ort_roots)
+    find_path(ORT_INCLUDE_DIR onnxruntime_cxx_api.h
+        PATHS ${root}/include ${root}/include/onnxruntime NO_DEFAULT_PATH)
+    find_library(ORT_LIBRARY onnxruntime PATHS ${root}/lib ${root}/lib64 NO_DEFAULT_PATH)
+    if(ORT_INCLUDE_DIR AND ORT_LIBRARY)
+        break()
+    endif()
+    unset(ORT_INCLUDE_DIR CACHE)
+    unset(ORT_LIBRARY CACHE)
+endforeach()
+if(ORT_INCLUDE_DIR AND ORT_LIBRARY)
+    message(STATUS "ONNX Runtime: ${ORT_LIBRARY}")
+    set(TTRALLY_HAS_ORT ON PARENT_SCOPE)
+    set(TTRALLY_HAS_ORT ON)
+    add_library(ttrally_onnxruntime INTERFACE)
+    target_include_directories(ttrally_onnxruntime SYSTEM INTERFACE ${ORT_INCLUDE_DIR})
+    target_link_libraries(ttrally_onnxruntime INTERFACE ${ORT_LIBRARY})
+    ttrally_layer(ttrally_features_onnx
+        SOURCES features/infrastructure/onnx_image_embedder.cpp
+        DEPENDS ttrally_features_application ttrally_shared_io ttrally_onnxruntime)
+else()
+    message(STATUS "ONNX Runtime not found: `ttrally features` is not built (set TTRALLY_ORT_ROOT)")
+    set(TTRALLY_HAS_ORT OFF PARENT_SCOPE)
+endif()
+
 # Annotation GUI (presentation layer, Dear ImGui + SDL3)
 if(TTRALLY_BUILD_GUI)
     find_package(SDL3 CONFIG REQUIRED)
@@ -130,6 +181,11 @@ target_link_libraries(ttrally PRIVATE
     ttrally_alignment_infrastructure
     ttrally_media_infrastructure
     CLI11::CLI11)
+if(TTRALLY_HAS_ORT)
+    target_sources(ttrally PRIVATE cli/features_command.cpp)
+    target_compile_definitions(ttrally PRIVATE TTRALLY_WITH_ORT)
+    target_link_libraries(ttrally PRIVATE ttrally_features_onnx ttrally_features_infrastructure)
+endif()
 if(TTRALLY_BUILD_GUI)
     target_sources(ttrally PRIVATE cli/annotate_command.cpp)
     target_compile_definitions(ttrally PRIVATE TTRALLY_WITH_GUI)

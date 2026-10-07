@@ -3,7 +3,25 @@
 [project]
 name = "ttrally-training"
 version = "0.1.0"
-description = "Training of the ttrally rally detection model (stub, filled in a later phase)"
-requires-python = ">=3.11"
+description = "Backbone export and training of the ttrally rally detection model"
+requires-python = ">=3.11,<3.14"
 license = "PolyForm-Noncommercial-1.0.0"
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+    "onnx>=1.17",
+    "onnxruntime>=1.20",
+    "torch>=2.5",
+    "transformers>=4.46",
+]
+
+[tool.uv]
+package = false
+
+# CPU builds of PyTorch are enough for the export and keep the environment small.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

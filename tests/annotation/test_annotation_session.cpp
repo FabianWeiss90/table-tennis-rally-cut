@@ -31,11 +31,12 @@ class FixedItems final : public ReviewItemSource {
 
 class MemoryStates final : public ReviewStateStore {
   public:
-    ReviewStatusMap load(const std::string& /*video_id*/) override { return saved; }
-    void save(const std::string& /*video_id*/, const ReviewStatusMap& statuses) override {
-        saved = statuses;
+    ReviewStatusMap load(const std::string& /*video_id*/) override { return loaded; }
+    void save(const std::string& /*video_id*/, const std::vector<ReviewItem>& items) override {
+        saved = items;
     }
-    ReviewStatusMap saved;
+    ReviewStatusMap loaded;
+    std::vector<ReviewItem> saved;
 };
 
 struct Fixture {
@@ -150,11 +151,38 @@ TEST_CASE("review progress is stored and restored") {
         session.select_item(1);
         session.reject_current(); // candidate 1
     }
-    CHECK(fixture.states.saved.size() == 2);
+    // Every item is saved with its frames and status, open ones included
+    REQUIRE(fixture.states.saved.size() == 4);
+    CHECK(fixture.states.saved[0].status == ReviewStatus::Reviewed);
+    CHECK(fixture.states.saved[1].status == ReviewStatus::Rejected);
+    CHECK(fixture.states.saved[2].status == ReviewStatus::Open);
+    CHECK(fixture.states.saved[3].first_frame == 2000);
+    for (const auto& item : fixture.states.saved) {
+        fixture.states.loaded[{item.kind, item.source_id}] = item.status;
+    }
 
     auto session = fixture.open();
     CHECK(session.plan().item(0).status == ReviewStatus::Reviewed);
     CHECK(session.plan().item(1).status == ReviewStatus::Rejected);
     CHECK(session.current_item() == 2); // first open item
     REQUIRE(session.select_previous_open() == false);
+}
+
+TEST_CASE("a video is complete once every segment and gap is done") {
+    Fixture fixture;
+    auto session = fixture.open();
+    CHECK_FALSE(session.plan().progress().complete());
+    session.mark_current_reviewed(); // gap 1
+    session.select_item(1);
+    session.mark_start(640);
+    session.mark_end(870);
+    session.save_draft(); // candidate 1
+    CHECK(fixture.states.saved[1].status == ReviewStatus::Annotated); // saved with the rally
+    session.select_item(2);
+    session.mark_current_reviewed(); // gap 2
+    CHECK(session.unchecked_gaps().empty());
+    CHECK_FALSE(session.plan().progress().complete());
+    session.select_item(3);
+    session.reject_current(); // candidate 2
+    CHECK(session.plan().progress().complete());
 }

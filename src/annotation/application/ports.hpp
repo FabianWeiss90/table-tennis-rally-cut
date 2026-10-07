@@ -32,11 +32,14 @@ class ReviewItemSource {
 using ReviewStatusMap = std::map<std::pair<ReviewKind, int>, ReviewStatus>;
 
 /// Port: progress of the review (which candidates were rejected, which gaps were checked).
+/// Saved with all items, their frame ranges and current statuses, so that training can tell
+/// whether every part of a video was looked at.
 class ReviewStateStore {
   public:
     virtual ~ReviewStateStore() = default;
+    /// Saved statuses; Annotated entries are recomputed from the labels by the session.
     [[nodiscard]] virtual ReviewStatusMap load(const std::string& video_id) = 0;
-    virtual void save(const std::string& video_id, const ReviewStatusMap& statuses) = 0;
+    virtual void save(const std::string& video_id, const std::vector<ReviewItem>& items) = 0;
 };
 
 } // namespace ttrally::annotation

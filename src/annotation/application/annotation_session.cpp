@@ -32,6 +32,7 @@ AnnotationSession::AnnotationSession(const SessionSetup& setup, AnnotationReposi
     : video_id_(setup.video_id), annotations_(annotations), states_(states),
       sheet_(load_sheet(setup, annotations)), plan_(load_plan(items, states, setup.video_id)) {
     plan_.refresh(sheet_);
+    save_states(); // also moves progress saved in an older format to the current one
     current_ = plan_.first_open();
     if (!current_ && !plan_.empty()) {
         current_ = 0;
@@ -94,6 +95,7 @@ int AnnotationSession::save_draft() {
                                   : sheet_.add(std::move(rally));
     annotations_.save(sheet_);
     plan_.refresh(sheet_);
+    save_states();
     draft_ = RallyDraft{};
     return id;
 }
@@ -109,6 +111,7 @@ void AnnotationSession::delete_rally(int id) {
     sheet_.remove(id);
     annotations_.save(sheet_);
     plan_.refresh(sheet_);
+    save_states();
     if (draft_.editing == id) {
         draft_ = RallyDraft{};
     } else if (draft_.editing && *draft_.editing > id) {
@@ -137,16 +140,6 @@ void AnnotationSession::set_current_status(ReviewStatus status) {
     save_states();
 }
 
-void AnnotationSession::save_states() {
-    ReviewStatusMap statuses;
-    for (std::size_t i = 0; i < plan_.items().size(); ++i) {
-        const ReviewStatus status = plan_.manual_status(i);
-        if (status != ReviewStatus::Open) {
-            const auto& item = plan_.item(i);
-            statuses[{item.kind, item.source_id}] = status;
-        }
-    }
-    states_.save(video_id_, statuses);
-}
+void AnnotationSession::save_states() { states_.save(video_id_, plan_.items()); }
 
 } // namespace ttrally::annotation

@@ -56,7 +56,7 @@ class OneCandidate final : public annotation::ReviewItemSource {
 class NoStates final : public annotation::ReviewStateStore {
   public:
     annotation::ReviewStatusMap load(const std::string&) override { return {}; }
-    void save(const std::string&, const annotation::ReviewStatusMap&) override {}
+    void save(const std::string&, const std::vector<annotation::ReviewItem>&) override {}
 };
 
 } // namespace

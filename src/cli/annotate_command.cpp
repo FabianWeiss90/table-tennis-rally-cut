@@ -32,9 +32,8 @@ AnnotateCommand::AnnotateCommand(CLI::App& app)
     command_->add_option("--gaps", gaps_csv_, "Gaps CSV (default: <segments>.gaps.csv)");
     command_->add_option("--video-id", video_id_,
                          "Video id in the label file (default: name of the segments CSV)");
-    command_->add_option("--annotations-dir", annotations_dir_, "Directory of the label files")
-        ->capture_default_str();
-    command_->add_option("--state-dir", state_dir_, "Directory for the review progress")
+    command_->add_option("--annotations-dir", annotations_dir_,
+                         "Directory of the label files and the review progress")
         ->capture_default_str();
     command_->add_option("--cache-dir", cache_dir_, "Cache for frame timestamps")
         ->capture_default_str();
@@ -76,7 +75,7 @@ int AnnotateCommand::run() {
     // Annotation session with its repositories
     annotation::CsvAnnotationRepository annotations(annotations_dir_);
     annotation::AlignmentReviewSource items(segments_csv_, gaps_csv_);
-    annotation::CsvReviewStateStore states(state_dir_);
+    annotation::CsvReviewStateStore states(annotations_dir_, legacy_state_dir_);
     const Rational fps = timestamps.timeline(info.video->nominal_frame_rate()).nominal_fps();
     annotation::AnnotationSession session({video_id_, fps, timestamps.frame_count()}, annotations,
                                           items, states);

@@ -428,7 +428,7 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 | Mouse wheel | zoom into the video (drag to pan, double-click to reset) |
 
 Options: `--gaps` (default `<segments>.gaps.csv`), `--video-id` (default: name of the segments
-CSV), `--annotations-dir` (default `annotations`), `--state-dir` (default `data/annotate`),
+CSV), `--annotations-dir` (labels and review progress, default `annotations`),
 `--decode-backend`, `--display-height` (default 1080) and `--frame-memory` (MB for decoded frames,
 default 1024; more memory allows longer steps back without decoding again).
 

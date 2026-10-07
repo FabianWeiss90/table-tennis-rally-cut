@@ -85,6 +85,10 @@ class AnnotationSession {
     [[nodiscard]] std::vector<std::size_t> segments_without_rally() const {
         return plan_.open_items(ReviewKind::Candidate);
     }
+    /// Gaps neither containing a rally nor marked as checked.
+    [[nodiscard]] std::vector<std::size_t> unchecked_gaps() const {
+        return plan_.open_items(ReviewKind::Gap);
+    }
     /// Deletes the saved rally containing the frame; returns its id, nullopt if there is none.
     std::optional<int> delete_rally_at(std::int64_t frame);
 

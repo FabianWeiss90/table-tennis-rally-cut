@@ -40,6 +40,11 @@ struct ReviewProgress {
     std::size_t candidates_done = 0;
     std::size_t gaps = 0;
     std::size_t gaps_done = 0;
+
+    /// Every candidate and gap was looked at: the video is ready for training.
+    [[nodiscard]] bool complete() const noexcept {
+        return candidates + gaps > 0 && candidates_done == candidates && gaps_done == gaps;
+    }
 };
 
 /// The list of candidates and gaps in video order, with their review status.

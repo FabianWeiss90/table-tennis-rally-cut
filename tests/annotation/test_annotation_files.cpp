@@ -88,10 +88,31 @@ TEST_CASE("review state round trip") {
     const auto dir = temp_dir();
     CsvReviewStateStore store(dir);
     CHECK(store.load("match_a").empty());
-    store.save("match_a", {{{ReviewKind::Gap, 3}, ReviewStatus::Reviewed},
-                           {{ReviewKind::Candidate, 7}, ReviewStatus::Rejected}});
+    store.save("match_a", {{ReviewKind::Gap, 3, 0, 599, ReviewStatus::Reviewed},
+                           {ReviewKind::Candidate, 7, 600, 900, ReviewStatus::Rejected},
+                           {ReviewKind::Gap, 4, 901, 1999, ReviewStatus::Open}});
+    CHECK(read_file(dir / "match_a.review.csv") ==
+          "kind,id,first_frame,last_frame,status\n"
+          "gap,3,0,599,reviewed\n"
+          "candidate,7,600,900,rejected\n"
+          "gap,4,901,1999,open\n");
     const auto loaded = store.load("match_a");
-    REQUIRE(loaded.size() == 2);
+    REQUIRE(loaded.size() == 3);
     CHECK(loaded.at({ReviewKind::Gap, 3}) == ReviewStatus::Reviewed);
+    CHECK(loaded.at({ReviewKind::Candidate, 7}) == ReviewStatus::Rejected);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("review progress of the older local format is read") {
+    const auto dir = temp_dir();
+    std::filesystem::create_directories(dir / "old");
+    {
+        std::ofstream out(dir / "old" / "match_a.review.csv");
+        out << "kind,id,status\ngap,3,reviewed\n";
+    }
+    CsvReviewStateStore store(dir / "new", dir / "old");
+    CHECK(store.load("match_a").at({ReviewKind::Gap, 3}) == ReviewStatus::Reviewed);
+    store.save("match_a", {{ReviewKind::Gap, 3, 0, 599, ReviewStatus::Open}});
+    CHECK(store.load("match_a").at({ReviewKind::Gap, 3}) == ReviewStatus::Open); // new file wins
     std::filesystem::remove_all(dir);
 }

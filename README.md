@@ -447,10 +447,20 @@ The model is exported once with the training environment (see `training/README.m
 | `features.npy` | float32, one row per 0.1 s, 4608 values per row |
 | `times.npy` | float64, time of each row on the video's timeline (seconds) |
 | `frames.npy` | int64, frame of the original used for each row |
-| `manifest.json` | video, model and settings the features were computed with |
+| `manifest.json` | video, model, execution provider and settings the features were computed with |
 
 Use the same `<video_id>` as for the labels, so that training can match features and labels. A
 second run with the same video, model and settings does nothing; `--force` recomputes.
+
+**Faster on GPUs: float16 model.** A model exported with `--precision fp16` runs about four times
+faster with WebGPU (RX 7800 XT: about 9 instead of 34 ms per image) but is slower on the CPU. Its
+features differ from those of the float32 model, with WebGPU by about 5 % on average. The rally
+detector must therefore be trained on features from the same model variant, ideally computed on
+the same execution provider, as the features it is later used with. The default is float32.
+
+```sh
+ttrally features data/original.mp4 --video-id <video_id> --model data/models/dinov2-vitb14-fp16.onnx
+```
 
 Options: `--model`, `--out-dir` (default `data/features`), `--ep` (execution provider, see
 [GPU support](#gpu-support)), `--decode-backend`, `--rate` (samples per second, default 10) and

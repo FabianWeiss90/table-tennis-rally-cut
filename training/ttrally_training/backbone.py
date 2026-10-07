@@ -22,7 +22,12 @@ PATCH_SIZE = 14
 
 
 class PooledBackbone(nn.Module):
-    """DINOv2 followed by class-token, global and 2x2 quadrant pooling."""
+    """DINOv2 followed by class-token, global and 2x2 quadrant pooling, for one input size.
+
+    DINOv2 interpolates its position embeddings to the input size in every forward pass. The
+    size is fixed here, so they are interpolated once and stored; the exported model then has no
+    interpolation node, which some execution providers and float16 conversion do not support.
+    """
 
     def __init__(self, dinov2: nn.Module, height: int, width: int) -> None:
         super().__init__()
@@ -31,6 +36,15 @@ class PooledBackbone(nn.Module):
         self.dinov2 = dinov2
         self.rows = height // PATCH_SIZE
         self.cols = width // PATCH_SIZE
+        embeddings = dinov2.embeddings
+        with torch.no_grad():
+            tokens = torch.zeros(1, 1 + self.rows * self.cols, dinov2.config.hidden_size)
+            positions = embeddings.interpolate_pos_encoding(tokens, height, width)
+        self.register_buffer("positions", positions, persistent=False)
+        embeddings.interpolate_pos_encoding = self._fixed_positions
+
+    def _fixed_positions(self, _embeddings: torch.Tensor, _height: int, _width: int) -> torch.Tensor:
+        return self.positions
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         tokens = self.dinov2(pixel_values=pixel_values).last_hidden_state

@@ -27,7 +27,16 @@ stored as model metadata, where `ttrally features` reads them. The model weights
 the repository.
 
 Options: `--model` (another DINOv2 variant, e.g. `facebook/dinov2-small`), `--height` and
-`--width` (multiples of 14).
+`--width` (multiples of 14), `--precision fp16` (16-bit weights and computations, about four
+times faster on GPUs with WebGPU; features differ slightly, see the main README).
+
+```sh
+uv run python -m ttrally_training.export_backbone --precision fp16 \
+    --out ../data/models/dinov2-vitb14-fp16.onnx
+```
+
+The position embeddings are interpolated to the input size once during the export, so the model
+works for exactly the exported input size.
 
 ## Test model
 

@@ -4,10 +4,14 @@
 
 #pragma once
 
+#include "media/domain/video_frame.hpp"
 #include "media/infrastructure/ffmpeg_api.hpp"
+#include "media/infrastructure/ffmpeg_gpu_scaler.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <optional>
 
 namespace ttrally::media::ff {
 
@@ -32,14 +36,19 @@ class VideoStream {
     [[nodiscard]] FramePtr next_frame();
 
     /// The frame in system memory. Copying a frame from the GPU is expensive, so callers do
-    /// this only for frames they actually use.
-    [[nodiscard]] FramePtr to_system_memory(FramePtr frame) const;
+    /// this only for frames they actually use. With `final_size` (the size the caller scales the
+    /// frame to), hardware frames are first shrunk on the GPU where possible (see GpuScaler);
+    /// the result is then smaller than the source but never smaller than final_size.
+    [[nodiscard]] FramePtr to_system_memory(FramePtr frame,
+                                            std::optional<FrameSize> final_size = std::nullopt);
 
   private:
     void open_decoder(DecodeBackend requested);
     bool try_hardware(DecodeBackend candidate);
     /// Sends the next packet to the decoder; returns false (after flushing) at the end.
     bool feed_next_packet();
+    /// The GPU scaler for frames like `frame` needed at final_size; nullptr if there is none.
+    [[nodiscard]] GpuScaler* gpu_scaler_for(const AVFrame& frame, FrameSize final_size);
 
     FormatPtr format_;
     CodecPtr decoder_;
@@ -51,6 +60,8 @@ class VideoStream {
     DecodeBackend backend_ = DecodeBackend::Cpu;
     double frame_duration_s_ = 1.0 / 30.0;
     bool flushed_ = false;
+    std::unique_ptr<GpuScaler> gpu_scaler_;
+    bool gpu_scaling_unavailable_ = false; ///< Set up failed or broke: copy full frames
 };
 
 } // namespace ttrally::media::ff

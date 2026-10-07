@@ -182,7 +182,7 @@ class FfmpegFrameDecoder final : public FrameDecoder {
     }
 
     [[nodiscard]] VideoFrame convert(Decoded decoded) {
-        const auto software = stream_.to_system_memory(std::move(decoded.frame));
+        const auto software = stream_.to_system_memory(std::move(decoded.frame), size_);
         const AVFrame& frame = *software;
         const std::int64_t index = decoded.index;
         const AVPixelFormat target_format =

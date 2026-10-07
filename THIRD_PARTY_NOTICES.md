@@ -9,7 +9,7 @@ under CC BY-NC 4.0 (see [`weights/LICENSE`](weights/LICENSE)).
 
 | Component | Purpose | License | How it is obtained |
 |---|---|---|---|
-| [FFmpeg](https://ffmpeg.org/) (libavformat, libavcodec, libavutil, libswscale, libswresample) | Video/audio decoding, scaling, resampling | LGPL-2.1-or-later | Linux: system packages; Windows: vcpkg |
+| [FFmpeg](https://ffmpeg.org/) (libavformat, libavcodec, libavfilter, libavutil, libswscale, libswresample) | Video/audio decoding, scaling, resampling | LGPL-2.1-or-later | Linux: system packages; Windows: vcpkg |
 | [pocketfft](https://github.com/mreineck/pocketfft) (C++ header-only) | FFT for audio alignment | BSD-3-Clause | vcpkg |
 | [CLI11](https://github.com/CLIUtils/CLI11) | Command-line parsing | BSD-3-Clause | vcpkg |
 | [Catch2](https://github.com/catchorg/Catch2) v3 | Unit tests (not part of the shipped tool) | BSL-1.0 | vcpkg |

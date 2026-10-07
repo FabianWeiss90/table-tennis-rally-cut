@@ -19,7 +19,7 @@ if(WIN32)
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-        libavformat libavcodec libavutil libswscale libswresample)
+        libavformat libavcodec libavfilter libavutil libswscale libswresample)
     target_link_libraries(ttrally_ffmpeg INTERFACE PkgConfig::FFMPEG)
 endif()
 
@@ -57,6 +57,7 @@ ttrally_layer(ttrally_media_infrastructure
         media/infrastructure/ffmpeg_decode_backend_probe.cpp
         media/infrastructure/ffmpeg_frame_decoder.cpp
         media/infrastructure/ffmpeg_frame_sampler.cpp
+        media/infrastructure/ffmpeg_gpu_scaler.cpp
         media/infrastructure/ffmpeg_logging.cpp
         media/infrastructure/ffmpeg_media_probe.cpp
         media/infrastructure/ffmpeg_media_reader.cpp

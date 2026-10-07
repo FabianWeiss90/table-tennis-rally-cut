@@ -147,14 +147,39 @@ bool VideoStream::feed_next_packet() {
     return true;
 }
 
-FramePtr VideoStream::to_system_memory(FramePtr frame) const {
+FramePtr VideoStream::to_system_memory(FramePtr frame, std::optional<FrameSize> final_size) {
     if (hardware_format_ == AV_PIX_FMT_NONE || frame->format != hardware_format_) {
         return frame;
+    }
+    if (final_size) {
+        if (GpuScaler* scaler = gpu_scaler_for(*frame, *final_size)) {
+            try {
+                return scaler->download(*frame);
+            } catch (const MediaError&) {
+                // e.g. the stream changed its size; copy full frames from now on
+                gpu_scaler_.reset();
+                gpu_scaling_unavailable_ = true;
+            }
+        }
     }
     auto software = make_frame();
     check(av_hwframe_transfer_data(software.get(), frame.get(), 0), "transfer of hardware frame");
     check(av_frame_copy_props(software.get(), frame.get()), "frame properties");
     return software;
+}
+
+GpuScaler* VideoStream::gpu_scaler_for(const AVFrame& frame, FrameSize final_size) {
+    if (gpu_scaling_unavailable_) {
+        return nullptr;
+    }
+    if (!gpu_scaler_) {
+        const FrameSize size = gpu_scaled_size({frame.width, frame.height}, final_size);
+        if (size.width < frame.width || size.height < frame.height) {
+            gpu_scaler_ = GpuScaler::create(backend_, frame, size);
+        }
+        gpu_scaling_unavailable_ = !gpu_scaler_;
+    }
+    return gpu_scaler_.get();
 }
 
 } // namespace ttrally::media::ff

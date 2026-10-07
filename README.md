@@ -89,8 +89,8 @@ sudo apt install build-essential cmake ninja-build pkg-config git git-lfs curl z
     autoconf autoconf-archive automake libtool
 
 # FFmpeg development headers and VAAPI drivers
-sudo apt install libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev \
-    mesa-va-drivers vainfo
+sudo apt install libavformat-dev libavcodec-dev libavfilter-dev libavutil-dev libswscale-dev \
+    libswresample-dev mesa-va-drivers vainfo
 ```
 
 A C++20 compiler and CMake ≥ 3.25 are required. Debian 12 (bookworm) and Ubuntu 24.04 or newer
@@ -277,6 +277,10 @@ be overridden on the command line.
 | Windows | D3D12VA → D3D11VA → CUDA/NVDEC → software |
 
 Override: `--decode-backend auto|vaapi|cuda|d3d11va|d3d12va|vulkan|cpu`
+
+With hardware decoding, frames that are needed much smaller than recorded are first halved on
+the GPU (FFmpeg filters such as `scale_vaapi`) and only then copied to system memory; the rest of
+the scaling happens on the CPU, because GPU scalers alias visibly at larger factors.
 
 **Neural network inference** (ONNX Runtime execution providers):
 

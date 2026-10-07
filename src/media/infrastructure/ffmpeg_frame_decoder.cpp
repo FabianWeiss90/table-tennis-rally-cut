@@ -20,8 +20,13 @@ constexpr std::int64_t kMaxForwardDecode = 90;
 /// If a seek lands after the wanted frame, seek again this many frames earlier (then further).
 constexpr std::array<std::int64_t, 3> kSeekBackoff{30, 240, 2400};
 
-FrameSize output_size(int source_width, int source_height, int requested_height) {
-    const int height = std::min(requested_height, source_height) / 2 * 2;
+/// Output size: as requested, or derived from the height keeping the aspect ratio (never
+/// upscaled). Planar YUV needs even sizes.
+FrameSize output_size(int source_width, int source_height, const FrameOutput& output) {
+    if (output.width > 0) {
+        return {output.width, output.height};
+    }
+    const int height = std::min(output.height, source_height) / 2 * 2;
     const double aspect = static_cast<double>(source_width) / source_height;
     const int width = static_cast<int>(std::lround(height * aspect / 2.0)) * 2;
     return {width, height};
@@ -30,13 +35,14 @@ FrameSize output_size(int source_width, int source_height, int requested_height)
 class FfmpegFrameDecoder final : public FrameDecoder {
   public:
     FfmpegFrameDecoder(const std::filesystem::path& path, VideoTimestamps timestamps,
-                       DecodeBackend requested, int output_height)
+                       DecodeBackend requested, const FrameOutput& output)
         : stream_(path, requested), timestamps_(std::move(timestamps)),
-          size_(output_size(stream_.width(), stream_.height(), output_height)) {
+          size_(output_size(stream_.width(), stream_.height(), output)), layout_(output.layout) {
         if (timestamps_.pts.empty()) {
             throw MediaError(path.string() + " has no video frames");
         }
-        if (size_.width <= 0 || size_.height <= 0) {
+        const bool odd = size_.width % 2 != 0 || size_.height % 2 != 0;
+        if (size_.width <= 0 || size_.height <= 0 || (layout_ == PixelLayout::Yuv420 && odd)) {
             throw std::invalid_argument("invalid output frame size");
         }
     }
@@ -51,33 +57,70 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         if (first > last) {
             return;
         }
-        if (!can_continue_to(first)) {
-            seek_before(first, 0);
-        }
-        for (std::size_t attempt = 0;;) {
-            auto frame = stream_.next_frame();
-            if (!frame) {
-                next_index_.reset(); // end of file: the next request needs a seek
+        auto decoded = advance_to(first);
+        while (decoded.frame) {
+            if (!consume(convert(*decoded.frame, decoded.index)) || decoded.index >= last) {
                 return;
             }
-            const std::int64_t index = index_of(frame->best_effort_timestamp);
-            if (!next_index_ && index > first && attempt < kSeekBackoff.size()) {
-                seek_before(first, kSeekBackoff[attempt++]); // inexact seek landed too late
+            decoded = next();
+        }
+    }
+
+    void decode_selected(std::span<const std::int64_t> indices,
+                         const FrameConsumer& consume) override {
+        for (const std::int64_t target : indices) {
+            if (target < 0 || target >= frame_count()) {
                 continue;
             }
-            next_index_ = index + 1;
-            if (index < first) {
-                continue;
-            }
-            if (!consume(convert(*frame, index)) || index >= last) {
+            const auto decoded = advance_to(target);
+            if (!decoded.frame || !consume(convert(*decoded.frame, decoded.index))) {
                 return;
             }
         }
     }
 
   private:
-    [[nodiscard]] bool can_continue_to(std::int64_t first) const {
-        return next_index_ && first >= *next_index_ && first - *next_index_ <= kMaxForwardDecode;
+    struct Decoded {
+        ff::FramePtr frame; ///< nullptr at the end of the video
+        std::int64_t index = -1;
+    };
+
+    /// The next frame in presentation order.
+    [[nodiscard]] Decoded next() {
+        auto frame = stream_.next_frame();
+        if (!frame) {
+            next_index_.reset(); // end of file: the next request needs a seek
+            return {};
+        }
+        const std::int64_t index = index_of(frame->best_effort_timestamp);
+        next_index_ = index + 1;
+        return {std::move(frame), index};
+    }
+
+    /// Positions the decoder on the target frame (forward decoding or seeking) and returns it.
+    [[nodiscard]] Decoded advance_to(std::int64_t target) {
+        if (!can_continue_to(target)) {
+            seek_before(target, 0);
+        }
+        bool just_seeked = !next_index_;
+        for (std::size_t attempt = 0;;) {
+            Decoded decoded = next();
+            if (!decoded.frame) {
+                return {};
+            }
+            if (just_seeked && decoded.index > target && attempt < kSeekBackoff.size()) {
+                seek_before(target, kSeekBackoff[attempt++]); // inexact seek landed too late
+                continue;
+            }
+            just_seeked = false;
+            if (decoded.index >= target) {
+                return decoded;
+            }
+        }
+    }
+
+    [[nodiscard]] bool can_continue_to(std::int64_t target) const {
+        return next_index_ && target >= *next_index_ && target - *next_index_ <= kMaxForwardDecode;
     }
 
     void seek_before(std::int64_t index, std::int64_t backoff) {
@@ -100,10 +143,12 @@ class FfmpegFrameDecoder final : public FrameDecoder {
     }
 
     [[nodiscard]] VideoFrame convert(const AVFrame& frame, std::int64_t index) {
+        const AVPixelFormat target_format =
+            layout_ == PixelLayout::Rgb24 ? AV_PIX_FMT_RGB24 : AV_PIX_FMT_YUV420P;
         scaler_.reset(sws_getCachedContext(scaler_.release(), frame.width, frame.height,
                                            static_cast<AVPixelFormat>(frame.format), size_.width,
-                                           size_.height, AV_PIX_FMT_YUV420P, SWS_BILINEAR,
-                                           nullptr, nullptr, nullptr));
+                                           size_.height, target_format, SWS_BILINEAR, nullptr,
+                                           nullptr, nullptr));
         if (!scaler_) {
             throw MediaError("cannot create a scaler for this frame format");
         }
@@ -112,12 +157,19 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         output.time_s = static_cast<double>(timestamps_.pts[static_cast<std::size_t>(index)]) *
                         timestamps_.time_base.value();
         output.size = size_;
-        output.planes.resize(VideoFrame::bytes_for(size_));
-        const auto luma =
-            static_cast<std::size_t>(size_.width) * static_cast<std::size_t>(size_.height);
-        std::uint8_t* destination[3] = {output.planes.data(), output.planes.data() + luma,
-                                        output.planes.data() + luma + luma / 4};
-        const int strides[3] = {size_.width, size_.width / 2, size_.width / 2};
+        output.layout = layout_;
+        output.planes.resize(VideoFrame::bytes_for(size_, layout_));
+        std::uint8_t* destination[3] = {output.planes.data(), nullptr, nullptr};
+        int strides[3] = {3 * size_.width, 0, 0};
+        if (layout_ == PixelLayout::Yuv420) {
+            const auto luma =
+                static_cast<std::size_t>(size_.width) * static_cast<std::size_t>(size_.height);
+            destination[1] = output.planes.data() + luma;
+            destination[2] = output.planes.data() + luma + luma / 4;
+            strides[0] = size_.width;
+            strides[1] = size_.width / 2;
+            strides[2] = size_.width / 2;
+        }
         sws_scale(scaler_.get(), frame.data, frame.linesize, 0, frame.height, destination, strides);
         return output;
     }
@@ -125,6 +177,7 @@ class FfmpegFrameDecoder final : public FrameDecoder {
     ff::VideoStream stream_;
     VideoTimestamps timestamps_;
     FrameSize size_;
+    PixelLayout layout_;
     std::optional<std::int64_t> next_index_; ///< Index the decoder delivers next, if known
     ff::SwsPtr scaler_;
 };
@@ -134,8 +187,8 @@ class FfmpegFrameDecoder final : public FrameDecoder {
 std::unique_ptr<FrameDecoder> FfmpegFrameDecoderFactory::open(const std::filesystem::path& path,
                                                               const VideoTimestamps& timestamps,
                                                               DecodeBackend requested,
-                                                              int output_height) {
-    return std::make_unique<FfmpegFrameDecoder>(path, timestamps, requested, output_height);
+                                                              const FrameOutput& output) {
+    return std::make_unique<FfmpegFrameDecoder>(path, timestamps, requested, output);
 }
 
 } // namespace ttrally::media

@@ -84,7 +84,8 @@ int AnnotateCommand::run() {
     // Frame access for display
     media::FfmpegFrameDecoderFactory decoders;
     auto decoder = decoders.open(original_, timestamps,
-                                 *media::parse_decode_backend(decode_backend_), display_height_);
+                                 *media::parse_decode_backend(decode_backend_),
+                                 {.height = display_height_});
     const std::size_t frame_bytes = media::VideoFrame::bytes_for(decoder->frame_size());
     const std::size_t capacity =
         static_cast<std::size_t>(frame_memory_mb_) * 1024 * 1024 / frame_bytes;

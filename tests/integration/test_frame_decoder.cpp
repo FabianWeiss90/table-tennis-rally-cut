@@ -55,7 +55,7 @@ TEST_CASE("random access delivers exactly the requested frame") {
     REQUIRE(timestamps.frame_count() > 300);
 
     FfmpegFrameDecoderFactory factory;
-    auto sequential = factory.open(clip, timestamps, DecodeBackend::Cpu, 180);
+    auto sequential = factory.open(clip, timestamps, DecodeBackend::Cpu, {.height = 180});
     std::map<std::int64_t, std::vector<std::uint8_t>> reference;
     sequential->decode(0, timestamps.frame_count() - 1, [&](VideoFrame&& frame) {
         reference[frame.index] = std::move(frame.planes);
@@ -63,7 +63,7 @@ TEST_CASE("random access delivers exactly the requested frame") {
     });
     REQUIRE(static_cast<std::int64_t>(reference.size()) == timestamps.frame_count());
 
-    auto random_access = factory.open(clip, timestamps, DecodeBackend::Cpu, 180);
+    auto random_access = factory.open(clip, timestamps, DecodeBackend::Cpu, {.height = 180});
     CHECK(random_access->frame_size().height == 180);
     for (const std::int64_t index : {200, 49, 50, 51, 199, 0, 300, 125, 124, 340}) {
         INFO("frame " << index);
@@ -75,6 +75,32 @@ TEST_CASE("random access delivers exactly the requested frame") {
         REQUIRE(delivered);
         CHECK(delivered->index == index);
         CHECK(delivered->planes == reference.at(index));
+    }
+
+    SECTION("selected frames match the sequential ones") {
+        auto selective = factory.open(clip, timestamps, DecodeBackend::Cpu, {.height = 180});
+        const std::vector<std::int64_t> wanted{0, 6, 12, 49, 50, 51, 120, 300, 301, 359};
+        std::vector<std::int64_t> delivered;
+        selective->decode_selected(wanted, [&](VideoFrame&& frame) {
+            CHECK(frame.planes == reference.at(frame.index));
+            delivered.push_back(frame.index);
+            return true;
+        });
+        CHECK(delivered == wanted);
+    }
+    SECTION("RGB output with an exact size") {
+        auto rgb = factory.open(clip, timestamps, DecodeBackend::Cpu,
+                                {.height = 224, .width = 392, .layout = PixelLayout::Rgb24});
+        CHECK(rgb->frame_size().width == 392);
+        std::optional<VideoFrame> frame;
+        rgb->decode_selected(std::vector<std::int64_t>{42}, [&](VideoFrame&& f) {
+            frame = std::move(f);
+            return true;
+        });
+        REQUIRE(frame);
+        CHECK(frame->index == 42);
+        CHECK(frame->layout == PixelLayout::Rgb24);
+        CHECK(frame->planes.size() == static_cast<std::size_t>(392 * 224 * 3));
     }
     std::filesystem::remove_all(dir);
 }

@@ -34,6 +34,12 @@ class CountingDecoder final : public FrameDecoder {
             }
         }
     }
+    void decode_selected(std::span<const std::int64_t> indices,
+                         const FrameConsumer& consume) override {
+        for (const std::int64_t i : indices) {
+            decode(i, i, consume);
+        }
+    }
     std::optional<std::int64_t> fail_at;
 
   private:

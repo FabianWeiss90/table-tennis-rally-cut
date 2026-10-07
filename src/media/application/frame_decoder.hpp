@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <span>
 
 namespace ttrally::media {
 
@@ -30,6 +31,12 @@ class FrameDecoder {
     /// passes each to `consume`. Continues from the current position if possible, otherwise
     /// seeks to the keyframe before `first`.
     virtual void decode(std::int64_t first, std::int64_t last, const FrameConsumer& consume) = 0;
+
+    /// Decodes only the given frames (sorted ascending). Frames in between are decoded but not
+    /// converted, and long distances are skipped by seeking. Much faster than decode() when only
+    /// every n-th frame is needed.
+    virtual void decode_selected(std::span<const std::int64_t> indices,
+                                 const FrameConsumer& consume) = 0;
 };
 
 /// Port: opens frame decoders.
@@ -37,11 +44,12 @@ class FrameDecoderFactory {
   public:
     virtual ~FrameDecoderFactory() = default;
 
-    /// Opens the video stream whose frame timestamps are given. Frames are scaled to
-    /// `output_height` (keeping the aspect ratio, never upscaled).
+    /// Opens the video stream whose frame timestamps are given. Frames are converted to the
+    /// requested layout and scaled to the requested size (with width 0: to the height, keeping
+    /// the aspect ratio and never upscaling).
     [[nodiscard]] virtual std::unique_ptr<FrameDecoder>
     open(const std::filesystem::path& path, const VideoTimestamps& timestamps,
-         DecodeBackend requested, int output_height) = 0;
+         DecodeBackend requested, const FrameOutput& output) = 0;
 };
 
 } // namespace ttrally::media

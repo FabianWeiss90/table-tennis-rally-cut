@@ -13,7 +13,7 @@ class FfmpegFrameDecoderFactory final : public FrameDecoderFactory {
     [[nodiscard]] std::unique_ptr<FrameDecoder> open(const std::filesystem::path& path,
                                                      const VideoTimestamps& timestamps,
                                                      DecodeBackend requested,
-                                                     int output_height) override;
+                                                     const FrameOutput& output) override;
 };
 
 } // namespace ttrally::media

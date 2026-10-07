@@ -87,8 +87,8 @@ TEST_CASE("the annotation window opens and renders frames") {
     annotation::AnnotationSession session({"clip", {60, 1}, timestamps.frame_count()},
                                           annotations, items, states);
     media::FfmpegFrameDecoderFactory decoders;
-    media::FramePrefetcher frames(decoders.open(clip, timestamps, media::DecodeBackend::Cpu, 360),
-                                  64);
+    media::FramePrefetcher frames(
+        decoders.open(clip, timestamps, media::DecodeBackend::Cpu, {.height = 360}), 64);
 
     // TTRALLY_SCREENSHOT_DIR keeps a screenshot of the window for looking at the layout.
     const char* keep = std::getenv("TTRALLY_SCREENSHOT_DIR");

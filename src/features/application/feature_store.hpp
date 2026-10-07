@@ -25,6 +25,9 @@ struct FeatureManifest {
     Rational video_fps;
     std::int64_t video_frame_count = 0;
     std::size_t rows = 0;
+    /// Where the model ran. Not part of the validity check, but recorded because float16 models
+    /// give noticeably different features on different execution providers.
+    std::string execution_provider;
 };
 
 /// Features of one video: one row per sample of the regular time grid.

@@ -11,6 +11,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <random>
 #include <stdexcept>
@@ -172,7 +174,9 @@ TEST_CASE("features are computed for every tenth of a second and stored") {
     CHECK(frames.data[19] == 114);
     const auto times = io::read_npy<double>(dir / "times.npy");
     CHECK(times.data[10] == Catch::Approx(1.0));
-    CHECK(std::filesystem::exists(dir / "manifest.json"));
+    std::ifstream manifest(dir / "manifest.json");
+    const std::string text{std::istreambuf_iterator<char>(manifest), {}};
+    CHECK(text.find("\"execution_provider\": \"cpu\"") != std::string::npos);
 }
 
 TEST_CASE("current features are not recomputed unless forced") {

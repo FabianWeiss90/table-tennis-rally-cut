@@ -79,13 +79,14 @@ std::string manifest_json(const FeatureManifest& m) {
                        "  \"parts\": {},\n"
                        "  \"part_dims\": {},\n"
                        "  \"model\": {},\n"
+                       "  \"execution_provider\": {},\n"
                        "  \"input_size\": [{}, {}],\n"
                        "  {}{}\n"
                        "}}\n",
                        json_string(m.video_id), json_string(m.video_path), m.video_fps.num,
                        m.video_fps.den, m.video_frame_count, m.sample_rate_hz, m.rows,
                        m.parts.size() * m.part_dims, json_strings(m.parts), m.part_dims,
-                       json_string(m.model_name), m.input_width, m.input_height, kFingerprintKey,
+                       json_string(m.model_name), json_string(m.execution_provider), m.input_width, m.input_height, kFingerprintKey,
                        json_string(manifest_fingerprint(m)));
 }
 

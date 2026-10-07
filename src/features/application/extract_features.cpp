@@ -184,7 +184,8 @@ ExtractFeaturesResult ExtractFeatures::execute(const ExtractFeaturesRequest& req
                          model.input.size.height,
                          timeline.nominal_fps(),
                          timestamps.frame_count(),
-                         samples.size()};
+                         samples.size(),
+                         std::string(to_string(model.provider))};
     if (!request.force && store_.is_current(features.manifest)) {
         progress_.report("Features are up to date.");
         return {true, samples.size(), model.dims(), 0.0};

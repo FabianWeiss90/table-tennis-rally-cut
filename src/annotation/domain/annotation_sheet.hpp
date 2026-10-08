@@ -33,6 +33,8 @@ class AnnotationSheet {
     [[nodiscard]] std::int64_t frame_count() const noexcept { return frame_count_; }
     [[nodiscard]] const std::vector<RallyLabel>& rallies() const noexcept { return rallies_; }
     [[nodiscard]] const RallyLabel& rally(int id) const;
+    /// Number of rallies flagged as let.
+    [[nodiscard]] std::size_t let_count() const;
 
     /// Adds a rally and returns its id. Throws AnnotationRuleViolation.
     int add(RallyLabel rally);

@@ -60,6 +60,17 @@ bool AnnotationSession::select_previous_open() {
     return previous.has_value();
 }
 
+bool AnnotationSession::select_next_open_gap() {
+    auto next = plan_.next_open(current_, ReviewKind::Gap);
+    if (!next) {
+        next = plan_.next_open(std::nullopt, ReviewKind::Gap); // wrap around
+    }
+    if (next) {
+        current_ = next;
+    }
+    return next.has_value();
+}
+
 bool AnnotationSession::select_next_open_candidate() {
     const auto next = plan_.next_open(current_, ReviewKind::Candidate);
     if (next) {

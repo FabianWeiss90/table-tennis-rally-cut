@@ -17,6 +17,11 @@ AnnotationSheet::AnnotationSheet(std::string video_id, Rational fps, std::int64_
 
 const RallyLabel& AnnotationSheet::rally(int id) const { return rallies_[position(id)]; }
 
+std::size_t AnnotationSheet::let_count() const {
+    return static_cast<std::size_t>(
+        std::ranges::count_if(rallies_, [](const RallyLabel& rally) { return rally.let; }));
+}
+
 int AnnotationSheet::add(RallyLabel rally) {
     validate(rally, std::nullopt);
     return insert_sorted(std::move(rally));

@@ -316,6 +316,16 @@ class AnnotatorApp {
         }
     }
 
+    /// R: marks the gap as checked and continues with the next gap that is not done yet.
+    void mark_gap_checked() {
+        apply([this] {
+            session_.mark_current_reviewed();
+            if (session_.select_next_open_gap()) {
+                show_current_item();
+            }
+        });
+    }
+
     /// Enter: saves the rally and continues with the next segment that has no rally yet.
     void save_draft() {
         apply([this] {
@@ -383,7 +393,7 @@ class AnnotatorApp {
             apply([this] { session_.reject_current(); });
         }
         if (ImGui::IsKeyPressed(ImGuiKey_R, false)) {
-            apply([this] { session_.mark_current_reviewed(); });
+            mark_gap_checked();
         }
         if (ImGui::IsKeyPressed(ImGuiKey_O, false)) {
             apply([this] { session_.reopen_current(); });
@@ -576,9 +586,11 @@ class AnnotatorApp {
     void draw_progress() const {
         const auto progress = session_.plan().progress();
         ImGui::Text("Video: %s", session_.sheet().video_id().c_str());
-        ImGui::Text("Segments %zu/%zu   Gaps %zu/%zu   Rallies %zu", progress.candidates_done,
-                    progress.candidates, progress.gaps_done, progress.gaps,
-                    session_.sheet().rallies().size());
+        const std::size_t lets = session_.sheet().let_count();
+        ImGui::Text("Segments %zu/%zu   Gaps %zu/%zu   Rallies %zu (incl. %zu %s)",
+                    progress.candidates_done, progress.candidates, progress.gaps_done,
+                    progress.gaps, session_.sheet().rallies().size(), lets,
+                    lets == 1 ? "let" : "lets");
         if (progress.complete()) {
             ImGui::TextColored(kDoneColor, "Complete: the video can be used for training.");
         } else {
@@ -716,7 +728,7 @@ class AnnotatorApp {
                 apply([this] { session_.reject_current(); });
             }
         } else if (ImGui::Button("Gap checked (R)")) {
-            apply([this] { session_.mark_current_reviewed(); });
+            mark_gap_checked();
         }
         ImGui::SameLine();
         if (ImGui::Button("Reopen (O)")) {

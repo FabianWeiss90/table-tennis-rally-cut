@@ -187,6 +187,18 @@ TEST_CASE("a video is complete once every segment and gap is done") {
     CHECK(session.plan().progress().complete());
 }
 
+TEST_CASE("after checking a gap the next open gap is selected") {
+    Fixture fixture;
+    auto session = fixture.open();
+    session.select_item(2); // gap 2, gap 1 is still open
+    session.mark_current_reviewed();
+    REQUIRE(session.select_next_open_gap());
+    CHECK(session.current_item() == 0); // continues from the start
+    session.mark_current_reviewed();
+    CHECK_FALSE(session.select_next_open_gap()); // every gap is done
+    CHECK(session.current_item() == 0);
+}
+
 TEST_CASE("a status for the wrong kind of item is refused with a hint") {
     Fixture fixture;
     auto session = fixture.open();

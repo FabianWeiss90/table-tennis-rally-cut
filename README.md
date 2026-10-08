@@ -408,12 +408,14 @@ Marks are never lost: if start and end are set, they are also saved when you swi
 segment or close the window. Marks that are not saved yet are shown in red on the video.
 
 **A video is finished when every segment and gap is done**, shown as `Segments n/n   Gaps m/m`
-and "Complete" at the top of the list. Only finished videos are used for training, because an
+and "Complete" at the top of the list (next to the number of saved rallies and how many of them
+are lets). Only finished videos are used for training, because an
 unchecked gap may hide a missed rally that would be learned as "no rally":
 
 - Segments and gaps that contain a saved rally are done automatically.
 - **X** marks a segment that contains no rally (e.g. a false match of the pre-cut).
-- **R** marks a gap that you watched (e.g. at 4x speed) and that contains no rally.
+- **R** marks a gap that you watched (e.g. at 4x speed) and that contains no rally, and jumps to
+  the next gap that is not done yet.
 
 The progress is saved next to the labels in `data/annotations/<video_id>.review.csv` (every
 segment and gap with its frame range and status); progress kept by earlier versions in `data/annotate/` is taken over on the next start. Closing the window ends the
@@ -431,7 +433,7 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 | A / L | toggle "aborted toss" / "let" |
 | Enter / Esc | save the rally and go to the next segment / discard the marks |
 | X | the segment contains no rally |
-| R | the gap was checked and contains no rally |
+| R | the gap was checked and contains no rally; go to the next unchecked gap |
 | O | reopen the item |
 | Del | delete the saved rally at the current frame |
 | N / P | next / previous open item |

@@ -27,6 +27,16 @@ TEST_CASE("rallies are kept in order and numbered by position") {
     CHECK_FALSE(sheet.rally_at(250));
 }
 
+TEST_CASE("lets are counted") {
+    AnnotationSheet sheet("match_a", {60, 1}, 10000);
+    sheet.add(rally(100, 200));
+    RallyLabel let = rally(300, 400);
+    let.let = true;
+    sheet.add(let);
+    CHECK(sheet.rallies().size() == 2);
+    CHECK(sheet.let_count() == 1);
+}
+
 TEST_CASE("annotation rules are enforced") {
     auto sheet = empty_sheet();
     sheet.add(rally(100, 200));

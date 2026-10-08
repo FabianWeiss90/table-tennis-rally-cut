@@ -55,6 +55,9 @@ class AnnotationSession {
     bool select_previous_open();
     /// Selects the next segment that has no rally yet (gaps are skipped).
     bool select_next_open_candidate();
+    /// Selects the next gap that is not done yet, continuing from the start if there is none
+    /// after the current item (segments are skipped).
+    bool select_next_open_gap();
 
     // Rally draft
     void mark_start(std::int64_t frame);

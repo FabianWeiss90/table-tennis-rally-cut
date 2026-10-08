@@ -186,3 +186,14 @@ TEST_CASE("a video is complete once every segment and gap is done") {
     session.reject_current(); // candidate 2
     CHECK(session.plan().progress().complete());
 }
+
+TEST_CASE("a status for the wrong kind of item is refused with a hint") {
+    Fixture fixture;
+    auto session = fixture.open();
+    session.select_item(1); // a segment
+    CHECK_THROWS_AS(session.mark_current_reviewed(), AnnotationRuleViolation);
+    session.select_item(0); // a gap
+    CHECK_THROWS_AS(session.reject_current(), AnnotationRuleViolation);
+    CHECK(session.plan().item(0).status == ReviewStatus::Open);
+}
+

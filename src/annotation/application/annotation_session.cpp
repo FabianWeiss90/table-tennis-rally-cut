@@ -135,6 +135,14 @@ void AnnotationSession::set_current_status(ReviewStatus status) {
     if (!current_) {
         return;
     }
+    const ReviewKind kind = plan_.item(*current_).kind;
+    if (status == ReviewStatus::Rejected && kind != ReviewKind::Candidate) {
+        throw AnnotationRuleViolation("X marks a segment without a rally; for a gap press R.");
+    }
+    if (status == ReviewStatus::Reviewed && kind != ReviewKind::Gap) {
+        throw AnnotationRuleViolation("R marks a checked gap; for a segment without a rally "
+                                      "press X.");
+    }
     plan_.set_manual_status(*current_, status);
     plan_.refresh(sheet_);
     save_states();

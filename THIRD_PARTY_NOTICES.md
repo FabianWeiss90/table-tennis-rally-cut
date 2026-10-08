@@ -53,6 +53,7 @@ ONNX Runtime is linked dynamically. An own build with the WebGPU execution provi
 | [PyTorch](https://pytorch.org/) | Model export and training | BSD-3-Clause |
 | [Hugging Face Transformers](https://github.com/huggingface/transformers) | Loading DINOv2 | Apache-2.0 |
 | [ONNX](https://github.com/onnx/onnx) | Model export | Apache-2.0 |
+| [ONNX Script](https://github.com/microsoft/onnxscript) | Model export (PyTorch's ONNX exporter) | MIT |
 | [NumPy](https://numpy.org/) | Training | BSD-3-Clause |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) (Python) | Checking exported models | MIT |
 | [pytest](https://pytest.org/) | Tests of the training code (development only) | MIT |

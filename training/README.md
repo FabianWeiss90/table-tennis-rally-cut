@@ -10,8 +10,8 @@ cd training
 uv sync
 ```
 
-This installs CPU builds of PyTorch, Hugging Face Transformers, ONNX and ONNX Runtime into
-`training/.venv`.
+This installs CPU builds of PyTorch, Hugging Face Transformers, ONNX, ONNX Script (used by
+PyTorch's ONNX exporter) and ONNX Runtime into `training/.venv`.
 
 ## Export the image model for `ttrally features`
 
@@ -36,7 +36,10 @@ uv run python -m ttrally_training.export_backbone --precision fp16 \
 ```
 
 The position embeddings are interpolated to the input size once during the export, so the model
-works for exactly the exported input size.
+works for exactly the exported input size. The attention is exported as plain softmax attention
+(`export_attention` in `backbone.py`, identical results): the default implementation of
+Transformers exports with checks and masks on every attention matrix that make the model up to
+five times slower with WebGPU.
 
 ## Test model
 

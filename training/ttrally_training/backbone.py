@@ -14,11 +14,41 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from transformers import AttentionInterface, Dinov2Model
 
 FEATURE_PARTS = ("cls", "mean", "top_left", "top_right", "bottom_left", "bottom_right")
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 PATCH_SIZE = 14
+
+
+EXPORT_ATTENTION = "ttrally_export"
+
+
+def export_attention(module: nn.Module, query: torch.Tensor, key: torch.Tensor,
+                     value: torch.Tensor, attention_mask: torch.Tensor | None,
+                     scaling: float | None = None, dropout: float = 0.0,
+                     **kwargs) -> tuple[torch.Tensor, torch.Tensor]:
+    """Plain softmax attention that exports to a lean ONNX graph.
+
+    Compared to the Transformers implementations: the query is scaled before the product
+    (cheap) instead of the attention matrix after it, and no mask is added. Images are never
+    padded, so the mask Transformers builds during export is all zeros; adding it, and the NaN
+    checks of the exported scaled_dot_product_attention, cost time on every attention matrix
+    (with WebGPU, the NaN checks run on the CPU).
+    """
+    del attention_mask, kwargs  # images have no padding
+    if scaling is None:
+        scaling = query.size(-1) ** -0.5
+    weights = torch.softmax(torch.matmul(query * scaling, key.transpose(2, 3)), dim=-1)
+    weights = nn.functional.dropout(weights, p=dropout, training=module.training)
+    return torch.matmul(weights, value).transpose(1, 2).contiguous(), weights
+
+
+def load_dinov2(model_id: str) -> nn.Module:
+    """Pretrained DINOv2 from Hugging Face, using the export-friendly attention."""
+    AttentionInterface.register(EXPORT_ATTENTION, export_attention)
+    return Dinov2Model.from_pretrained(model_id, attn_implementation=EXPORT_ATTENTION).eval()
 
 
 class PooledBackbone(nn.Module):

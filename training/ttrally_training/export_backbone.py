@@ -27,7 +27,6 @@ import onnx
 import onnxruntime
 import torch
 from onnxruntime.transformers.float16 import DEFAULT_OP_BLOCK_LIST, convert_float_to_float16
-from transformers import Dinov2Model
 
 from ttrally_training.backbone import (
     FEATURE_PARTS,
@@ -35,6 +34,7 @@ from ttrally_training.backbone import (
     IMAGENET_STD,
     PATCH_SIZE,
     PooledBackbone,
+    load_dinov2,
 )
 
 OPSET = 18
@@ -56,16 +56,17 @@ def parse_args() -> argparse.Namespace:
 def export(module: torch.nn.Module, height: int, width: int, out: Path) -> None:
     example = torch.randn(2, 3, height, width)
     out.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
+    program = torch.onnx.export(
         module,
         (example,),
-        str(out),
         input_names=["pixel_values"],
         output_names=["features"],
-        dynamic_axes={"pixel_values": {0: "batch"}, "features": {0: "batch"}},
+        dynamic_shapes={"pixel_values": {0: torch.export.Dim("batch")}},
         opset_version=OPSET,
-        dynamo=False,
+        dynamo=True,
+        verbose=False,
     )
+    program.save(str(out))
 
 
 def to_fp16(out: Path) -> None:
@@ -117,7 +118,7 @@ def main() -> int:
         return 2
 
     print(f"Loading {args.model} ...")
-    dinov2 = Dinov2Model.from_pretrained(args.model).eval()
+    dinov2 = load_dinov2(args.model)
     module = PooledBackbone(dinov2, args.height, args.width).eval()
     dims = dinov2.config.hidden_size
 

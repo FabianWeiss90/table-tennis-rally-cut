@@ -50,11 +50,12 @@ def export(trained: TrainedModel, dims: int, metadata: dict[str, str], out: Path
     out.parent.mkdir(parents=True, exist_ok=True)
     example = torch.randn(1, EXAMPLE_ROWS, dims)
     with torch.no_grad():
-        torch.onnx.export(
-            wrapper, (example,), str(out),
+        program = torch.onnx.export(
+            wrapper, (example,),
             input_names=["features"], output_names=["rally_probability"],
-            dynamic_axes={"features": {1: "rows"}, "rally_probability": {1: "rows"}},
-            opset_version=OPSET, dynamo=False)
+            dynamic_shapes={"features": {1: torch.export.Dim("rows")}},
+            opset_version=OPSET, dynamo=True, verbose=False)
+    program.save(str(out))
     model = onnx.load(str(out))
     for key, value in metadata.items():
         entry = model.metadata_props.add()

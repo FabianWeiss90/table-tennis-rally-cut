@@ -401,7 +401,7 @@ elsewhere):
 
 1. **S** on the first frame in which the ball leaves the palm,
 2. **E** on the frame in which the point is decided,
-3. **Enter**: the rally is saved to `annotations/<video_id>.csv` and the window jumps to the next
+3. **Enter**: the rally is saved to `data/annotations/<video_id>.csv` and the window jumps to the next
    segment that has no rally yet.
 
 Marks are never lost: if start and end are set, they are also saved when you switch to another
@@ -415,9 +415,8 @@ unchecked gap may hide a missed rally that would be learned as "no rally":
 - **X** marks a segment that contains no rally (e.g. a false match of the pre-cut).
 - **R** marks a gap that you watched (e.g. at 4x speed) and that contains no rally.
 
-The progress is saved next to the labels in `annotations/<video_id>.review.csv` (every segment
-and gap with its frame range and status) and versioned with them; progress kept by earlier
-versions in `data/annotate/` is taken over on the next start. Closing the window ends the
+The progress is saved next to the labels in `data/annotations/<video_id>.review.csv` (every
+segment and gap with its frame range and status); progress kept by earlier versions in `data/annotate/` is taken over on the next start. Closing the window ends the
 session; starting it again continues at the first open segment or gap. When you close the window
 while segments have no rally or gaps were not checked, a dialog lists them; you can close anyway
 or go back to the first of them.
@@ -440,7 +439,7 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 | Mouse wheel | zoom into the video (drag to pan, double-click to reset) |
 
 Options: `--gaps` (default `<segments>.gaps.csv`), `--video-id` (default: name of the segments
-CSV), `--annotations-dir` (labels and review progress, default `annotations`),
+CSV), `--annotations-dir` (labels and review progress, default `data/annotations`),
 `--decode-backend`, `--display-height` (default 1080) and `--frame-memory` (MB for decoded frames,
 default 1024; more memory allows longer steps back without decoding again).
 
@@ -506,7 +505,8 @@ Labels follow these binding definitions:
 - Annotation is always done at the original's **native frame rate**. Lower rates, such as 10 fps
   for the model, are derived from it via timestamps.
 
-Labels are stored in `annotations/<video_id>.csv`:
+Labels are stored in `data/annotations/<video_id>.csv`. Like the videos they belong to, they
+stay local and are not part of the repository:
 
 ```
 video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes
@@ -520,9 +520,9 @@ match_a,2,12950,13104,59.94,,aborted_toss,
 
 ## Data
 
-**Videos are not published**, and neither are audio tracks, extracted frames or caches. Only the
-annotation CSVs, which contain no personal data, and trained model weights are part of this
-repository.
+**Videos are not published**, and neither are audio tracks, extracted frames, caches or the
+annotations (`data/annotations/`), which belong to the videos and name the players in their
+video ids. Only the code and trained model weights are part of this repository.
 
 If you record your own footage: filming people requires their **consent**. Ask everyone visible
 in the recording before you film, and before you share any footage.

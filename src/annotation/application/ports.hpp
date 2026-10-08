@@ -12,7 +12,7 @@
 
 namespace ttrally::annotation {
 
-/// Port: persistent rally labels of a video (the versioned label files).
+/// Port: persistent rally labels of a video (the label files).
 class AnnotationRepository {
   public:
     virtual ~AnnotationRepository() = default;

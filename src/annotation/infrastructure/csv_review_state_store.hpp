@@ -9,8 +9,8 @@
 
 namespace ttrally::annotation {
 
-/// Review progress in <directory>/<video_id>.review.csv, next to the labels and versioned with
-/// them: kind,id,first_frame,last_frame,status for every candidate and gap. Training uses it to
+/// Review progress in <directory>/<video_id>.review.csv, next to the labels: kind,id,
+/// first_frame,last_frame,status for every candidate and gap. Training uses it to
 /// check that a video was reviewed completely. Files of the older local format (kind,id,status
 /// in `legacy_directory`) are read if no current file exists.
 class CsvReviewStateStore final : public ReviewStateStore {

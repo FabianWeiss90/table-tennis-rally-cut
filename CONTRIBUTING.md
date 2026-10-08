@@ -45,7 +45,7 @@ The code follows Domain-Driven Design with Clean Architecture layers. Each bound
 - New dependencies must come from vcpkg or the system, must be compatible with the project
   licenses, and must be added to `THIRD_PARTY_NOTICES.md`. Do not use CMake
   `FetchContent`/`ExternalProject`.
-- **Never commit videos, audio, extracted frames, caches or build directories.** Annotation CSVs
-  in `annotations/` follow the label format described in the [README](README.md).
+- **Never commit videos, audio, extracted frames, caches, annotations or build directories.**
+  Everything belonging to the videos lives in the git-ignored `data/` directory.
 - Make sure all tests pass (`ctest --preset linux-debug` or the Windows equivalent) before
   opening a pull request.

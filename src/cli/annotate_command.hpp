@@ -23,7 +23,7 @@ class AnnotateCommand {
     std::filesystem::path segments_csv_;
     std::filesystem::path gaps_csv_;
     std::string video_id_;
-    std::filesystem::path annotations_dir_ = "annotations";
+    std::filesystem::path annotations_dir_ = "data/annotations";
     /// Where earlier versions kept the review progress; read once, then moved to the labels
     std::filesystem::path legacy_state_dir_ = "data/annotate";
     std::filesystem::path cache_dir_ = "data/cache";

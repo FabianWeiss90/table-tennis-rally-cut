@@ -109,7 +109,7 @@
     },
     // Opens the annotation window for the original video and the candidates from `align`.
     // Asks for the original and the video id; reads data/align/<id>.csv and .gaps.csv and
-    // saves the rallies to annotations/<id>.csv.
+    // saves the rallies to data/annotations/<id>.csv.
     {
       "name": "ttrally annotate",
       "presentation": { "group": "1 ttrally", "order": 6 },

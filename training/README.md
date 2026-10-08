@@ -59,9 +59,9 @@ Trains the rally detector (an MS-TCN, adapted from spin-detector) on the feature
 annotated videos and exports it to `../weights/rally-detector.onnx`, with a report next to it
 (`rally-detector.report.json`).
 
-**Which videos are used.** Every video with labels in `../annotations/<video_id>.csv`, features in
+**Which videos are used.** Every video with labels in `../data/annotations/<video_id>.csv`, features in
 `../data/features/<video_id>/` and a **complete review** in `annotate` (every segment and gap
-done, see `annotations/<video_id>.review.csv`). Videos with open items are skipped with a note,
+done, see `data/annotations/<video_id>.review.csv`). Videos with open items are skipped with a note,
 because an unchecked gap may hide a missed rally that would be learned as "no rally". All rallies
 count, including those flagged `aborted_toss` or `let`. All features must come from the same
 image model variant, execution provider and settings (e.g. all from the fp16 model on WebGPU);

@@ -9,7 +9,7 @@
 
 Usage (from the training directory):
     uv run python -m ttrally_training.train
-    uv run python -m ttrally_training.train --groups ../annotations/groups.csv --runs 3
+    uv run python -m ttrally_training.train --groups ../data/annotations/groups.csv --runs 3
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ DEFAULT_SEED = 42
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--features-dir", type=Path, default=Path("../data/features"))
-    parser.add_argument("--annotations-dir", type=Path, default=Path("../annotations"))
+    parser.add_argument("--annotations-dir", type=Path, default=Path("../data/annotations"))
     parser.add_argument("--videos", nargs="+", help="video ids (default: all annotated)")
     parser.add_argument("--groups", type=Path,
                         help="CSV video_id,group: videos of one group are held out together")

@@ -25,7 +25,7 @@ locally.
 - Perspective: diagonal view from behind the table
 - Number of videos: –
 - Number of rallies: –
-- Videos are not published; only the annotations in `annotations/` are.
+- Neither the videos nor their annotations are published.
 
 ## Evaluation
 

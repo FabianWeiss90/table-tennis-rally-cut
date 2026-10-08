@@ -63,7 +63,7 @@ class Video:
 
 
 def load_rallies(annotations_dir: Path, video_id: str) -> list[Rally]:
-    """Rallies of annotations/<video_id>.csv (all flags count as rally)."""
+    """Rallies of <annotations_dir>/<video_id>.csv (all flags count as rally)."""
     path = annotations_dir / f"{video_id}.csv"
     if not path.exists():
         raise DataError(f"{path} does not exist")
@@ -79,7 +79,7 @@ def load_rallies(annotations_dir: Path, video_id: str) -> list[Rally]:
 
 
 def load_review(annotations_dir: Path, video_id: str) -> ReviewSummary:
-    """Review progress of annotations/<video_id>.review.csv; no file means nothing reviewed."""
+    """Review progress of <annotations_dir>/<video_id>.review.csv; no file: nothing reviewed."""
     path = annotations_dir / f"{video_id}.review.csv"
     if not path.exists():
         return ReviewSummary(items=0, open_items=0)

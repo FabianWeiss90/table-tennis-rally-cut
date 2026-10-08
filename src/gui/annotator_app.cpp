@@ -43,15 +43,15 @@ constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
     {"Space", "play / pause"},
     {"[  /  ]", "slower / faster"},
     {"Home / End", "start / end of the item"},
-    {"S / E", "mark rally start / end"},
+    {"A / D", "mark start / end"},
     {"C", "mark serve hit (optional)"},
-    {"A / L", "toggle aborted toss / let"},
-    {"Enter", "save rally, go to next segment"},
+    {"T / L", "toggle aborted toss / let"},
+    {"Enter / I", "save as rally / as ignored section"},
     {"Esc", "discard marks"},
     {"X / R", "segment without rally / gap checked"},
     {"N / P", "next / previous open item"},
     {"O", "reopen item"},
-    {"Del", "delete the rally at this frame"},
+    {"Del", "delete the rally or ignored section here"},
     {"Mouse wheel", "zoom, drag to pan, double-click resets"},
 }};
 
@@ -59,11 +59,14 @@ const ImVec4 kErrorColor{1.0F, 0.45F, 0.4F, 1.0F};
 const ImVec4 kKeyColor{1.0F, 0.85F, 0.45F, 1.0F};
 const ImVec4 kMutedColor{0.6F, 0.6F, 0.65F, 1.0F};
 const ImVec4 kDoneColor{0.5F, 0.85F, 0.5F, 1.0F};
+const ImVec4 kIgnoredColor{0.85F, 0.65F, 0.4F, 1.0F};
 
 ImVec4 status_color(ReviewStatus status) {
     switch (status) {
     case ReviewStatus::Annotated:
         return {0.45F, 0.75F, 1.0F, 1.0F};
+    case ReviewStatus::Ignored:
+        return kIgnoredColor;
     case ReviewStatus::Rejected:
     case ReviewStatus::Reviewed:
         return kMutedColor;
@@ -214,8 +217,8 @@ class AnnotatorApp {
     /// Returns false if they break a rule; the reason is shown and nothing is left.
     bool save_pending_marks() {
         try {
-            if (const auto id = session_.save_draft_if_complete()) {
-                confirmation_ = std::format("Saved rally {}.", *id);
+            if (const auto saved = session_.save_draft_if_complete()) {
+                confirmation_ = saved_message(*saved);
             }
             return true;
         } catch (const AnnotationRuleViolation& violation) {
@@ -316,6 +319,29 @@ class AnnotatorApp {
         }
     }
 
+    [[nodiscard]] static std::string saved_message(const annotation::SavedMarks& saved) {
+        return std::format("Saved {} {}.", saved.ignored ? "ignored section" : "rally", saved.id);
+    }
+
+    /// I: saves the marks as an ignored section and continues with the next open item.
+    void save_draft_as_ignored() {
+        apply([this] {
+            confirmation_ = saved_message({session_.save_draft_as_ignored(), true});
+            if (session_.select_next_open()) {
+                show_current_item();
+            }
+        });
+    }
+
+    /// Del: deletes the rally or ignored section at the current frame.
+    void delete_at_current_frame() {
+        if (const auto id = session_.delete_rally_at(current_)) {
+            confirmation_ = std::format("Deleted rally {}.", *id);
+        } else if (const auto section = session_.delete_ignored_at(current_)) {
+            confirmation_ = std::format("Deleted ignored section {}.", *section);
+        }
+    }
+
     /// R: marks the gap as checked and continues with the next gap that is not done yet.
     void mark_gap_checked() {
         apply([this] {
@@ -361,16 +387,16 @@ class AnnotatorApp {
         if (ImGui::IsKeyPressed(ImGuiKey_RightBracket, false) && speed_ + 1 < kSpeeds.size()) {
             ++speed_;
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
             session_.mark_start(current_);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) {
             session_.mark_end(current_);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_C, false)) {
             session_.mark_serve_contact(current_);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_T, false)) {
             session_.set_aborted_toss(!session_.draft().aborted_toss);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) {
@@ -380,14 +406,15 @@ class AnnotatorApp {
             ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
             save_draft();
         }
+        if (ImGui::IsKeyPressed(ImGuiKey_I, false)) {
+            save_draft_as_ignored();
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
             session_.discard_draft();
             message_.clear();
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-            if (const auto id = session_.delete_rally_at(current_)) {
-                confirmation_ = std::format("Deleted rally {}.", *id);
-            }
+            delete_at_current_frame();
         }
         if (ImGui::IsKeyPressed(ImGuiKey_X, false)) {
             apply([this] { session_.reject_current(); });
@@ -466,6 +493,12 @@ class AnnotatorApp {
             position.y += line;
             draw_overlay_text(position, std::format("in rally {}", *rally),
                               IM_COL32(110, 180, 255, 255));
+        } else if (const auto section = session_.sheet().ignored_at(current_)) {
+            position.y += line;
+            draw_overlay_text(position,
+                              std::format("in ignored section {} (not used for training)",
+                                          *section),
+                              IM_COL32(220, 165, 100, 255));
         }
         if (const auto hint = unsaved_hint()) {
             position.y += line;
@@ -480,12 +513,13 @@ class AnnotatorApp {
             return std::nullopt;
         }
         if (!draft.start_frame) {
-            return "Not saved: mark the start (S)";
+            return "Not saved: mark the start (A)";
         }
         if (!draft.end_frame) {
-            return "Not saved: mark the end (E)";
+            return "Not saved: mark the end (D)";
         }
-        return "Not saved: press Enter";
+        return draft.editing_ignored ? "Not saved: press I (or Enter to make it a rally)"
+                                     : "Not saved: press Enter (rally) or I (ignored section)";
     }
 
     /// Text on a dark box, readable on any video content.
@@ -587,10 +621,10 @@ class AnnotatorApp {
         const auto progress = session_.plan().progress();
         ImGui::Text("Video: %s", session_.sheet().video_id().c_str());
         const std::size_t lets = session_.sheet().let_count();
-        ImGui::Text("Segments %zu/%zu   Gaps %zu/%zu   Rallies %zu (incl. %zu %s)",
+        ImGui::Text("Segments %zu/%zu   Gaps %zu/%zu   Rallies %zu (incl. %zu %s)   Ignored %zu",
                     progress.candidates_done, progress.candidates, progress.gaps_done,
                     progress.gaps, session_.sheet().rallies().size(), lets,
-                    lets == 1 ? "let" : "lets");
+                    lets == 1 ? "let" : "lets", session_.sheet().ignored_sections().size());
         if (progress.complete()) {
             ImGui::TextColored(kDoneColor, "Complete: the video can be used for training.");
         } else {
@@ -641,9 +675,9 @@ class AnnotatorApp {
                     frame ? std::to_string(*frame).c_str() : "-");
         ImGui::SameLine(220);
         if (ImGui::SmallButton(std::format("Set##{}", label).c_str())) {
-            if (key == ImGuiKey_S) {
+            if (key == ImGuiKey_A) {
                 session_.mark_start(current_);
-            } else if (key == ImGuiKey_E) {
+            } else if (key == ImGuiKey_D) {
                 session_.mark_end(current_);
             } else {
                 session_.mark_serve_contact(current_);
@@ -661,10 +695,13 @@ class AnnotatorApp {
         ImGui::Separator();
         const auto& draft = session_.draft();
         const std::string heading =
-            draft.editing ? std::format("Editing rally {}", *draft.editing) : "New rally";
+            draft.editing           ? std::format("Editing rally {}", *draft.editing)
+            : draft.editing_ignored ? std::format("Editing ignored section {}",
+                                                  *draft.editing_ignored)
+                                    : "New rally or ignored section";
         ImGui::TextUnformatted(heading.c_str());
-        draw_frame_field("Start (S)", draft.start_frame, ImGuiKey_S);
-        draw_frame_field("End (E)", draft.end_frame, ImGuiKey_E);
+        draw_frame_field("Start (A)", draft.start_frame, ImGuiKey_A);
+        draw_frame_field("End (D)", draft.end_frame, ImGuiKey_D);
         draw_frame_field("Serve hit (C)", draft.serve_contact_frame, ImGuiKey_C);
         if (draft.serve_contact_frame) {
             ImGui::SameLine();
@@ -678,7 +715,7 @@ class AnnotatorApp {
                                static_cast<long long>(length), static_cast<double>(length) / fps_);
         }
         bool aborted = draft.aborted_toss;
-        if (ImGui::Checkbox("Aborted toss (A)", &aborted)) {
+        if (ImGui::Checkbox("Aborted toss (T)", &aborted)) {
             session_.set_aborted_toss(aborted);
         }
         ImGui::SameLine();
@@ -690,6 +727,10 @@ class AnnotatorApp {
 
         if (ImGui::Button("Save rally (Enter)")) {
             save_draft();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Ignore section (I)")) {
+            save_draft_as_ignored();
         }
         ImGui::SameLine();
         if (ImGui::Button("Discard (Esc)")) {
@@ -767,6 +808,32 @@ class AnnotatorApp {
             if (ImGui::SmallButton(std::format("Delete##rally{}", id).c_str())) {
                 session_.delete_rally(id);
                 confirmation_ = std::format("Deleted rally {}.", id);
+                break; // ids changed
+            }
+        }
+        draw_ignored_of_item(item);
+    }
+
+    void draw_ignored_of_item(const annotation::ReviewItem& item) {
+        const auto ids = session_.sheet().ignored_overlapping(item.first_frame, item.last_frame);
+        for (const int id : ids) {
+            const auto& section = session_.sheet().ignored_section(id);
+            ImGui::TextColored(kIgnoredColor, "ignored %d: %lld-%lld", id,
+                               static_cast<long long>(section.start_frame),
+                               static_cast<long long>(section.end_frame));
+            ImGui::SameLine();
+            if (ImGui::SmallButton(std::format("Go##ignored{}", id).c_str())) {
+                step(section.start_frame - current_);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(std::format("Edit##ignored{}", id).c_str())) {
+                session_.edit_ignored(id);
+                step(section.start_frame - current_);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(std::format("Delete##ignored{}", id).c_str())) {
+                session_.delete_ignored(id);
+                confirmation_ = std::format("Deleted ignored section {}.", id);
                 break; // ids changed
             }
         }

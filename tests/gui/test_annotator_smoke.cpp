@@ -41,7 +41,7 @@ void use_offscreen_video_driver() {
 
 class NoAnnotations final : public annotation::AnnotationRepository {
   public:
-    std::vector<annotation::RallyLabel> load(const std::string&) override { return {}; }
+    annotation::StoredLabels load(const std::string&) override { return {}; }
     void save(const annotation::AnnotationSheet&) override {}
 };
 

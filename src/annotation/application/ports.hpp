@@ -12,12 +12,18 @@
 
 namespace ttrally::annotation {
 
-/// Port: persistent rally labels of a video (the label files).
+/// Everything saved for a video: its rallies and ignored sections.
+struct StoredLabels {
+    std::vector<RallyLabel> rallies;
+    std::vector<IgnoredSection> ignored;
+};
+
+/// Port: persistent labels of a video (the label files).
 class AnnotationRepository {
   public:
     virtual ~AnnotationRepository() = default;
-    /// The saved rallies of a video; empty if none were saved yet.
-    [[nodiscard]] virtual std::vector<RallyLabel> load(const std::string& video_id) = 0;
+    /// The saved labels of a video; empty if none were saved yet.
+    [[nodiscard]] virtual StoredLabels load(const std::string& video_id) = 0;
     virtual void save(const AnnotationSheet& sheet) = 0;
 };
 

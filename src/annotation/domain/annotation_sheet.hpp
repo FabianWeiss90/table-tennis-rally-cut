@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "annotation/domain/ignored_section.hpp"
 #include "annotation/domain/rally_label.hpp"
 #include "shared/kernel/rational.hpp"
 
@@ -9,6 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ttrally::annotation {
@@ -19,11 +21,12 @@ class AnnotationRuleViolation : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-/// Aggregate root: all rallies annotated in one video.
+/// Aggregate root: all rallies and ignored sections annotated in one video.
 ///
-/// Invariants: every rally lies inside the video, starts before or at its end, has its serve
-/// contact (if any) inside the rally, no line break in its notes, and no two rallies overlap.
-/// Rallies are kept sorted by start; a rally's id is its 1-based position.
+/// Invariants: every rally and ignored section lies inside the video, starts before or at its
+/// end and has no line break in its notes; a rally's serve contact (if any) lies inside it; no
+/// two of them overlap. Both are kept sorted by start; the id of a rally (or of an ignored
+/// section) is its 1-based position among the rallies (or among the ignored sections).
 class AnnotationSheet {
   public:
     AnnotationSheet(std::string video_id, Rational fps, std::int64_t frame_count);
@@ -48,15 +51,40 @@ class AnnotationSheet {
     [[nodiscard]] std::vector<int> rallies_overlapping(std::int64_t first,
                                                        std::int64_t last) const;
 
+    // Ignored sections (left out of training)
+    [[nodiscard]] const std::vector<IgnoredSection>& ignored_sections() const noexcept {
+        return ignored_;
+    }
+    [[nodiscard]] const IgnoredSection& ignored_section(int id) const;
+    /// Adds an ignored section and returns its id. Throws AnnotationRuleViolation.
+    int add_ignored(IgnoredSection section);
+    /// Replaces an ignored section and returns its (possibly new) id. Throws
+    /// AnnotationRuleViolation.
+    int replace_ignored(int id, IgnoredSection section);
+    void remove_ignored(int id);
+    /// Id of the ignored section containing the frame, if any.
+    [[nodiscard]] std::optional<int> ignored_at(std::int64_t frame) const;
+    /// Ids of the ignored sections overlapping [first, last].
+    [[nodiscard]] std::vector<int> ignored_overlapping(std::int64_t first,
+                                                       std::int64_t last) const;
+
   private:
-    void validate(const RallyLabel& rally, std::optional<std::size_t> ignored) const;
-    int insert_sorted(RallyLabel rally);
-    [[nodiscard]] std::size_t position(int id) const;
+    /// What a change leaves out when checking for overlaps: the entry being replaced.
+    struct Skip {
+        std::optional<std::size_t> rally;
+        std::optional<std::size_t> ignored;
+    };
+    void validate(const RallyLabel& rally, Skip skip) const;
+    void validate(const IgnoredSection& section, Skip skip) const;
+    /// Rules shared by rallies and ignored sections; `what` names the entry in messages.
+    void validate_span(std::int64_t start, std::int64_t end, const std::string& notes,
+                       std::string_view what, Skip skip) const;
 
     std::string video_id_;
     Rational fps_;
     std::int64_t frame_count_;
     std::vector<RallyLabel> rallies_;
+    std::vector<IgnoredSection> ignored_;
 };
 
 } // namespace ttrally::annotation

@@ -10,12 +10,14 @@ namespace ttrally::annotation {
 
 /// Label files <directory>/<video_id>.csv in the project's label format:
 ///   video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes
+/// Ignored sections are rows with the flag `ignore` and an empty rally_id, so the rally ids
+/// stay 1, 2, 3, ...; all rows are sorted by start frame.
 class CsvAnnotationRepository final : public AnnotationRepository {
   public:
     explicit CsvAnnotationRepository(std::filesystem::path directory)
         : directory_(std::move(directory)) {}
 
-    [[nodiscard]] std::vector<RallyLabel> load(const std::string& video_id) override;
+    [[nodiscard]] StoredLabels load(const std::string& video_id) override;
     void save(const AnnotationSheet& sheet) override;
 
     [[nodiscard]] std::filesystem::path file_for(const std::string& video_id) const;

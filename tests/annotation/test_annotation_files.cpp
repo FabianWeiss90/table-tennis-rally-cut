@@ -38,21 +38,29 @@ TEST_CASE("label files use the documented format") {
     sheet.add({12950, 13104, {}, true, ""});
     sheet.add({10234, 10811, 10262, false, ""});
     sheet.add({14000, 14100, {}, false, "net", true});
+    sheet.add_ignored({0, 900, "recording started mid-rally"});
+    sheet.add_ignored({11000, 12000, ""});
     repository.save(sheet);
 
+    // Ignored sections have no rally id, so the rallies keep their numbers
     CHECK(read_file(dir / "match_a.csv") ==
           "video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes\n"
+          "match_a,,0,900,59.94,,ignore,recording started mid-rally\n"
           "match_a,1,10234,10811,59.94,10262,,\n"
+          "match_a,,11000,12000,59.94,,ignore,\n"
           "match_a,2,12950,13104,59.94,,aborted_toss,\n"
           "match_a,3,14000,14100,59.94,,let,net\n");
 
     const auto loaded = repository.load("match_a");
-    REQUIRE(loaded.size() == 3);
-    CHECK(loaded[0].serve_contact_frame == 10262);
-    CHECK(loaded[1].aborted_toss);
-    CHECK_FALSE(loaded[1].let);
-    CHECK(loaded[2].let);
-    CHECK(repository.load("other_video").empty());
+    REQUIRE(loaded.rallies.size() == 3);
+    CHECK(loaded.rallies[0].serve_contact_frame == 10262);
+    CHECK(loaded.rallies[1].aborted_toss);
+    CHECK_FALSE(loaded.rallies[1].let);
+    CHECK(loaded.rallies[2].let);
+    REQUIRE(loaded.ignored.size() == 2);
+    CHECK(loaded.ignored[0].end_frame == 900);
+    CHECK(loaded.ignored[0].notes == "recording started mid-rally");
+    CHECK(repository.load("other_video").rallies.empty());
     std::filesystem::remove_all(dir);
 }
 

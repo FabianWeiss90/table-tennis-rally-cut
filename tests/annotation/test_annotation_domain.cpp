@@ -4,6 +4,7 @@
 #include "annotation/domain/review_plan.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 using namespace ttrally::annotation;
 
@@ -35,6 +36,27 @@ TEST_CASE("lets are counted") {
     sheet.add(let);
     CHECK(sheet.rallies().size() == 2);
     CHECK(sheet.let_count() == 1);
+}
+
+TEST_CASE("ignored sections follow the rules of rallies but are kept apart") {
+    AnnotationSheet sheet("match_a", {60, 1}, 10000);
+    sheet.add(rally(1000, 1200));
+    CHECK(sheet.add_ignored({0, 500, "late start"}) == 1);
+    CHECK(sheet.add_ignored({2000, 2100, ""}) == 2);
+    CHECK(sheet.rallies().size() == 1); // ignored sections are no rallies
+    CHECK(sheet.ignored_at(250) == 1);
+    CHECK_FALSE(sheet.ignored_at(1100));
+    CHECK(sheet.ignored_overlapping(0, 2000) == std::vector<int>{1, 2});
+
+    CHECK_THROWS_AS(sheet.add_ignored({1100, 1300, ""}), AnnotationRuleViolation); // a rally
+    CHECK_THROWS_AS(sheet.add_ignored({400, 600, ""}), AnnotationRuleViolation);   // a section
+    CHECK_THROWS_AS(sheet.add(rally(450, 550)), AnnotationRuleViolation);
+    CHECK_THROWS_AS(sheet.add_ignored({9000, 10000, ""}), AnnotationRuleViolation); // too long
+    CHECK_THROWS_AS(sheet.add_ignored({300, 200, ""}), AnnotationRuleViolation);
+
+    CHECK(sheet.replace_ignored(1, {0, 600, ""}) == 1); // may overlap its old self
+    sheet.remove_ignored(1);
+    CHECK(sheet.ignored_section(1).start_frame == 2000);
 }
 
 TEST_CASE("annotation rules are enforced") {

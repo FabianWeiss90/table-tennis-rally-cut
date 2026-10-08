@@ -16,8 +16,9 @@ namespace ttrally::annotation {
 enum class ReviewKind { Candidate, Gap };
 
 /// Open: not looked at yet. Annotated: contains at least one rally (derived from the sheet).
-/// Rejected: a candidate without a rally. Reviewed: a gap checked without finding a rally.
-enum class ReviewStatus { Open, Annotated, Rejected, Reviewed };
+/// Ignored: contains no rally but an ignored section (derived from the sheet). Rejected: a
+/// candidate without a rally. Reviewed: a gap checked without finding a rally.
+enum class ReviewStatus { Open, Annotated, Rejected, Reviewed, Ignored };
 
 [[nodiscard]] std::string_view to_string(ReviewKind kind) noexcept;
 [[nodiscard]] std::string_view to_string(ReviewStatus status) noexcept;
@@ -61,8 +62,8 @@ class ReviewPlan {
     void set_manual_status(std::size_t index, ReviewStatus status);
     [[nodiscard]] ReviewStatus manual_status(std::size_t index) const;
 
-    /// Recomputes the statuses: items overlapping a rally are Annotated, the others keep their
-    /// manual status.
+    /// Recomputes the statuses: items overlapping a rally are Annotated, items overlapping only
+    /// an ignored section are Ignored, the others keep their manual status.
     void refresh(const AnnotationSheet& sheet);
 
     [[nodiscard]] std::optional<std::size_t> next_open(std::size_t after) const;

@@ -14,11 +14,17 @@ namespace {
 
 constexpr std::array<std::pair<ReviewKind, std::string_view>, 2> kKinds{
     {{ReviewKind::Candidate, "candidate"}, {ReviewKind::Gap, "gap"}}};
-constexpr std::array<std::pair<ReviewStatus, std::string_view>, 4> kStatuses{
+constexpr std::array<std::pair<ReviewStatus, std::string_view>, 5> kStatuses{
     {{ReviewStatus::Open, "open"},
      {ReviewStatus::Annotated, "annotated"},
      {ReviewStatus::Rejected, "rejected"},
-     {ReviewStatus::Reviewed, "reviewed"}}};
+     {ReviewStatus::Reviewed, "reviewed"},
+     {ReviewStatus::Ignored, "ignored"}}};
+
+/// Statuses that follow from the sheet rather than from a decision of the user.
+bool derived_from_sheet(ReviewStatus status) {
+    return status == ReviewStatus::Annotated || status == ReviewStatus::Ignored;
+}
 
 template <typename Enum, std::size_t N>
 std::string_view name_of(const std::array<std::pair<Enum, std::string_view>, N>& names,
@@ -63,8 +69,7 @@ ReviewPlan::ReviewPlan(std::vector<ReviewItem> items) : items_(std::move(items))
     });
     manual_.reserve(items_.size());
     for (const auto& item : items_) {
-        manual_.push_back(item.status == ReviewStatus::Annotated ? ReviewStatus::Open
-                                                                 : item.status);
+        manual_.push_back(derived_from_sheet(item.status) ? ReviewStatus::Open : item.status);
     }
 }
 
@@ -78,7 +83,7 @@ void ReviewPlan::set_manual_status(std::size_t index, ReviewStatus status) {
                                                 to_string(status), to_string(kind)));
     }
     manual_[index] = status;
-    if (items_[index].status != ReviewStatus::Annotated) {
+    if (!derived_from_sheet(items_[index].status)) {
         items_[index].status = status;
     }
 }
@@ -88,8 +93,13 @@ ReviewStatus ReviewPlan::manual_status(std::size_t index) const { return manual_
 void ReviewPlan::refresh(const AnnotationSheet& sheet) {
     for (std::size_t i = 0; i < items_.size(); ++i) {
         auto& item = items_[i];
-        const auto rallies = sheet.rallies_overlapping(item.first_frame, item.last_frame);
-        item.status = !rallies.empty() ? ReviewStatus::Annotated : manual_[i];
+        if (!sheet.rallies_overlapping(item.first_frame, item.last_frame).empty()) {
+            item.status = ReviewStatus::Annotated;
+        } else if (!sheet.ignored_overlapping(item.first_frame, item.last_frame).empty()) {
+            item.status = ReviewStatus::Ignored;
+        } else {
+            item.status = manual_[i];
+        }
     }
 }
 

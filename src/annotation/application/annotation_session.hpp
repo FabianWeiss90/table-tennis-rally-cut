@@ -12,7 +12,8 @@
 
 namespace ttrally::annotation {
 
-/// The rally currently being marked: a new one or an edited copy of a saved one.
+/// The marks currently being set: a new rally or ignored section, or an edited copy of a saved
+/// one. Whether it becomes a rally or an ignored section is decided when it is saved.
 struct RallyDraft {
     std::optional<int> editing; ///< Id of the saved rally being edited
     std::optional<std::int64_t> start_frame;
@@ -21,12 +22,19 @@ struct RallyDraft {
     bool aborted_toss = false;
     std::string notes;
     bool let = false;
+    std::optional<int> editing_ignored; ///< Id of the saved ignored section being edited
 
     [[nodiscard]] bool complete() const noexcept { return start_frame && end_frame; }
     [[nodiscard]] bool empty() const noexcept {
-        return !editing && !start_frame && !end_frame && !serve_contact_frame && !aborted_toss &&
-               !let && notes.empty();
+        return !editing && !editing_ignored && !start_frame && !end_frame &&
+               !serve_contact_frame && !aborted_toss && !let && notes.empty();
     }
+};
+
+/// What saving the draft produced.
+struct SavedMarks {
+    int id = 0;
+    bool ignored = false; ///< An ignored section rather than a rally
 };
 
 struct SessionSetup {
@@ -70,14 +78,23 @@ class AnnotationSession {
     void discard_draft();
     /// Loads a saved rally into the draft for editing.
     void edit_rally(int id);
+    /// Loads a saved ignored section into the draft for editing.
+    void edit_ignored(int id);
 
-    /// Saves the draft as a new or edited rally and returns its id. Throws
-    /// AnnotationRuleViolation if the draft is incomplete or breaks a rule.
+    /// Saves the draft as a new or edited rally and returns its id (an edited ignored section
+    /// becomes a rally). Throws AnnotationRuleViolation if the draft is incomplete or breaks a
+    /// rule.
     int save_draft();
-    /// Saves the draft if start and end are marked (nullopt otherwise; the draft is kept).
-    /// Throws AnnotationRuleViolation if the draft breaks a rule.
-    std::optional<int> save_draft_if_complete();
+    /// Saves the draft as a new or edited ignored section and returns its id (an edited rally
+    /// becomes an ignored section). Throws AnnotationRuleViolation if the draft is incomplete,
+    /// breaks a rule or has a serve hit, aborted toss or let.
+    int save_draft_as_ignored();
+    /// Saves the draft if start and end are marked (nullopt otherwise; the draft is kept): as
+    /// an ignored section if one is being edited, else as a rally. Throws
+    /// AnnotationRuleViolation if the draft breaks a rule.
+    std::optional<SavedMarks> save_draft_if_complete();
     void delete_rally(int id);
+    void delete_ignored(int id);
 
     // Review status of the current item
     void reject_current();         ///< Candidate without a rally
@@ -94,10 +111,14 @@ class AnnotationSession {
     }
     /// Deletes the saved rally containing the frame; returns its id, nullopt if there is none.
     std::optional<int> delete_rally_at(std::int64_t frame);
+    /// Deletes the ignored section containing the frame; returns its id, nullopt if none.
+    std::optional<int> delete_ignored_at(std::int64_t frame);
 
   private:
     void set_current_status(ReviewStatus status);
     void save_states();
+    /// Takes over a changed copy of the sheet and saves it with the review progress.
+    void commit(AnnotationSheet changed);
 
     std::string video_id_;
     AnnotationRepository& annotations_;

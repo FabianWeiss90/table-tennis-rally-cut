@@ -17,6 +17,7 @@ constexpr float kRallyBandBottom = 34.0F;
 const ImU32 kBackground = IM_COL32(32, 34, 38, 255);
 const ImU32 kHint = IM_COL32(90, 90, 100, 255);
 const ImU32 kRally = IM_COL32(56, 132, 230, 200);
+const ImU32 kIgnored = IM_COL32(200, 140, 70, 200);
 const ImU32 kStart = IM_COL32(70, 200, 90, 255);
 const ImU32 kEnd = IM_COL32(230, 80, 70, 255);
 const ImU32 kServe = IM_COL32(240, 200, 60, 255);
@@ -42,8 +43,9 @@ void swatch(ImU32 color, const char* label) {
 void TimelineView::draw_legend() const {
     swatch(kHint, "align hint");
     swatch(kRally, "saved rally");
-    swatch(kStart, "start (S)");
-    swatch(kEnd, "end (E)");
+    swatch(kIgnored, "ignored section");
+    swatch(kStart, "start (A)");
+    swatch(kEnd, "end (D)");
     swatch(kServe, "serve hit (C)");
     swatch(kCursor, "current frame");
     ImGui::NewLine();
@@ -81,6 +83,13 @@ std::optional<std::int64_t> TimelineView::draw(const TimelineRange& range,
         if (rally.overlaps(range.first, range.last)) {
             draw->AddRectFilled({x_of(rally.start_frame), origin.y + kRallyBandTop},
                                 {x_of(rally.end_frame), origin.y + kRallyBandBottom}, kRally);
+        }
+    }
+    // Ignored sections
+    for (const auto& section : session.sheet().ignored_sections()) {
+        if (section.overlaps(range.first, range.last)) {
+            draw->AddRectFilled({x_of(section.start_frame), origin.y + kRallyBandTop},
+                                {x_of(section.end_frame), origin.y + kRallyBandBottom}, kIgnored);
         }
     }
     // Draft marks

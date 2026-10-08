@@ -10,12 +10,14 @@ namespace {
 
 class MemoryAnnotations final : public AnnotationRepository {
   public:
-    std::vector<RallyLabel> load(const std::string& /*video_id*/) override { return saved; }
+    StoredLabels load(const std::string& /*video_id*/) override { return {saved, ignored}; }
     void save(const AnnotationSheet& sheet) override {
         saved = sheet.rallies();
+        ignored = sheet.ignored_sections();
         ++saves;
     }
     std::vector<RallyLabel> saved;
+    std::vector<IgnoredSection> ignored;
     int saves = 0;
 };
 
@@ -88,7 +90,10 @@ TEST_CASE("only complete drafts are saved automatically") {
     CHECK_FALSE(session.save_draft_if_complete());
     CHECK(fixture.annotations.saves == 0);
     session.mark_end(1300);
-    CHECK(session.save_draft_if_complete() == 1);
+    const auto saved = session.save_draft_if_complete();
+    REQUIRE(saved);
+    CHECK(saved->id == 1);
+    CHECK_FALSE(saved->ignored);
     CHECK(fixture.annotations.saved.size() == 1);
     CHECK(session.plan().item(2).status == ReviewStatus::Annotated); // the gap now has a rally
 }
@@ -207,5 +212,49 @@ TEST_CASE("a status for the wrong kind of item is refused with a hint") {
     session.select_item(0); // a gap
     CHECK_THROWS_AS(session.reject_current(), AnnotationRuleViolation);
     CHECK(session.plan().item(0).status == ReviewStatus::Open);
+}
+
+TEST_CASE("marks can be saved as an ignored section that completes the item") {
+    Fixture fixture;
+    auto session = fixture.open(); // gap 1 (0-599)
+    session.mark_start(0);
+    session.mark_end(450);
+    session.set_notes("recording started mid-rally");
+    CHECK(session.save_draft_as_ignored() == 1);
+    REQUIRE(fixture.annotations.ignored.size() == 1);
+    CHECK(fixture.annotations.saved.empty()); // not a rally
+    CHECK(session.plan().item(0).status == ReviewStatus::Ignored);
+    CHECK(fixture.states.saved[0].status == ReviewStatus::Ignored);
+
+    CHECK(session.delete_ignored_at(200) == 1);
+    CHECK(fixture.annotations.ignored.empty());
+    CHECK(session.plan().item(0).status == ReviewStatus::Open);
+}
+
+TEST_CASE("an ignored section has no rally flags") {
+    Fixture fixture;
+    auto session = fixture.open();
+    session.mark_start(0);
+    session.mark_end(450);
+    session.set_let(true);
+    CHECK_THROWS_AS(session.save_draft_as_ignored(), AnnotationRuleViolation);
+    CHECK(fixture.annotations.ignored.empty());
+}
+
+TEST_CASE("a saved rally can become an ignored section and back") {
+    Fixture fixture;
+    fixture.annotations.saved = {{640, 870, {}, false, ""}};
+    auto session = fixture.open();
+    session.edit_rally(1);
+    CHECK(session.save_draft_as_ignored() == 1);
+    CHECK(fixture.annotations.saved.empty());
+    REQUIRE(fixture.annotations.ignored.size() == 1);
+
+    session.edit_ignored(1);
+    CHECK(session.save_draft_if_complete()->ignored); // editing keeps the kind
+    session.edit_ignored(1);
+    CHECK(session.save_draft() == 1); // Enter makes it a rally again
+    CHECK(fixture.annotations.ignored.empty());
+    CHECK(fixture.annotations.saved.size() == 1);
 }
 

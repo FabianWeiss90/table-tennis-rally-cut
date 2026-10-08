@@ -5,8 +5,10 @@
 #include "shared/io/csv.hpp"
 #include "shared/io/file_cache.hpp"
 
+#include <algorithm>
 #include <format>
 #include <stdexcept>
+#include <utility>
 
 namespace ttrally::annotation {
 
@@ -16,6 +18,7 @@ const io::CsvRow kHeader{"video_id", "rally_id",           "start_frame", "end_f
                          "fps",      "serve_contact_frame", "flags",       "notes"};
 constexpr std::string_view kAbortedToss = "aborted_toss";
 constexpr std::string_view kLet = "let";
+constexpr std::string_view kIgnore = "ignore";
 
 enum Column { VideoId, RallyId, StartFrame, EndFrame, Fps, ServeContact, Flags, Notes };
 
@@ -89,7 +92,7 @@ std::filesystem::path CsvAnnotationRepository::file_for(const std::string& video
     return directory_ / (video_id + ".csv");
 }
 
-std::vector<RallyLabel> CsvAnnotationRepository::load(const std::string& video_id) {
+StoredLabels CsvAnnotationRepository::load(const std::string& video_id) {
     const auto file = file_for(video_id);
     if (!std::filesystem::exists(file)) {
         return {};
@@ -98,34 +101,53 @@ std::vector<RallyLabel> CsvAnnotationRepository::load(const std::string& video_i
     if (rows.empty() || rows.front() != kHeader) {
         throw std::runtime_error(file.string() + ": unexpected header");
     }
-    std::vector<RallyLabel> rallies;
+    StoredLabels labels;
     for (std::size_t i = 1; i < rows.size(); ++i) {
         if (rows[i].size() == 1 && rows[i].front().empty()) {
             continue; // trailing empty line
         }
-        if (rows[i][VideoId] == video_id) {
-            rallies.push_back(parse_row(rows[i], file));
+        if (rows[i][VideoId] != video_id) {
+            continue;
+        }
+        RallyLabel parsed = parse_row(rows[i], file);
+        if (has_flag(rows[i][Flags], kIgnore)) {
+            labels.ignored.push_back({parsed.start_frame, parsed.end_frame, parsed.notes});
+        } else {
+            labels.rallies.push_back(std::move(parsed));
         }
     }
-    return rallies;
+    return labels;
 }
 
 void CsvAnnotationRepository::save(const AnnotationSheet& sheet) {
     const std::string fps = format_label_fps(sheet.fps());
-    std::vector<io::CsvRow> rows;
+    std::vector<std::pair<std::int64_t, io::CsvRow>> rows; // by start frame
     int id = 0;
     for (const RallyLabel& rally : sheet.rallies()) {
-        rows.push_back({sheet.video_id(), std::to_string(++id), std::to_string(rally.start_frame),
-                        std::to_string(rally.end_frame), fps,
-                        rally.serve_contact_frame ? std::to_string(*rally.serve_contact_frame)
-                                                  : "",
-                        flags_of(rally), rally.notes});
+        rows.push_back({rally.start_frame,
+                        {sheet.video_id(), std::to_string(++id), std::to_string(rally.start_frame),
+                         std::to_string(rally.end_frame), fps,
+                         rally.serve_contact_frame ? std::to_string(*rally.serve_contact_frame)
+                                                   : "",
+                         flags_of(rally), rally.notes}});
+    }
+    for (const IgnoredSection& section : sheet.ignored_sections()) {
+        rows.push_back({section.start_frame,
+                        {sheet.video_id(), "", std::to_string(section.start_frame),
+                         std::to_string(section.end_frame), fps, "", std::string(kIgnore),
+                         section.notes}});
+    }
+    std::ranges::stable_sort(rows, {}, &std::pair<std::int64_t, io::CsvRow>::first);
+    std::vector<io::CsvRow> csv_rows;
+    csv_rows.reserve(rows.size());
+    for (auto& [start, row] : rows) {
+        csv_rows.push_back(std::move(row));
     }
     const auto file = file_for(sheet.video_id());
     auto temporary = file;
     temporary += ".tmp";
     std::filesystem::create_directories(file.parent_path());
-    io::write_csv(temporary, kHeader, rows);
+    io::write_csv(temporary, kHeader, csv_rows);
     std::filesystem::rename(temporary, file); // never leave a half-written label file
 }
 

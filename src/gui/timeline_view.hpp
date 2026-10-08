@@ -15,8 +15,8 @@ struct TimelineRange {
     std::int64_t last = 0;
 };
 
-/// Timeline of the current review item: the alignment hint, saved rallies, the draft marks and
-/// the current frame. Clicking or dragging selects a frame.
+/// Timeline of the current review item: the alignment hint, saved rallies and ignored sections,
+/// the draft marks and the current frame. Clicking or dragging selects a frame.
 class TimelineView {
   public:
     static constexpr float kHeight = 56.0F;

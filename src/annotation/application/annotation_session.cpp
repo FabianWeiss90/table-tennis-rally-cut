@@ -19,8 +19,12 @@ ReviewPlan load_plan(ReviewItemSource& items, ReviewStateStore& states,
 
 AnnotationSheet load_sheet(const SessionSetup& setup, AnnotationRepository& annotations) {
     AnnotationSheet sheet(setup.video_id, setup.fps, setup.frame_count);
-    for (auto& rally : annotations.load(setup.video_id)) {
+    StoredLabels labels = annotations.load(setup.video_id);
+    for (auto& rally : labels.rallies) {
         sheet.add(std::move(rally));
+    }
+    for (auto& section : labels.ignored) {
+        sheet.add_ignored(std::move(section));
     }
     return sheet;
 }
@@ -92,30 +96,77 @@ void AnnotationSession::discard_draft() { draft_ = RallyDraft{}; }
 
 void AnnotationSession::edit_rally(int id) {
     const RallyLabel& rally = sheet_.rally(id);
-    draft_ = RallyDraft{id,           rally.start_frame,  rally.end_frame,
-                        rally.serve_contact_frame, rally.aborted_toss, rally.notes, rally.let};
+    draft_ = RallyDraft{id,
+                        rally.start_frame,
+                        rally.end_frame,
+                        rally.serve_contact_frame,
+                        rally.aborted_toss,
+                        rally.notes,
+                        rally.let,
+                        std::nullopt};
+}
+
+void AnnotationSession::edit_ignored(int id) {
+    const IgnoredSection& section = sheet_.ignored_section(id);
+    draft_ = RallyDraft{};
+    draft_.editing_ignored = id;
+    draft_.start_frame = section.start_frame;
+    draft_.end_frame = section.end_frame;
+    draft_.notes = section.notes;
 }
 
 int AnnotationSession::save_draft() {
     if (!draft_.complete()) {
-        throw AnnotationRuleViolation("Mark the start and the end of the rally first.");
+        throw AnnotationRuleViolation("Mark the start (A) and the end (D) of the rally first.");
     }
     RallyLabel rally{*draft_.start_frame, *draft_.end_frame, draft_.serve_contact_frame,
                      draft_.aborted_toss, draft_.notes, draft_.let};
-    const int id = draft_.editing ? sheet_.replace(*draft_.editing, std::move(rally))
-                                  : sheet_.add(std::move(rally));
+    AnnotationSheet changed = sheet_; // applied only if every step succeeds
+    if (draft_.editing_ignored) {
+        changed.remove_ignored(*draft_.editing_ignored);
+    }
+    const int id = draft_.editing ? changed.replace(*draft_.editing, std::move(rally))
+                                  : changed.add(std::move(rally));
+    commit(std::move(changed));
+    return id;
+}
+
+int AnnotationSession::save_draft_as_ignored() {
+    if (!draft_.complete()) {
+        throw AnnotationRuleViolation("Mark the start (A) and the end (D) of the section first.");
+    }
+    if (draft_.serve_contact_frame || draft_.aborted_toss || draft_.let) {
+        throw AnnotationRuleViolation(
+            "An ignored section has no serve hit, aborted toss or let; clear them first.");
+    }
+    IgnoredSection section{*draft_.start_frame, *draft_.end_frame, draft_.notes};
+    AnnotationSheet changed = sheet_; // applied only if every step succeeds
+    if (draft_.editing) {
+        changed.remove(*draft_.editing);
+    }
+    const int id = draft_.editing_ignored
+                       ? changed.replace_ignored(*draft_.editing_ignored, std::move(section))
+                       : changed.add_ignored(std::move(section));
+    commit(std::move(changed));
+    return id;
+}
+
+std::optional<SavedMarks> AnnotationSession::save_draft_if_complete() {
+    if (!draft_.complete()) {
+        return std::nullopt;
+    }
+    if (draft_.editing_ignored) {
+        return SavedMarks{save_draft_as_ignored(), true};
+    }
+    return SavedMarks{save_draft(), false};
+}
+
+void AnnotationSession::commit(AnnotationSheet changed) {
+    sheet_ = std::move(changed);
     annotations_.save(sheet_);
     plan_.refresh(sheet_);
     save_states();
     draft_ = RallyDraft{};
-    return id;
-}
-
-std::optional<int> AnnotationSession::save_draft_if_complete() {
-    if (!draft_.complete()) {
-        return std::nullopt;
-    }
-    return save_draft();
 }
 
 void AnnotationSession::delete_rally(int id) {
@@ -134,6 +185,26 @@ std::optional<int> AnnotationSession::delete_rally_at(std::int64_t frame) {
     const auto id = sheet_.rally_at(frame);
     if (id) {
         delete_rally(*id);
+    }
+    return id;
+}
+
+void AnnotationSession::delete_ignored(int id) {
+    sheet_.remove_ignored(id);
+    annotations_.save(sheet_);
+    plan_.refresh(sheet_);
+    save_states();
+    if (draft_.editing_ignored == id) {
+        draft_ = RallyDraft{};
+    } else if (draft_.editing_ignored && *draft_.editing_ignored > id) {
+        draft_.editing_ignored = *draft_.editing_ignored - 1; // ids follow the order
+    }
+}
+
+std::optional<int> AnnotationSession::delete_ignored_at(std::int64_t frame) {
+    const auto id = sheet_.ignored_at(frame);
+    if (id) {
+        delete_ignored(*id);
     }
     return id;
 }

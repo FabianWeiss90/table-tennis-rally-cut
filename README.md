@@ -399,17 +399,23 @@ current segment or gap, and the list of all segments and gaps with their status.
 Annotating a rally takes three keys, anywhere in the video (inside a segment, in a gap, or
 elsewhere):
 
-1. **S** on the first frame in which the ball leaves the palm,
-2. **E** on the frame in which the point is decided,
-3. **Enter**: the rally is saved to `data/annotations/<video_id>.csv` and the window jumps to the next
-   segment that has no rally yet.
+1. **A** on the first frame in which the ball leaves the palm,
+2. **D** on the frame in which the point is decided,
+3. **Enter**: the rally is saved to `data/annotations/<video_id>.csv` and the window jumps to the
+   next segment that has no rally yet.
+
+**Ignored sections** leave a stretch of the video out of training, e.g. a rally whose start is
+missing because the recording began late: mark it with **A** and **D** as well, then press
+**I** instead of Enter. Ignored sections are no rallies; they must not overlap rallies, and a
+segment or gap containing one counts as done. Rather mark them a little too wide than too narrow.
 
 Marks are never lost: if start and end are set, they are also saved when you switch to another
-segment or close the window. Marks that are not saved yet are shown in red on the video.
+segment or close the window (as a rally, or as an ignored section if you were editing one).
+Marks that are not saved yet are shown in red on the video.
 
 **A video is finished when every segment and gap is done**, shown as `Segments n/n   Gaps m/m`
-and "Complete" at the top of the list (next to the number of saved rallies and how many of them
-are lets). Only finished videos are used for training, because an
+and "Complete" at the top of the list (next to the number of saved rallies, how many of them
+are lets, and the number of ignored sections). Only finished videos are used for training, because an
 unchecked gap may hide a missed rally that would be learned as "no rally":
 
 - Segments and gaps that contain a saved rally are done automatically.
@@ -429,13 +435,14 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 |---|---|
 | Left / Right | one frame back / forward (Shift: 10 frames, Ctrl: 1 second) |
 | Space, `[` / `]` | play / pause, slower / faster (0.1x to 4x) |
-| S / E / C | mark start / end / serve hit at the current frame |
-| A / L | toggle "aborted toss" / "let" |
-| Enter / Esc | save the rally and go to the next segment / discard the marks |
+| A / D / C | mark start / end / serve hit at the current frame |
+| T / L | toggle "aborted toss" / "let" |
+| Enter / I | save the marks as a rally (go to the next segment) / as an ignored section |
+| Esc | discard the marks |
 | X | the segment contains no rally |
 | R | the gap was checked and contains no rally; go to the next unchecked gap |
 | O | reopen the item |
-| Del | delete the saved rally at the current frame |
+| Del | delete the saved rally or ignored section at the current frame |
 | N / P | next / previous open item |
 | Home / End | start / end of the current item |
 | Mouse wheel | zoom into the video (drag to pan, double-click to reset) |
@@ -503,6 +510,9 @@ Labels follow these binding definitions:
   starts with the toss like every rally and ends when play is stopped. A rally cannot be both an
   aborted toss and a let.
 - **Serve contact** (optional): the frame of racket contact on the serve.
+- **Ignored section:** a stretch of the video left out of training and evaluation, e.g. a rally
+  whose start was not recorded. Not a rally; stored as a row with the flag `ignore` and an empty
+  `rally_id`.
 - Padding for nicer cuts is added only when cutting, never in the labels.
 - Annotation is always done at the original's **native frame rate**. Lower rates, such as 10 fps
   for the model, are derived from it via timestamps.
@@ -512,12 +522,15 @@ stay local and are not part of the repository:
 
 ```
 video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes
+match_a,,0,890,59.94,,ignore,recording started mid-rally
 match_a,1,10234,10811,59.94,10262,,
 match_a,2,12950,13104,59.94,,aborted_toss,
 ```
 
 - Frames are 0-based and `end_frame` is inclusive. They refer to the decoded frames of the
   original, based on presentation timestamps.
+- Rows are sorted by start frame. Ignored sections have an empty `rally_id`, so the rallies are
+  numbered 1, 2, 3, ... without gaps.
 - `fps` is the exact stream rate (e.g. `60000/1001` → 59.94).
 
 ## Data

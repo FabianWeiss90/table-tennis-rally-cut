@@ -93,7 +93,9 @@ def fit_temperature(model: RallyMSTCN, videos: list[Video], device: torch.device
     single scalar, so fitting it on training data does not overfit."""
     logits = np.concatenate([predict_logits(model, v.features, device) for v in videos])
     labels = np.concatenate([v.labels for v in videos])
-    logits_t, labels_t = torch.from_numpy(logits), torch.from_numpy(labels.astype(np.float64))
+    counted = np.concatenate([v.mask for v in videos]) > 0.5
+    logits_t = torch.from_numpy(logits[counted])
+    labels_t = torch.from_numpy(labels[counted].astype(np.float64))
     losses = [F.binary_cross_entropy_with_logits(logits_t / t, labels_t).item()
               for t in TEMPERATURES]
     return float(TEMPERATURES[int(np.argmin(losses))])
@@ -107,7 +109,7 @@ def train(videos: list[Video], config: TrainConfig, seed: int, device: torch.dev
     mean, std = feature_statistics(videos)
     targets = [smooth_boundaries(v.labels, rate, config.smoothing_sigma_s,
                                  config.label_smoothing) for v in videos]
-    dataset = WindowDataset([(v.features, t) for v, t in zip(videos, targets)], rate,
+    dataset = WindowDataset([(v.features, t, v.mask) for v, t in zip(videos, targets)], rate,
                             config.windows, mean, std, augment=True, rng=rng)
     generator = torch.Generator().manual_seed(seed)
     loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, generator=generator)
@@ -118,8 +120,8 @@ def train(videos: list[Video], config: TrainConfig, seed: int, device: torch.dev
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate,
                                   weight_decay=config.weight_decay)
     scheduler = learning_rate_schedule(optimizer, config)
-    positives = sum(float(v.labels.sum()) for v in videos)
-    negatives = sum(len(v.labels) for v in videos) - positives
+    positives = sum(float((v.labels * v.mask).sum()) for v in videos)
+    negatives = sum(float(v.mask.sum()) for v in videos) - positives
     pos_weight = torch.tensor([negatives / max(positives, 1.0)], device=device)
 
     for epoch in range(config.epochs):
@@ -176,13 +178,17 @@ def annotated_segments(video: Video):
     return segments_of(video.labels > 0.5)
 
 
+def evaluate_video(video: Video, probabilities: np.ndarray, params: dict) -> SegmentMetrics:
+    """Metrics of one video decoded with the given parameters; ignored sections do not count."""
+    return evaluate(decode(probabilities, video.sample_rate_hz, params), annotated_segments(video),
+                    len(video.labels), video.sample_rate_hz, ignored=video.mask < 0.5)
+
+
 def score_params(params: dict, videos: list[Video],
                  probabilities: dict[str, np.ndarray]) -> float:
     """Mean segment F1 of the decoding parameters over the videos."""
-    return float(np.mean([
-        evaluate(decode(probabilities[v.video_id], v.sample_rate_hz, params),
-                 annotated_segments(v), len(v.labels), v.sample_rate_hz).f1
-        for v in videos]))
+    return float(np.mean([evaluate_video(v, probabilities[v.video_id], params).f1
+                          for v in videos]))
 
 
 def best_params(videos: list[Video], probabilities: dict[str, np.ndarray]) -> dict:
@@ -211,7 +217,6 @@ def evaluate_held_out(videos: list[Video], groups: dict[str, str],
         params_per_group[held_out] = params
         for video in videos:
             if groups[video.video_id] == held_out:
-                predicted = decode(probabilities[video.video_id], video.sample_rate_hz, params)
-                per_video[video.video_id] = evaluate(predicted, annotated_segments(video),
-                                                     len(video.labels), video.sample_rate_hz)
+                per_video[video.video_id] = evaluate_video(video, probabilities[video.video_id],
+                                                           params)
     return Evaluation(per_video, params_per_group)

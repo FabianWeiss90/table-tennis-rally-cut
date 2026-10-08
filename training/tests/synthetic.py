@@ -39,13 +39,17 @@ def rallies_for(rows: int, rng: np.random.Generator) -> list[tuple[int, int]]:
 
 
 def write_video(root: Path, video_id: str, rows: int, seed: int, review: str = "complete",
+                ignore: tuple[int, int] | None = None,
                 **manifest_fields) -> list[tuple[int, int]]:
     """Writes features under root/features and labels plus review under root/annotations.
 
-    review: "complete", "incomplete" or "missing".
+    review: "complete", "incomplete" or "missing". ignore: an ignored section (frames), written
+    as a label row with the flag `ignore`; rallies overlapping it are left out.
     """
     rng = np.random.default_rng(seed)
     rallies = rallies_for(rows, rng)
+    if ignore is not None:
+        rallies = [r for r in rallies if r[1] < ignore[0] or r[0] > ignore[1]]
     frames = np.arange(rows, dtype=np.int64) * FRAMES_PER_ROW
     in_rally = np.zeros(rows, dtype=bool)
     for start, end in rallies:
@@ -70,6 +74,8 @@ def write_video(root: Path, video_id: str, rows: int, seed: int, review: str = "
         for number, (start, end) in enumerate(rallies, start=1):
             flags = "let" if number == 2 else ("aborted_toss" if number == 3 else "")
             writer.writerow([video_id, number, start, end, "60", "", flags, ""])
+        if ignore is not None:
+            writer.writerow([video_id, "", ignore[0], ignore[1], "60", "", "ignore", "late"])
     if review != "missing":
         with (annotations / f"{video_id}.review.csv").open("w", newline="",
                                                            encoding="utf-8") as file:

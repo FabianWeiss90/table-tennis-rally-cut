@@ -9,6 +9,9 @@ Segment level: a prediction matches an unmatched annotated rally if their IoU re
 threshold (greedy, in prediction order); precision, recall and F1 count matches. For matched
 pairs, the boundary error is the mean absolute difference of start and end in seconds. Row level:
 precision, recall and F1 of the rally mask.
+
+Ignored sections do not count: predictions lying mostly inside one are dropped, and their rows
+are left out of the row-level metrics.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import numpy as np
 from ttrally_training.decoding import Segment
 
 IOU_THRESHOLD = 0.5
+MAX_IGNORED_SHARE = 0.5  # predictions with more of their rows ignored are dropped
 
 
 @dataclass(frozen=True)
@@ -54,7 +58,12 @@ def _mask(segments: list[Segment], rows: int) -> np.ndarray:
 
 
 def evaluate(predicted: list[Segment], annotated: list[Segment], rows: int,
-             sample_rate_hz: float, iou_threshold: float = IOU_THRESHOLD) -> SegmentMetrics:
+             sample_rate_hz: float, iou_threshold: float = IOU_THRESHOLD,
+             ignored: np.ndarray | None = None) -> SegmentMetrics:
+    """`ignored`: boolean per row, True inside ignored sections."""
+    counted = np.ones(rows, dtype=bool) if ignored is None else ~ignored
+    predicted = [p for p in predicted
+                 if 1.0 - counted[p.start : p.end + 1].mean() <= MAX_IGNORED_SHARE]
     matched: set[int] = set()
     ious: list[float] = []
     start_errors: list[float] = []
@@ -74,7 +83,8 @@ def evaluate(predicted: list[Segment], annotated: list[Segment], rows: int,
     recall = len(ious) / len(annotated) if annotated else 0.0
     mean = lambda values: float(np.mean(values)) if values else 0.0  # noqa: E731
 
-    predicted_mask, annotated_mask = _mask(predicted, rows), _mask(annotated, rows)
+    predicted_mask = _mask(predicted, rows) & counted
+    annotated_mask = _mask(annotated, rows) & counted
     true_positive = int(np.sum(predicted_mask & annotated_mask))
     row_precision = true_positive / max(1, int(predicted_mask.sum()))
     row_recall = true_positive / max(1, int(annotated_mask.sum()))

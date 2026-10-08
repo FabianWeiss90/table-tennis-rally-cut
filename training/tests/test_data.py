@@ -50,3 +50,14 @@ def test_groups_default_to_one_per_video(tmp_path):
     groups_file.write_text("video_id,group\na,channel\n")
     assert load_groups(None, videos) == {"a": "a", "b": "b"}
     assert load_groups(groups_file, videos) == {"a": "channel", "b": "b"}
+
+
+def test_ignored_sections_are_masked_and_are_no_rallies(tmp_path):
+    rallies = write_video(tmp_path, "late", 1500, seed=4, ignore=(0, 599))
+    video = select_videos(tmp_path / "features", tmp_path / "annotations").videos[0]
+    assert len(video.rallies) == len(rallies)
+    assert video.ignored == [Rally(0, 599)]
+    assert video.mask[:100].sum() == 0  # rows of frames 0..599
+    assert video.mask[100:].min() == 1
+    assert video.labels[:100].sum() == 0
+

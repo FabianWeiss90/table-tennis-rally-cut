@@ -61,3 +61,15 @@ def test_metrics_match_segments_and_measure_boundaries_in_seconds():
     perfect = evaluate(annotated, annotated, rows=400, sample_rate_hz=RATE)
     assert perfect.f1 == 1.0 and perfect.boundary_mae_s == 0.0
     assert mean_metrics([metrics, perfect])["matched"] == 5
+
+
+def test_ignored_rows_do_not_count():
+    annotated = [Segment(100, 149)]
+    predicted = [Segment(0, 40), Segment(100, 149)]  # the first one lies in an ignored section
+    ignored = np.zeros(200, dtype=bool)
+    ignored[:50] = True
+    metrics = evaluate(predicted, annotated, rows=200, sample_rate_hz=RATE, ignored=ignored)
+    assert metrics.predicted == 1 and metrics.precision == 1.0
+    assert metrics.row_precision == 1.0
+    assert evaluate(predicted, annotated, rows=200, sample_rate_hz=RATE).precision == 0.5
+

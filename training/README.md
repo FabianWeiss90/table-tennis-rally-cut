@@ -63,7 +63,9 @@ annotated videos and exports it to `../weights/rally-detector.onnx`, with a repo
 `../data/features/<video_id>/` and a **complete review** in `annotate` (every segment and gap
 done, see `data/annotations/<video_id>.review.csv`). Videos with open items are skipped with a note,
 because an unchecked gap may hide a missed rally that would be learned as "no rally". All rallies
-count, including those flagged `aborted_toss` or `let`. All features must come from the same
+count, including those flagged `aborted_toss` or `let`. Ignored sections (rows flagged `ignore`)
+count neither in training nor in the evaluation; predictions lying mostly inside one are not
+counted as false alarms. All features must come from the same
 image model variant, execution provider and settings (e.g. all from the fp16 model on WebGPU);
 mixed features are refused.
 

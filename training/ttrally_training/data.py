@@ -7,7 +7,8 @@ because an unchecked gap may hide a missed rally that would be learned as "no ra
 
 Each feature row belongs to one frame of the original (frames.npy), so a row is labelled
 "rally" if that frame lies inside an annotated rally. All rallies count, including those flagged
-aborted_toss or let.
+aborted_toss or let. Rows inside ignored sections (label rows flagged `ignore`, e.g. a rally whose
+start was not recorded) are masked: they count neither in training nor in the evaluation.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import numpy as np
 # Manifest fields that must agree between all videos of one training run
 CONSISTENT_FIELDS = ("model", "execution_provider", "parts", "part_dims", "sample_rate_hz",
                      "input_size")
+IGNORE_FLAG = "ignore"
 
 
 class DataError(Exception):
@@ -30,7 +32,7 @@ class DataError(Exception):
 
 @dataclass(frozen=True)
 class Rally:
-    """Annotated rally in frames of the original, end inclusive."""
+    """Annotated rally (or ignored section) in frames of the original, end inclusive."""
 
     start_frame: int
     end_frame: int
@@ -56,26 +58,31 @@ class Video:
     times_s: np.ndarray  # (rows,) time of each row
     manifest: dict
     rallies: list[Rally]
+    ignored: list[Rally]
+    mask: np.ndarray  # (rows,) float32, 0 = inside an ignored section
 
     @property
     def sample_rate_hz(self) -> float:
         return float(self.manifest["sample_rate_hz"])
 
 
-def load_rallies(annotations_dir: Path, video_id: str) -> list[Rally]:
-    """Rallies of <annotations_dir>/<video_id>.csv (all flags count as rally)."""
+def load_labels(annotations_dir: Path, video_id: str) -> tuple[list[Rally], list[Rally]]:
+    """Rallies (all flags count as rally) and ignored sections of
+    <annotations_dir>/<video_id>.csv."""
     path = annotations_dir / f"{video_id}.csv"
     if not path.exists():
         raise DataError(f"{path} does not exist")
     with path.open(newline="", encoding="utf-8") as file:
         rows = list(csv.DictReader(file))
-    rallies = []
+    rallies, ignored = [], []
     for line, row in enumerate(rows, start=2):
         try:
-            rallies.append(Rally(int(row["start_frame"]), int(row["end_frame"])))
+            span = Rally(int(row["start_frame"]), int(row["end_frame"]))
+            flags = (row["flags"] or "").split(";")
         except (KeyError, ValueError) as error:
-            raise DataError(f"{path}:{line}: invalid rally ({error})") from None
-    return rallies
+            raise DataError(f"{path}:{line}: invalid row ({error})") from None
+        (ignored if IGNORE_FLAG in flags else rallies).append(span)
+    return rallies, ignored
 
 
 def load_review(annotations_dir: Path, video_id: str) -> ReviewSummary:
@@ -96,6 +103,11 @@ def row_labels(frames: np.ndarray, rallies: list[Rally]) -> np.ndarray:
     return labels
 
 
+def row_mask(frames: np.ndarray, ignored: list[Rally]) -> np.ndarray:
+    """0 for every row whose frame lies inside an ignored section, else 1."""
+    return 1.0 - row_labels(frames, ignored)
+
+
 def load_features(features_dir: Path, video_id: str) -> tuple[np.ndarray, np.ndarray,
                                                                np.ndarray, dict]:
     """Feature rows, row times, row frames and manifest of <features_dir>/<video_id>/."""
@@ -114,8 +126,9 @@ def load_features(features_dir: Path, video_id: str) -> tuple[np.ndarray, np.nda
 
 def load_video(features_dir: Path, annotations_dir: Path, video_id: str) -> Video:
     features, times, frames, manifest = load_features(features_dir, video_id)
-    rallies = load_rallies(annotations_dir, video_id)
-    return Video(video_id, features, row_labels(frames, rallies), times, manifest, rallies)
+    rallies, ignored = load_labels(annotations_dir, video_id)
+    return Video(video_id, features, row_labels(frames, rallies), times, manifest, rallies,
+                 ignored, row_mask(frames, ignored))
 
 
 @dataclass

@@ -29,11 +29,13 @@ class WindowConfig:
 class WindowDataset(Dataset):
     """Windows of (features, labels, mask) over several videos.
 
-    Each video is (features (T, D), labels (T,)); windows shorter than the window length (short
-    videos) are padded with the mean features, which the model normalises to zero, and masked.
+    Each video is (features (T, D), labels (T,), mask (T,)), the mask being 0 for rows that do not
+    count (ignored sections). Windows shorter than the window length (short videos) are padded
+    with the mean features, which the model normalises to zero, and masked.
     """
 
-    def __init__(self, videos: list[tuple[np.ndarray, np.ndarray]], sample_rate_hz: float,
+    def __init__(self, videos: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+                 sample_rate_hz: float,
                  config: WindowConfig, feature_mean: np.ndarray, feature_std: np.ndarray,
                  augment: bool, rng: np.random.Generator):
         self.videos = videos
@@ -45,7 +47,7 @@ class WindowDataset(Dataset):
         self.rng = rng
         stride = max(1, round(self.length * (1 - config.overlap)))
         self.windows: list[tuple[int, int]] = []  # (video index, start row)
-        for index, (features, _) in enumerate(videos):
+        for index, (features, _, _) in enumerate(videos):
             last_start = max(0, len(features) - self.length)
             starts = list(range(0, last_start + 1, stride))
             if starts[-1] != last_start:
@@ -57,7 +59,7 @@ class WindowDataset(Dataset):
 
     def __getitem__(self, item: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         index, start = self.windows[item]
-        features, labels = self.videos[index]
+        features, labels, row_mask = self.videos[index]
         if self.max_shift:
             start = int(np.clip(start + self.rng.integers(-self.max_shift, self.max_shift + 1),
                                 0, max(0, len(features) - self.length)))
@@ -67,7 +69,7 @@ class WindowDataset(Dataset):
         mask = np.zeros(self.length, dtype=np.float32)
         x[: end - start] = features[start:end]
         y[: end - start] = labels[start:end]
-        mask[: end - start] = 1.0
+        mask[: end - start] = row_mask[start:end]
         if self.noise:
             x[: end - start] += (self.rng.standard_normal((end - start, x.shape[1]))
                                  .astype(np.float32) * self.noise * self.feature_std)

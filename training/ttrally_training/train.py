@@ -71,8 +71,10 @@ def choose_device(name: str) -> torch.device:
 def describe(videos: list[Video], skipped: dict[str, str]) -> None:
     for video in videos:
         minutes = len(video.labels) / video.sample_rate_hz / 60
+        ignored = (1 - video.mask).sum() / video.sample_rate_hz / 60
         print(f"  {video.video_id}: {minutes:.1f} min, {len(video.rallies)} rallies, "
-              f"{video.labels.mean():.0%} of the time in rallies")
+              f"{video.labels.mean():.0%} of the time in rallies"
+              + (f", {ignored:.1f} min ignored" if ignored > 0 else ""))
     for video_id, reason in skipped.items():
         print(f"  {video_id}: skipped ({reason})")
 
@@ -109,6 +111,7 @@ def main() -> int:
     started = time.monotonic()
 
     report: dict = {"videos": {v.video_id: {"rallies": len(v.rallies), "rows": len(v.labels),
+                                            "ignored_rows": int((1 - v.mask).sum()),
                                             "group": groups[v.video_id]} for v in videos},
                     "skipped": selection.skipped, "config": asdict(config), "seed": args.seed}
     decoding = DEFAULT_PARAMS

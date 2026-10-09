@@ -3,6 +3,7 @@
 #include "shared/io/csv.hpp"
 #include "shared/io/file_cache.hpp"
 #include "shared/io/formatting.hpp"
+#include "shared/io/json.hpp"
 #include "shared/io/npy.hpp"
 
 #include <array>
@@ -99,3 +100,29 @@ TEST_CASE("cache keys depend on purpose and file") {
     CHECK(a != ttrally::io::cache_key(path, "video"));
     std::filesystem::remove(path);
 }
+
+TEST_CASE("JSON documents of manifests and model metadata are parsed") {
+    using ttrally::io::JsonError;
+    using ttrally::io::parse_json;
+    const auto value = parse_json(R"json({
+        "model": "facebook/dinov2-base (fp16)", "rows": 4928, "rate": 10.0,
+        "parts": ["cls", "mean"], "input_size": [392, 224], "fp16": true, "note": null,
+        "quoted": "a \"b\"\nc"
+    })json");
+    CHECK(value.at("model").as_string() == "facebook/dinov2-base (fp16)");
+    CHECK(value.at("rows").as_number() == 4928.0);
+    CHECK(value.at("parts").as_array().size() == 2);
+    CHECK(value.at("input_size").as_array()[1].as_number() == 224.0);
+    CHECK(value.at("fp16").as_bool());
+    CHECK(value.at("note").is_null());
+    CHECK(value.at("quoted").as_string() == "a \"b\"\nc");
+    CHECK_FALSE(value.contains("missing"));
+    CHECK_THROWS_AS(value.at("missing"), JsonError);
+    CHECK_THROWS_AS(value.at("rows").as_string(), JsonError);
+    CHECK(parse_json("[]").as_array().empty());
+    CHECK(parse_json("-1.5e2").as_number() == -150.0);
+    for (const char* broken : {"", "{", "[1,]", "{\"a\" 1}", "\"open", "1 2", "nul"}) {
+        CHECK_THROWS_AS(parse_json(broken), JsonError);
+    }
+}
+

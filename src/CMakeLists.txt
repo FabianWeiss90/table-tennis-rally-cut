@@ -38,7 +38,12 @@ ttrally_layer(ttrally_shared_kernel
 target_compile_definitions(ttrally_shared_kernel PRIVATE TTRALLY_VERSION="${PROJECT_VERSION}")
 
 ttrally_layer(ttrally_shared_io
-    SOURCES shared/io/csv.cpp shared/io/file_cache.cpp shared/io/formatting.cpp shared/io/npy.cpp
+    SOURCES
+        shared/io/csv.cpp
+        shared/io/file_cache.cpp
+        shared/io/formatting.cpp
+        shared/io/json.cpp
+        shared/io/npy.cpp
     DEPENDS ttrally_shared_kernel)
 
 # Media context (generic subdomain: reading video files)

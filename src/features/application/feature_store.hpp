@@ -5,6 +5,7 @@
 #include "shared/kernel/rational.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,9 @@ class FeatureStore {
     /// True if features with exactly this video, model and settings are already stored.
     [[nodiscard]] virtual bool is_current(const FeatureManifest& expected) = 0;
     virtual void save(const FeatureSet& features) = 0;
+    /// The stored features of a video, nullopt if there are none. The fingerprints of video and
+    /// model are not restored (they only decide whether features are current).
+    [[nodiscard]] virtual std::optional<FeatureSet> load(const std::string& video_id) = 0;
 };
 
 } // namespace ttrally::features

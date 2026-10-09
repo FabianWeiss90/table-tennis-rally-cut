@@ -19,6 +19,8 @@ class NpyFeatureStore final : public FeatureStore {
 
     [[nodiscard]] bool is_current(const FeatureManifest& expected) override;
     void save(const FeatureSet& features) override;
+    /// Throws std::runtime_error if the stored files are inconsistent.
+    [[nodiscard]] std::optional<FeatureSet> load(const std::string& video_id) override;
 
     [[nodiscard]] std::filesystem::path directory_for(const std::string& video_id) const {
         return directory_ / video_id;

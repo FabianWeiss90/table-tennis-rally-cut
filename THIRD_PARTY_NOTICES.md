@@ -77,7 +77,8 @@ file and the changes made, and its SPDX identifier is
 | `src/evaluation/metrics.py` (`SegmentMetrics`, `evaluate`) | `training/ttrally_training/metrics.py` | boundary errors in seconds; aggregation |
 | `src/supervised/mstcn_model.py` (`train_one_fold`, `_calibrate_temperature`, `run_lovo`), `src/supervised/common.py` (`sweep_params`) | `training/ttrally_training/training.py` | normalisation, masks, leave-one-group-out, decoding tuned on the other groups only |
 
-Planned (later phases): the decoding and the metrics are ported to C++ for `ttrally detect`.
+| `src/fusion/combine.py` (`scores_to_segments`), `src/supervised/common.py` (`viterbi_decode`, `viterbi_to_rallies`), via `training/ttrally_training/decoding.py` | `src/detection/domain/decoding.hpp`, `src/detection/domain/decoding.cpp` | ported to C++; parameters in seconds |
+| `src/evaluation/metrics.py` (`SegmentMetrics`, `evaluate`), via `training/ttrally_training/metrics.py` | `src/detection/domain/evaluation.hpp`, `src/detection/domain/evaluation.cpp` | ported to C++; boundary errors in seconds; ignored sections |
 
 ### MIT License text of spin-detector
 

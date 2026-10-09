@@ -109,6 +109,18 @@ them (normalisation is part of the model), output `rally_probability` (1, rows).
 temperature, cross-validation results). `ttrally detect` uses them to refuse features of another
 model variant.
 
+## Fixtures for the C++ tests
+
+```sh
+uv run python -m ttrally_training.make_detection_fixtures --out ../tests/fixtures
+```
+
+Writes a tiny untrained rally detector with the interface of the exported one (plus an input and
+the probabilities PyTorch computes for it), and probabilities with the rallies the decoding finds
+and how they are scored, for several decoding parameters. The C++ tests of `ttrally detect`
+check that they reproduce these results exactly; run the script again after changing the
+decoding, the metrics or the export.
+
 ## Tests
 
 ```sh

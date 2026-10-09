@@ -127,6 +127,23 @@ ttrally_layer(ttrally_features_infrastructure
     SOURCES features/infrastructure/npy_feature_store.cpp
     DEPENDS ttrally_features_application ttrally_shared_io)
 
+# Detection context (phase 6: rallies of a new video from a trained detector)
+ttrally_layer(ttrally_detection_domain
+    SOURCES
+        detection/domain/decoding.cpp
+        detection/domain/evaluation.cpp
+        detection/domain/frame_grid.cpp
+        detection/domain/row_segment.cpp
+    DEPENDS ttrally_shared_kernel)
+
+ttrally_layer(ttrally_detection_application
+    SOURCES detection/application/detect_rallies.cpp
+    DEPENDS ttrally_detection_domain ttrally_features_application ttrally_annotation_application)
+
+ttrally_layer(ttrally_detection_infrastructure
+    SOURCES detection/infrastructure/csv_detection_output.cpp
+    DEPENDS ttrally_detection_application ttrally_annotation_infrastructure ttrally_shared_io)
+
 # ONNX Runtime (prebuilt, never downloaded by the build). Default: external/onnxruntime (own
 # build with WebGPU), else external/onnxruntime-cpu (official CPU release).
 set(TTRALLY_ORT_ROOT "" CACHE PATH "ONNX Runtime directory with include/ and lib/")
@@ -157,8 +174,12 @@ if(ORT_INCLUDE_DIR AND ORT_LIBRARY)
     ttrally_layer(ttrally_features_onnx
         SOURCES features/infrastructure/onnx_image_embedder.cpp
         DEPENDS ttrally_features_application ttrally_shared_io ttrally_onnxruntime)
+    ttrally_layer(ttrally_detection_onnx
+        SOURCES detection/infrastructure/onnx_rally_detector.cpp
+        DEPENDS ttrally_detection_application ttrally_shared_io ttrally_onnxruntime)
 else()
-    message(STATUS "ONNX Runtime not found: `ttrally features` is not built (set TTRALLY_ORT_ROOT)")
+    message(STATUS "ONNX Runtime not found: `ttrally features` and `ttrally detect` are not built "
+                   "(set TTRALLY_ORT_ROOT)")
     set(TTRALLY_HAS_ORT OFF PARENT_SCOPE)
 endif()
 
@@ -188,9 +209,11 @@ target_link_libraries(ttrally PRIVATE
     ttrally_media_infrastructure
     CLI11::CLI11)
 if(TTRALLY_HAS_ORT)
-    target_sources(ttrally PRIVATE cli/features_command.cpp)
+    target_sources(ttrally PRIVATE cli/detect_command.cpp cli/features_command.cpp)
     target_compile_definitions(ttrally PRIVATE TTRALLY_WITH_ORT)
-    target_link_libraries(ttrally PRIVATE ttrally_features_onnx ttrally_features_infrastructure)
+    target_link_libraries(ttrally PRIVATE
+        ttrally_features_onnx ttrally_features_infrastructure
+        ttrally_detection_onnx ttrally_detection_infrastructure)
 endif()
 if(TTRALLY_BUILD_GUI)
     target_sources(ttrally PRIVATE cli/annotate_command.cpp)

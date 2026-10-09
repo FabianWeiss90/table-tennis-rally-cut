@@ -5,6 +5,7 @@
 #include "cli/annotate_command.hpp"
 #endif
 #ifdef TTRALLY_WITH_ORT
+#include "cli/detect_command.hpp"
 #include "cli/features_command.hpp"
 #endif
 #include "cli/devices_command.hpp"
@@ -29,6 +30,7 @@ int main(int argc, char** argv) {
 #endif
 #ifdef TTRALLY_WITH_ORT
     ttrally::cli::FeaturesCommand features(app);
+    ttrally::cli::DetectCommand detect(app);
 #endif
     ttrally::cli::DevicesCommand devices(app);
 
@@ -47,6 +49,9 @@ int main(int argc, char** argv) {
 #ifdef TTRALLY_WITH_ORT
         if (features.selected()) {
             return features.run();
+        }
+        if (detect.selected()) {
+            return detect.run();
         }
 #endif
         if (devices.selected()) {

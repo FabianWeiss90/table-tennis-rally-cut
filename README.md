@@ -12,17 +12,20 @@ neighbouring tables are audible. Audio is used only to align videos during datas
 
 ## Status
 
-**Early and experimental.** `align` is implemented and has been checked on a real Liimba cut;
-`annotate` is implemented but has not been used for real annotation yet. Nothing here is ready
-for end users yet, and commands, file formats and results may change without notice.
+**Early and experimental.** `align` and `annotate` are in use on real footage; `features`,
+the training and `detect` are implemented, but no detector has been trained on real data yet.
+Nothing here is ready for end users yet, and commands, file formats and results may change
+without notice.
 
 | Phase | Component | Status |
 |---|---|---|
 | 0 | Repository skeleton, build system, licensing | done |
 | 1 | `align`, `devices` | done |
 | 2 | `annotate` (GUI) | done |
-| 3 | `features` (image features with DINOv2) | implemented, in testing |
-| later | training, `detect`, `refine`, `cut`, `benchmark` | planned |
+| 3 | `features` (image features with DINOv2) | done |
+| 4 | training (Python, `training/`) | implemented, not yet run on real data |
+| 6 | `detect` | implemented, waiting for a trained detector |
+| later | `refine`, `cut`, `benchmark` | planned |
 
 ## Pipeline overview
 
@@ -493,6 +496,47 @@ ttrally features data/original.mp4 --video-id <video_id> --model data/models/din
 Options: `--model`, `--out-dir` (default `data/features`), `--ep` (execution provider, see
 [GPU support](#gpu-support)), `--decode-backend`, `--rate` (samples per second, default 10) and
 `--batch` (images per model run, default 16).
+
+### `detect`
+
+Finds the rallies of a video with a detector trained by `training/` (see
+[`training/README.md`](training/README.md)):
+
+```sh
+ttrally detect data/original.mp4 --video-id <video_id>
+```
+
+1. **Features:** stored features in `data/features/<video_id>/` are used if they fit the
+   detector; otherwise they are computed with the image model given by `--backbone` (default:
+   the float16 model). The detector stores which image model, feature parts, sampling rate and
+   image size it was trained with; features that differ are refused with an error, features
+   computed on another execution provider give a warning (float16 values differ slightly
+   between providers).
+2. **Detection:** the detector computes a rally probability for every tenth of a second (on the
+   CPU; it takes seconds even for long videos), and the decoding chosen during training (a
+   threshold or a Viterbi decoder, stored in the model) turns them into rallies.
+3. **Output** in `data/detections/`:
+
+   | File | Content |
+   |---|---|
+   | `<video_id>.csv` | the rallies in the [label format](#annotation-definitions-and-label-format); notes: mean rally probability |
+   | `<video_id>.probabilities.npy` | float32, rally probability of every feature row |
+
+   Because the detections use the label format, they can be checked and corrected in the
+   annotation window: `ttrally annotate ... --annotations-dir data/detections`.
+4. **Evaluation:** if the video has labels in `data/annotations/`, the detections are compared
+   with them: segment F1, precision, recall and the mean boundary error in seconds (the same
+   definitions as in training; ignored sections do not count). A note appears if the review of
+   the labels is not complete.
+
+Options: `--detector` (default `weights/rally-detector.onnx`), `--backbone` (default
+`data/models/dinov2-vitb14-fp16.onnx`), `--video-id`, `--features-dir`, `--out-dir` (default
+`data/detections`), `--labels-dir` (default `data/annotations`), `--no-evaluation`, `--ep`,
+`--decode-backend`, `--batch`.
+
+To measure how well a detector works, train it without one of the videos
+(`uv run python -m ttrally_training.train --videos <the others>`) and run `detect` on the left-out
+video: the evaluation shows how it does on footage it has never seen.
 
 ## Annotation definitions and label format
 

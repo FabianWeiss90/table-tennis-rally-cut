@@ -25,7 +25,8 @@ without notice.
 | 3 | `features` (image features with DINOv2) | done |
 | 4 | training (Python, `training/`) | implemented, not yet run on real data |
 | 6 | `detect` | implemented, waiting for a trained detector |
-| later | `refine`, `cut`, `benchmark` | planned |
+| 8 | `cut` | done |
+| later | `benchmark` | planned |
 
 ## Pipeline overview
 
@@ -41,9 +42,8 @@ without notice.
 5. **Training (Python, `training/`):** an MS-TCN is trained on the embeddings with per-frame
    labels "rally / no rally" and exported to ONNX.
 6. **`detect`:** C++ inference of the ONNX model and decoding into rally segments.
-7. **`refine`** (optional): frame-accurate boundaries using all native-rate frames around each
-   predicted boundary.
-8. **`cut`:** cuts the original video according to the resulting cut list.
+7. **`cut`:** cuts the original video according to the resulting cut list, with a chosen margin
+   before and after each rally.
 
 Everything that touches video runs in C++. Python is only needed to **train** models, never to
 **use** the tool. Because the C++ tool also produces the training features, preprocessing is
@@ -537,6 +537,49 @@ Options: `--detector` (default `weights/rally-detector.onnx`), `--backbone` (def
 To measure how well a detector works, train it without one of the videos
 (`uv run python -m ttrally_training.train --videos <the others>`) and run `detect` on the left-out
 video: the evaluation shows how it does on footage it has never seen.
+
+### `cut`
+
+Cuts a video down to its rallies, with a margin before and after each, into one MP4 file:
+
+```sh
+ttrally cut data/original.mp4 --video-id <video_id>                  # detected rallies
+ttrally cut data/original.mp4 --rallies data/annotations/<video_id>.csv  # annotated rallies
+ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
+```
+
+- **Cut list:** any file in the [label format](#annotation-definitions-and-label-format), by
+  default `data/detections/<video_id>.csv` from `detect`. Ignored sections are not rallies and
+  are not cut.
+- **Margins:** `--before` and `--after` (seconds, default 2 each). Rallies whose margins overlap
+  or touch become one continuous section, so nothing is shown twice.
+- **Frame-accurate (default):** every section starts and ends exactly at a frame; the video is
+  re-encoded as **H.265 (HEVC)** with the GPU (VAAPI on AMD/Intel under Linux, NVENC, Quick Sync,
+  AMF or Media Foundation). Without an H.265 encoder, H.264 is used (GPU, else OpenH264, else
+  FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). Colours and value range of
+  the source are kept, the audio is encoded as AAC. A 10-minute match takes about 40 s on an
+  RX 7800 XT.
+- **Bit rate:** `--bitrate` in Mbit/s. The default scales with resolution and frame rate: for
+  Full HD at 60 fps **5 Mbit/s with H.265** (no loss visible on fast rallies; a cut is about
+  70 % the size of the camera's original per minute) and 10 Mbit/s with H.264. Measured on fast
+  rallies with the VAAPI H.265 encoder (PSNR against the original):
+
+  | `--bitrate` | 5 | 6 | 7 | 8 | 12 | 20 |
+  |---|---|---|---|---|---|---|
+  | PSNR | 41.4 dB | 41.9 dB | 42.8 dB | 43.3 dB | 44.4 dB | 46.5 dB |
+  | MB per minute | 39 | 47 | 54 | 62 | 92 | 151 |
+- **H.265 playback:** VLC, mpv, current browsers, smartphones, Windows (with the HEVC
+  extension) and YouTube play it. The files use the tag `hev1`; Apple's own players prefer
+  `hvc1`, which the VAAPI encoder cannot produce correctly. For maximum compatibility use
+  `--codec h264` (with VAAPI limited to 15 Mbit/s, because the driver hangs above).
+- **`--fast`:** copies the compressed video without re-encoding (under a second), but each
+  section is widened to the keyframes around it. Cameras often write a keyframe only every few
+  seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every
+  4 s).
+
+Options: `--rallies`, `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
+`--fast`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
+`libopenh264`; default: the first of the codec that works), `--cache-dir`.
 
 ## Annotation definitions and label format
 

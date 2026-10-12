@@ -37,6 +37,10 @@ ttrally_test(detection_tests
 target_compile_definitions(detection_tests
     PRIVATE TTRALLY_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
+ttrally_test(cutting_tests
+    SOURCES cutting/test_cutting.cpp
+    DEPENDS ttrally_cutting_application)
+
 ttrally_test(alignment_tests
     SOURCES
         alignment/test_align_videos.cpp
@@ -46,8 +50,13 @@ ttrally_test(alignment_tests
     DEPENDS ttrally_alignment_infrastructure)
 
 ttrally_test(integration_tests
-    SOURCES integration/test_align_media.cpp integration/test_frame_decoder.cpp
-    DEPENDS ttrally_alignment_infrastructure ttrally_media_infrastructure)
+    SOURCES
+        integration/test_align_media.cpp
+        integration/test_frame_decoder.cpp
+        integration/test_video_cutter.cpp
+    DEPENDS
+        ttrally_alignment_infrastructure ttrally_cutting_infrastructure
+        ttrally_media_infrastructure)
 
 # Architecture: layer rules, plus a self-test proving that violations are detected
 add_test(NAME "architecture: layer dependencies"

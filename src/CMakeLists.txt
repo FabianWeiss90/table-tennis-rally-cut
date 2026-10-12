@@ -144,6 +144,19 @@ ttrally_layer(ttrally_detection_infrastructure
     SOURCES detection/infrastructure/csv_detection_output.cpp
     DEPENDS ttrally_detection_application ttrally_annotation_infrastructure ttrally_shared_io)
 
+# Cutting context (phase 8: the video cut down to its rallies)
+ttrally_layer(ttrally_cutting_domain
+    SOURCES cutting/domain/cut_plan.cpp)
+
+ttrally_layer(ttrally_cutting_application
+    SOURCES cutting/application/cut_video.cpp
+    DEPENDS ttrally_cutting_domain ttrally_media_application ttrally_annotation_application)
+
+ttrally_layer(ttrally_cutting_infrastructure
+    SOURCES cutting/infrastructure/ffmpeg_video_cutter.cpp
+    DEPENDS ttrally_cutting_application ttrally_media_infrastructure
+    PRIVATE_DEPENDS ttrally_ffmpeg)
+
 # ONNX Runtime (prebuilt, never downloaded by the build). Default: external/onnxruntime (own
 # build with WebGPU), else external/onnxruntime-cpu (official CPU release).
 set(TTRALLY_ORT_ROOT "" CACHE PATH "ONNX Runtime directory with include/ and lib/")
@@ -201,11 +214,14 @@ endif()
 find_package(CLI11 CONFIG REQUIRED)
 add_executable(ttrally
     cli/align_command.cpp
+    cli/cut_command.cpp
     cli/devices_command.cpp
     cli/main.cpp)
 target_link_libraries(ttrally PRIVATE
     ttrally_options
     ttrally_alignment_infrastructure
+    ttrally_annotation_infrastructure
+    ttrally_cutting_infrastructure
     ttrally_media_infrastructure
     CLI11::CLI11)
 if(TTRALLY_HAS_ORT)

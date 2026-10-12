@@ -12,7 +12,7 @@ namespace ttrally::cli {
 class StreamProgressReporter final : public ProgressReporter {
   public:
     explicit StreamProgressReporter(std::ostream& out) : out_(out) {}
-    void report(std::string_view message) override { out_ << message << '\n'; }
+    void report(std::string_view message) override { out_ << message << '\n' << std::flush; }
 
   private:
     std::ostream& out_;

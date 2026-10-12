@@ -180,7 +180,7 @@ The executable is then at `build/linux-release/src/ttrally`.
 Available presets: `linux-release`, `linux-debug`, `linux-debug-sanitize` (ASan/UBSan) and
 `ci-linux` (release with warnings as errors).
 
-The annotation GUI (Dear ImGui + SDL3) is built by default. On Linux, vcpkg compiles SDL3 with
+The windows (`ttrally gui` and `ttrally annotate`, Dear ImGui + SDL3) are built by default. On Linux, vcpkg compiles SDL3 with
 D-Bus and parts of systemd from source the first time, which takes a few minutes and needs the
 autotools listed above. To build without the GUI (e.g. on a server), add
 `-DTTRALLY_BUILD_GUI=OFF -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES=tests`
@@ -317,6 +317,41 @@ Without a supported GPU, decoding and inference run on the CPU.
 `ttrally devices` lists the detected backends and shows which one `auto` would pick.
 
 ## Usage
+
+The examples write `ttrally` for the built program (`build/linux-release/src/ttrally` on Linux,
+`build\windows-release\src\ttrally.exe` on Windows). Run it from the repository directory,
+where `data/` lies; all paths are relative to it.
+
+### `gui`
+
+The easiest way to work: a window to run all commands without typing them. Start it from the
+repository directory:
+
+```sh
+build/linux-release/src/ttrally gui          # Linux
+build\windows-release\src\ttrally.exe gui     # Windows
+```
+
+Put the videos (originals and their pre-cut versions) into `data/` first; the window lists
+them.
+
+- **Left:** the videos in `data/` (pre-cut versions such as `<name>_cut_...` are recognised and
+  offered to `align`) with their progress: aligned, labels (complete or in progress), features,
+  detected, cut. Below, a preview frame of the selected video; the slider picks another
+  position (the frame is decoded in the background).
+- **Right:** a tab per command (align, annotate, features, detect, cut, train), filled in for
+  the selected video: its id (suggested from the file name, e.g. `Weiss-Heinemeier_FHD.MP4` →
+  `weiss-heinemeier`), the paths that follow from it, and suggestions such as the image models
+  in `data/models` or the detectors in `weights/` and `data/models`. Rarely needed options are
+  folded away under "Advanced" with the commands' defaults. Fields for files have a "..." button
+  for the file dialog.
+- **Run:** the command runs as its own process; its output appears below, and it can be
+  cancelled. The exact command line is shown above the button and can be copied. The list of
+  videos is updated when a command has finished.
+- **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
+  "Advanced"; a copy in `external/uv/` is found automatically).
+
+Options: `--project` (project directory, default the current one).
 
 ### `align`
 

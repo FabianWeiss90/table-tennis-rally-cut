@@ -41,6 +41,16 @@ ttrally_test(cutting_tests
     SOURCES cutting/test_cutting.cpp
     DEPENDS ttrally_cutting_application)
 
+ttrally_test(launcher_tests
+    SOURCES launcher/test_launcher.cpp
+    DEPENDS ttrally_launcher_application)
+
+ttrally_test(launcher_infrastructure_tests
+    SOURCES integration/test_launcher_infrastructure.cpp
+    DEPENDS ttrally_launcher_infrastructure)
+target_compile_definitions(launcher_infrastructure_tests
+    PRIVATE TTRALLY_CMAKE="${CMAKE_COMMAND}")
+
 ttrally_test(alignment_tests
     SOURCES
         alignment/test_align_videos.cpp
@@ -78,6 +88,6 @@ endif()
 
 if(TTRALLY_BUILD_GUI)
     ttrally_test(gui_tests
-        SOURCES gui/test_annotator_smoke.cpp
+        SOURCES gui/test_annotator_smoke.cpp gui/test_launcher_smoke.cpp
         DEPENDS ttrally_gui ttrally_media_infrastructure)
 endif()

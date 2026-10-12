@@ -157,6 +157,27 @@ ttrally_layer(ttrally_cutting_infrastructure
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure
     PRIVATE_DEPENDS ttrally_ffmpeg)
 
+# Launcher context (the window that runs the commands)
+ttrally_layer(ttrally_launcher_domain
+    SOURCES
+        launcher/domain/command_form.cpp
+        launcher/domain/forms.cpp
+        launcher/domain/video_id.cpp)
+
+ttrally_layer(ttrally_launcher_application
+    SOURCES launcher/application/launcher_session.cpp
+    DEPENDS ttrally_launcher_domain ttrally_media_domain)
+
+ttrally_layer(ttrally_launcher_infrastructure
+    SOURCES
+        launcher/infrastructure/ffmpeg_video_preview.cpp
+        launcher/infrastructure/filesystem_workspace_scanner.cpp
+        launcher/infrastructure/subprocess_runner.cpp
+    DEPENDS
+        ttrally_launcher_application ttrally_annotation_infrastructure ttrally_media_infrastructure
+        ttrally_shared_io
+    PRIVATE_DEPENDS ttrally_ffmpeg)
+
 # ONNX Runtime (prebuilt, never downloaded by the build). Default: external/onnxruntime (own
 # build with WebGPU), else external/onnxruntime-cpu (official CPU release).
 set(TTRALLY_ORT_ROOT "" CACHE PATH "ONNX Runtime directory with include/ and lib/")
@@ -204,10 +225,12 @@ if(TTRALLY_BUILD_GUI)
         gui/annotator_app.cpp
         gui/frame_texture.cpp
         gui/gui_context.cpp
+        gui/launcher_app.cpp
         gui/timeline_view.cpp)
     target_include_directories(ttrally_gui PUBLIC ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(ttrally_gui
         PUBLIC ttrally_annotation_application ttrally_media_application
+               ttrally_launcher_application
         PRIVATE ttrally_options SDL3::SDL3 imgui::imgui)
 endif()
 
@@ -233,7 +256,8 @@ if(TTRALLY_HAS_ORT)
         ttrally_detection_onnx ttrally_detection_infrastructure)
 endif()
 if(TTRALLY_BUILD_GUI)
-    target_sources(ttrally PRIVATE cli/annotate_command.cpp)
+    target_sources(ttrally PRIVATE cli/annotate_command.cpp cli/gui_command.cpp)
     target_compile_definitions(ttrally PRIVATE TTRALLY_WITH_GUI)
-    target_link_libraries(ttrally PRIVATE ttrally_gui ttrally_annotation_infrastructure)
+    target_link_libraries(ttrally PRIVATE
+        ttrally_gui ttrally_annotation_infrastructure ttrally_launcher_infrastructure)
 endif()

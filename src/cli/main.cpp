@@ -3,6 +3,7 @@
 #include "cli/align_command.hpp"
 #ifdef TTRALLY_WITH_GUI
 #include "cli/annotate_command.hpp"
+#include "cli/gui_command.hpp"
 #endif
 #ifdef TTRALLY_WITH_ORT
 #include "cli/detect_command.hpp"
@@ -28,6 +29,7 @@ int main(int argc, char** argv) {
     ttrally::cli::AlignCommand align(app);
 #ifdef TTRALLY_WITH_GUI
     ttrally::cli::AnnotateCommand annotate(app);
+    ttrally::cli::GuiCommand gui(app);
 #endif
 #ifdef TTRALLY_WITH_ORT
     ttrally::cli::FeaturesCommand features(app);
@@ -46,6 +48,9 @@ int main(int argc, char** argv) {
 #ifdef TTRALLY_WITH_GUI
         if (annotate.selected()) {
             return annotate.run();
+        }
+        if (gui.selected()) {
+            return gui.run();
         }
 #endif
 #ifdef TTRALLY_WITH_ORT

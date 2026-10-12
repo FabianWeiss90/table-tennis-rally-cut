@@ -3,6 +3,7 @@
 #include "gui/annotator_app.hpp"
 
 #include "gui/frame_texture.hpp"
+#include "gui/gui_context.hpp"
 #include "gui/timeline_view.hpp"
 #include "shared/io/formatting.hpp"
 
@@ -75,94 +76,6 @@ ImVec4 status_color(ReviewStatus status) {
     }
     return {1.0F, 1.0F, 1.0F, 1.0F};
 }
-
-/// SDL window, renderer and Dear ImGui context; released in reverse order.
-class GuiContext {
-  public:
-    explicit GuiContext(const std::string& title) {
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-            throw std::runtime_error(std::string("cannot initialise SDL: ") + SDL_GetError());
-        }
-        window_ = SDL_CreateWindow(title.c_str(), 1600, 950,
-                                   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-        renderer_ = window_ != nullptr ? SDL_CreateRenderer(window_, nullptr) : nullptr;
-        if (renderer_ == nullptr) {
-            const std::string error = SDL_GetError();
-            release();
-            throw std::runtime_error("cannot open the window: " + error);
-        }
-        SDL_SetRenderVSync(renderer_, 1);
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGui::GetIO().IniFilename = nullptr; // the layout is fixed, nothing to remember
-        ImGui::StyleColorsDark();
-        ImGui_ImplSDL3_InitForSDLRenderer(window_, renderer_);
-        ImGui_ImplSDLRenderer3_Init(renderer_);
-    }
-    ~GuiContext() {
-        ImGui_ImplSDLRenderer3_Shutdown();
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext();
-        release();
-    }
-    GuiContext(const GuiContext&) = delete;
-    GuiContext& operator=(const GuiContext&) = delete;
-
-    [[nodiscard]] SDL_Renderer* renderer() const noexcept { return renderer_; }
-
-    /// Processes pending events; returns true if the user asked to close the window.
-    [[nodiscard]] bool poll_events() const {
-        SDL_Event event;
-        bool close_requested = false;
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
-            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                close_requested = true;
-            }
-        }
-        return close_requested;
-    }
-
-    void begin_frame() const {
-        ImGui_ImplSDLRenderer3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-    }
-
-    void end_frame(const std::filesystem::path& screenshot = {}) const {
-        ImGui::Render();
-        SDL_SetRenderDrawColor(renderer_, 20, 21, 24, 255);
-        SDL_RenderClear(renderer_);
-        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer_);
-        if (!screenshot.empty()) {
-            save_screenshot(screenshot);
-        }
-        SDL_RenderPresent(renderer_);
-    }
-
-  private:
-    void save_screenshot(const std::filesystem::path& path) const {
-        SDL_Surface* surface = SDL_RenderReadPixels(renderer_, nullptr);
-        const bool saved = surface != nullptr && SDL_SaveBMP(surface, path.string().c_str());
-        SDL_DestroySurface(surface);
-        if (!saved) {
-            throw std::runtime_error(std::string("cannot save the screenshot: ") + SDL_GetError());
-        }
-    }
-
-    void release() {
-        if (renderer_ != nullptr) {
-            SDL_DestroyRenderer(renderer_);
-        }
-        if (window_ != nullptr) {
-            SDL_DestroyWindow(window_);
-        }
-        SDL_Quit();
-    }
-
-    SDL_Window* window_ = nullptr;
-    SDL_Renderer* renderer_ = nullptr;
-};
 
 class AnnotatorApp {
   public:

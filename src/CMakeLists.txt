@@ -203,6 +203,7 @@ if(TTRALLY_BUILD_GUI)
     add_library(ttrally_gui STATIC
         gui/annotator_app.cpp
         gui/frame_texture.cpp
+        gui/gui_context.cpp
         gui/timeline_view.cpp)
     target_include_directories(ttrally_gui PUBLIC ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(ttrally_gui

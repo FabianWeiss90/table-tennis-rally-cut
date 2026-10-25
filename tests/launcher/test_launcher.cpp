@@ -2,14 +2,18 @@
 
 // Forms, command lines and the launcher session with in-memory fakes.
 
+#include "launcher/application/detect_scenes.hpp"
 #include "launcher/application/launcher_session.hpp"
+#include "launcher/domain/scenes.hpp"
 #include "launcher/domain/video_id.hpp"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <stdexcept>
 
 using namespace ttrally::launcher;
+using Catch::Approx;
 
 namespace {
 
@@ -221,4 +225,72 @@ TEST_CASE("switching the library scans it") {
     CHECK(session.selected_video() == 0);
     session.run(session.forms()[1]);
     CHECK_THROWS_AS(session.set_library("/lib"), std::logic_error);
+}
+
+TEST_CASE("scenes are grouped from the similarity of the backgrounds") {
+    // Measured on one match day: four games from one camera position, one from another
+    const std::vector<std::vector<double>> similarities{{1.00, 0.91, 0.88, 0.92, 0.41},
+                                                        {0.91, 1.00, 0.87, 0.96, 0.40},
+                                                        {0.88, 0.87, 1.00, 0.87, 0.43},
+                                                        {0.92, 0.96, 0.87, 1.00, 0.40},
+                                                        {0.41, 0.40, 0.43, 0.40, 1.00}};
+    CHECK(group_into_scenes(similarities) ==
+          std::vector<std::string>{"A", "A", "A", "A", "B"});
+    CHECK(group_into_scenes({{1.0, 0.9, 0.2}, {0.9, 1.0, 0.2}, {0.2, 0.2, 1.0}}, 0.95) ==
+          std::vector<std::string>{"A", "B", "C"});
+    CHECK(group_into_scenes({}).empty());
+    CHECK(scene_name(0) == "A");
+    CHECK(scene_name(25) == "Z");
+    CHECK(scene_name(26) == "AA");
+}
+
+TEST_CASE("backgrounds are compared independent of brightness") {
+    const Background a{2, 2, {0, 10, 20, 30}};
+    const Background brighter{2, 2, {50, 70, 90, 110}};
+    const Background mirrored{2, 2, {30, 20, 10, 0}};
+    CHECK(similarity(a, brighter) == Approx(1.0));
+    CHECK(similarity(a, mirrored) == Approx(-1.0));
+    CHECK(similarity(a, Background{4, 1, a.pixels}) == 0.0); // other size
+    CHECK(similarity(a, Background{2, 2, {5, 5, 5, 5}}) == 0.0); // uniform
+}
+
+TEST_CASE("a scene in training and validation is reported") {
+    auto snapshot = workspace();
+    snapshot.videos.push_back(video("match-c"));
+    snapshot.videos[0].scene = "A";
+    snapshot.videos[1].scene = "A";
+    snapshot.videos[2].scene = "B";
+    const std::vector<std::string> trainable{"day-1/match-a", "day-1/match-b", "day-1/match-c"};
+    CHECK(scenes_in_both(snapshot.videos, trainable, {"day-1/match-a"}) ==
+          std::vector<std::string>{"day-1, scene A"});
+    CHECK(scenes_in_both(snapshot.videos, trainable, {"day-1/match-a", "day-1/match-b"}).empty());
+    CHECK(scenes_in_both(snapshot.videos, {"day-1/match-a", "day-1/match-c"},
+                         {"day-1/match-a"})
+              .empty()); // match-b cannot be trained on, so it validates nothing
+}
+
+TEST_CASE("the scenes of videos are detected from frames spread over them") {
+    // Two hall pictures; the "players" (one bright pixel) move from frame to frame
+    class Halls final : public VideoPreview {
+      public:
+        std::optional<ttrally::media::VideoFrame> frame_at(const std::filesystem::path& video,
+                                                           double fraction, int) override {
+            if (video == "broken.mp4") {
+                return std::nullopt;
+            }
+            ttrally::media::VideoFrame frame;
+            frame.size = {8, 4};
+            frame.planes.assign(ttrally::media::VideoFrame::bytes_for(frame.size), 128);
+            for (int i = 0; i < 32; ++i) {
+                const bool left_hall = video.string().starts_with("left");
+                frame.planes[i] = static_cast<std::uint8_t>(left_hall ? i * 4 : 255 - i * i / 4);
+            }
+            frame.planes[static_cast<std::size_t>(fraction * 31)] = 255;
+            return frame;
+        }
+    } halls;
+    CHECK(video_background(halls, "broken.mp4").pixels.empty());
+    CHECK(video_background(halls, "left-1.mp4").pixels.size() == 32);
+    CHECK(detect_scenes(halls, {"left-1.mp4", "right-1.mp4", "left-2.mp4", "broken.mp4"}) ==
+          std::vector<std::string>{"A", "B", "A", "C"});
 }

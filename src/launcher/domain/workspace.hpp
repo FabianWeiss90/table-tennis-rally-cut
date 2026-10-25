@@ -33,6 +33,7 @@ struct VideoEntry {
     std::string features_model; ///< Image model of the stored features; empty: none
     bool detected = false;
     std::vector<std::string> cuts; ///< Cut videos
+    std::string scene; ///< e.g. "A": videos of a match day with the same hall and camera position
 
     /// Unique in the library: "<match day>/<video id>".
     [[nodiscard]] std::string key() const { return match_day + "/" + video_id; }

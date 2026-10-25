@@ -5,6 +5,7 @@
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "annotation/infrastructure/csv_review_state_store.hpp"
 #include "launcher/domain/video_id.hpp"
+#include "launcher/infrastructure/csv_scene_store.hpp"
 #include "shared/io/json.hpp"
 
 #include <algorithm>
@@ -126,10 +127,19 @@ std::vector<fs::path> pre_cut_videos(const fs::path& match_day) {
 void scan_match_day(const fs::path& match_day, WorkspaceSnapshot& workspace) {
     const fs::path work = match_day / kWorkFolder;
     const std::vector<fs::path> pre_cuts = pre_cut_videos(match_day);
+    std::map<std::string, std::string> scenes;
+    try {
+        scenes = CsvSceneStore().load(work);
+    } catch (const std::exception&) {
+        scenes.clear(); // an unreadable file only loses the scenes
+    }
     for (const fs::path& video : entries(match_day, [](const fs::directory_entry& entry) {
              return entry.is_regular_file() && is_video(entry.path());
          })) {
         VideoEntry entry = describe(video, work);
+        if (const auto scene = scenes.find(entry.video_id); scene != scenes.end()) {
+            entry.scene = scene->second;
+        }
         for (const fs::path& pre_cut : pre_cuts) {
             if (is_pre_cut_of(pre_cut.stem().string(), video.stem().string())) {
                 entry.cut_candidates.push_back(pre_cut.string());

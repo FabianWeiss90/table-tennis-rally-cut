@@ -3,6 +3,7 @@
 // The library scanner on a small library, and the process runner with the cmake
 // command-line tool as a portable test program.
 
+#include "launcher/infrastructure/csv_scene_store.hpp"
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
 #include "launcher/infrastructure/library_scanner.hpp"
 #include "launcher/infrastructure/subprocess_runner.hpp"
@@ -98,6 +99,23 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     CHECK(fs::path(workspace.detectors[1]) == project / "weights" / "rally-detector.onnx");
     fs::remove_all(library);
     fs::remove_all(project);
+}
+
+TEST_CASE("scenes are stored per match day and read by the scanner") {
+    const fs::path library = temp_dir();
+    const fs::path day = library / "day";
+    touch(day / "Match-A.mp4");
+    touch(day / "Match-B.mp4");
+    CsvSceneStore store;
+    CHECK(store.load(day / "ttrally-data").empty());
+    store.save(day / "ttrally-data", {{"match-a", "B"}, {"match, odd", "A"}});
+    CHECK(store.load(day / "ttrally-data") ==
+          std::map<std::string, std::string>{{"match-a", "B"}, {"match, odd", "A"}});
+    const WorkspaceSnapshot workspace = LibraryScanner(library).scan(library);
+    REQUIRE(workspace.videos.size() == 2);
+    CHECK(workspace.videos[0].scene == "B");
+    CHECK(workspace.videos[1].scene.empty());
+    fs::remove_all(library);
 }
 
 TEST_CASE("the launcher remembers the library") {

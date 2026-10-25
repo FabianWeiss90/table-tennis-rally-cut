@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "launcher/application/detect_scenes.hpp"
 #include "launcher/application/launcher_session.hpp"
 #include "launcher/application/video_preview.hpp"
 
@@ -13,6 +14,7 @@ namespace ttrally::gui {
 struct LauncherOptions {
     std::string title = "ttrally";
     launcher::LauncherSettings* settings = nullptr; ///< remembers a library chosen in the window
+    launcher::SceneStore* scenes = nullptr; ///< scenes of the videos; nullptr: not shown
     std::filesystem::path project_directory = "."; ///< chosen files are shown relative to it
     int max_frames = 0; ///< Stop after this many rendered frames (0 = until closed; for tests)
     std::filesystem::path screenshot; ///< If set, the last rendered frame is saved here (BMP)

@@ -335,7 +335,7 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       4808_Weiss-Heinemeier_FHD.MP4  pre-cut versions (a number prefix or a suffix such as
                                      _cut_33_rallies is recognised)
     ttrally-data/                    created by the tool: everything it computes for this day
-      align/  annotations/  features/  detections/  cuts/  cache/
+      align/  annotations/  features/  detections/  cuts/  cache/  scenes.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
 ```
@@ -373,7 +373,12 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
 - **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
   "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
   and features are listed by match day with a thumbnail (a click shows the video with its preview
-  on the left); the ticked ones are trained on, all others validate the model (see [the training](training/README.md#training-the-rally-detector)).
+  on the left); the ticked ones are trained on, all others validate the model. Each video has a
+  **scene** (A, B, ...: the same hall seen from the same camera position): "Detect scenes" next to
+  a match day suggests them by comparing the videos' backgrounds (the median of 15 frames, which
+  removes the players), and the choice next to each video corrects them. They are stored in
+  `<match day>/ttrally-data/scenes.csv`. A scene with videos in both training and validation is
+  pointed out, since such a validation flatters the model (see [the training](training/README.md#training-the-rally-detector)).
 
 Options: `--library` (the library to open, remembered for the next start), `--project`
 (project directory with `weights/` and `training/`, default the current one).

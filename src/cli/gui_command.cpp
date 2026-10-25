@@ -4,6 +4,7 @@
 
 #include "gui/launcher_app.hpp"
 #include "launcher/application/launcher_session.hpp"
+#include "launcher/infrastructure/csv_scene_store.hpp"
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
 #include "launcher/infrastructure/library_scanner.hpp"
 #include "launcher/infrastructure/subprocess_runner.hpp"
@@ -37,6 +38,8 @@ int GuiCommand::run() {
     gui::LauncherOptions options;
     options.project_directory = project_;
     options.settings = &settings;
+    launcher::CsvSceneStore scenes;
+    options.scenes = &scenes;
     launcher::FfmpegVideoPreview preview;
     gui::run_launcher(session, preview, options);
     return 0;

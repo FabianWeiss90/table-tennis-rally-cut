@@ -4,6 +4,7 @@
 
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
+#include "launcher/domain/scenes.hpp"
 #include "shared/io/formatting.hpp"
 
 #include <SDL3/SDL.h>
@@ -11,6 +12,7 @@
 #include <condition_variable>
 #include <deque>
 #include <format>
+#include <future>
 #include <imgui.h>
 #include <map>
 #include <memory>
@@ -40,6 +42,8 @@ constexpr int kDefaultPreviewPercent = 20; ///< far enough in to be past the war
 constexpr float kSelectedVideoHeight = 440.0F; ///< preview and details below the video list
 constexpr int kThumbnailHeight = 72;           ///< decoded and shown size of the thumbnails
 constexpr float kThumbnailWidth = 128.0F;
+constexpr float kSceneComboWidth = 64.0F;
+constexpr const char* kNoScene = "-";
 const ImVec4 kDone{0.5F, 0.85F, 0.5F, 1.0F};
 const ImVec4 kPartly{0.95F, 0.75F, 0.35F, 1.0F};
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
@@ -228,15 +232,16 @@ class LauncherApp {
   public:
     LauncherApp(launcher::LauncherSession& session, launcher::VideoPreview& preview,
                 const GuiContext& gui, std::filesystem::path project,
-                launcher::LauncherSettings* settings)
-        : session_(session), gui_(gui), project_(std::filesystem::absolute(project)),
-          settings_(settings),
+                launcher::LauncherSettings* settings, launcher::SceneStore* scenes)
+        : session_(session), preview_(preview), gui_(gui),
+          project_(std::filesystem::absolute(project)), settings_(settings), scenes_(scenes),
           preview_worker_(preview), preview_texture_(gui.renderer()), thumbnail_worker_(preview) {}
 
     void draw() {
         session_.poll();
         apply_dialog_result();
         collect_thumbnails();
+        collect_scenes();
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -391,6 +396,9 @@ class LauncherApp {
         for (const std::string& cut : video.cut_candidates) {
             file_line("Pre-cut", cut);
         }
+        if (!video.scene.empty()) {
+            ImGui::Text("Scene: %s", video.scene.c_str());
+        }
         const char* labels = video.annotation == AnnotationProgress::Complete     ? "complete"
                              : video.annotation == AnnotationProgress::InProgress ? "in progress"
                                                                                    : "none";
@@ -533,6 +541,118 @@ class LauncherApp {
         }
     }
 
+    // ------------------------------------------------------------------ scenes
+
+    /// Suggests the scenes of all videos of a match day in the background.
+    void start_scene_detection(const std::string& match_day) {
+        std::vector<std::filesystem::path> videos;
+        scene_job_ids_.clear();
+        for (const VideoEntry& video : session_.workspace().videos) {
+            if (video.match_day == match_day) {
+                videos.emplace_back(video.original);
+                scene_job_ids_.push_back(video.video_id);
+                scene_job_work_ = video.work_dir;
+            }
+        }
+        scene_job_day_ = match_day;
+        scene_job_ = std::async(std::launch::async,
+                                [&preview = preview_, videos = std::move(videos)] {
+                                    return launcher::detect_scenes(preview, videos);
+                                });
+    }
+
+    [[nodiscard]] bool detecting_scenes() const { return scene_job_.valid(); }
+
+    void collect_scenes() {
+        if (!scene_job_.valid() ||
+            scene_job_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            return;
+        }
+        try {
+            const std::vector<std::string> found = scene_job_.get();
+            auto stored = scenes_->load(scene_job_work_);
+            for (std::size_t i = 0; i < found.size() && i < scene_job_ids_.size(); ++i) {
+                stored[scene_job_ids_[i]] = found[i];
+            }
+            scenes_->save(scene_job_work_, stored);
+            error_.clear();
+        } catch (const std::exception& error) {
+            error_ = std::format("Scenes of {}: {}", scene_job_day_, error.what());
+        }
+        scene_job_day_.clear();
+        session_.rescan();
+    }
+
+    void set_scene(const VideoEntry& video, const std::string& scene) {
+        try {
+            auto stored = scenes_->load(video.work_dir);
+            if (scene == kNoScene) {
+                stored.erase(video.video_id);
+            } else {
+                stored[video.video_id] = scene;
+            }
+            scenes_->save(video.work_dir, stored);
+            error_.clear();
+        } catch (const std::exception& error) {
+            error_ = error.what();
+        }
+        session_.rescan();
+    }
+
+    /// The scenes used on a match day plus a new one.
+    [[nodiscard]] std::vector<std::string> scene_choices(const std::string& match_day) const {
+        std::vector<std::string> used;
+        for (const VideoEntry& video : session_.workspace().videos) {
+            if (video.match_day == match_day && !video.scene.empty() &&
+                std::ranges::find(used, video.scene) == used.end()) {
+                used.push_back(video.scene);
+            }
+        }
+        std::ranges::sort(used);
+        std::size_t next = 0;
+        while (std::ranges::find(used, launcher::scene_name(next)) != used.end()) {
+            ++next;
+        }
+        used.push_back(launcher::scene_name(next));
+        used.insert(used.begin(), kNoScene);
+        return used;
+    }
+
+    void draw_match_day_header(const std::string& match_day) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(kMuted, "%s", match_day.c_str());
+        if (scenes_ == nullptr) {
+            return;
+        }
+        ImGui::SameLine();
+        if (scene_job_day_ == match_day) {
+            ImGui::TextColored(kPartly, "detecting the scenes...");
+            return;
+        }
+        ImGui::BeginDisabled(detecting_scenes());
+        if (ImGui::SmallButton("Detect scenes")) {
+            start_scene_detection(match_day);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Suggest the scenes of this match day's videos from their "
+                              "backgrounds (same hall and camera position = same scene); takes "
+                              "a few seconds per video");
+    }
+
+    void draw_scene_choice(const VideoEntry& video) {
+        ImGui::SetNextItemWidth(kSceneComboWidth);
+        const char* current = video.scene.empty() ? kNoScene : video.scene.c_str();
+        if (ImGui::BeginCombo("##scene", current)) {
+            for (const std::string& scene : scene_choices(video.match_day)) {
+                if (ImGui::Selectable(scene.c_str(), scene == current)) {
+                    set_scene(video, scene);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Scene: videos with the same hall and camera position");
+    }
+
     /// The workspace video with this key ("<match day>/<video id>"), if any.
     [[nodiscard]] std::optional<std::size_t> video_with_key(const std::string& key) const {
         const auto& videos = session_.workspace().videos;
@@ -581,7 +701,9 @@ class LauncherApp {
             const auto [match_day, video_id] = split_key(choice);
             if (i == 0 || match_day != group) {
                 group = match_day;
-                ImGui::TextColored(kMuted, "%s", group.c_str());
+                ImGui::PushID(group.c_str());
+                draw_match_day_header(group);
+                ImGui::PopID();
             }
             ImGui::PushID(static_cast<int>(i));
             bool on = std::ranges::find(selected, choice) != selected.end();
@@ -592,6 +714,10 @@ class LauncherApp {
                 clicked = ImGui::Checkbox("##tick", &on);
                 ImGui::SameLine();
                 draw_thumbnail(*video);
+                if (scenes_ != nullptr) {
+                    ImGui::SameLine();
+                    draw_scene_choice(session_.workspace().videos[*video]);
+                }
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 if (ImGui::Selectable(video_id.c_str(), false,
@@ -621,6 +747,12 @@ class LauncherApp {
                     field.value += choice + "\n";
                 }
             }
+        }
+        for (const std::string& scene :
+             launcher::scenes_in_both(session_.workspace().videos, field.choices,
+                                      lines_of(field.value))) {
+            ImGui::TextColored(kPartly, "%s is in training and validation: the validation "
+                                        "flatters the model", scene.c_str());
         }
     }
 
@@ -745,9 +877,15 @@ class LauncherApp {
     }
 
     launcher::LauncherSession& session_;
+    launcher::VideoPreview& preview_;
     const GuiContext& gui_;
     std::filesystem::path project_;
     launcher::LauncherSettings* settings_;
+    launcher::SceneStore* scenes_;
+    std::future<std::vector<std::string>> scene_job_; ///< closing waits for a running detection
+    std::string scene_job_day_;
+    std::vector<std::string> scene_job_ids_;
+    std::filesystem::path scene_job_work_;
     std::string error_;
     std::size_t shown_log_size_ = 0;
     DialogResult pending_target_;
@@ -771,7 +909,8 @@ class LauncherApp {
 void run_launcher(launcher::LauncherSession& session, launcher::VideoPreview& preview,
                   const LauncherOptions& options) {
     const GuiContext gui(options.title, 1500, 950);
-    LauncherApp app(session, preview, gui, options.project_directory, options.settings);
+    LauncherApp app(session, preview, gui, options.project_directory, options.settings,
+                    options.scenes);
     for (int rendered = 0; options.max_frames == 0 || rendered < options.max_frames; ++rendered) {
         if (gui.poll_events()) {
             break;

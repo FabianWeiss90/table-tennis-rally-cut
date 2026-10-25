@@ -162,14 +162,18 @@ ttrally_layer(ttrally_launcher_domain
     SOURCES
         launcher/domain/command_form.cpp
         launcher/domain/forms.cpp
+        launcher/domain/scenes.cpp
         launcher/domain/video_id.cpp)
 
 ttrally_layer(ttrally_launcher_application
-    SOURCES launcher/application/launcher_session.cpp
-    DEPENDS ttrally_launcher_domain ttrally_media_domain)
+    SOURCES
+        launcher/application/detect_scenes.cpp
+        launcher/application/launcher_session.cpp
+    DEPENDS ttrally_launcher_domain ttrally_media_domain ttrally_shared_kernel)
 
 ttrally_layer(ttrally_launcher_infrastructure
     SOURCES
+        launcher/infrastructure/csv_scene_store.cpp
         launcher/infrastructure/ffmpeg_video_preview.cpp
         launcher/infrastructure/library_scanner.cpp
         launcher/infrastructure/subprocess_runner.cpp

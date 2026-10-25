@@ -12,13 +12,14 @@ namespace ttrally::gui {
 
 struct LauncherOptions {
     std::string title = "ttrally";
+    launcher::LauncherSettings* settings = nullptr; ///< remembers a library chosen in the window
     std::filesystem::path project_directory = "."; ///< chosen files are shown relative to it
     int max_frames = 0; ///< Stop after this many rendered frames (0 = until closed; for tests)
     std::filesystem::path screenshot; ///< If set, the last rendered frame is saved here (BMP)
 };
 
-/// Opens the launcher window: the videos of the workspace with their progress and a preview
-/// frame, and a form per command, filled in for the selected video, to run it with live output.
+/// Opens the launcher window: the videos of the library by match day with their progress and a
+/// preview frame, and a form per command, filled in for the selected video, to run it with live output.
 /// Runs until closed; a running command is cancelled then.
 void run_launcher(launcher::LauncherSession& session, launcher::VideoPreview& preview,
                   const LauncherOptions& options);

@@ -14,8 +14,9 @@ namespace ttrally::io {
 /// 64-bit FNV-1a hash.
 [[nodiscard]] std::uint64_t fnv1a64(std::string_view data) noexcept;
 
-/// Cache key for data derived from a file: a hash of the absolute path, file size, modification
-/// time and a purpose string (e.g. "audio-mono-8000"). Any change to the file changes the key.
+/// Cache key for data derived from a file: a hash of the file name, file size, modification time
+/// and a purpose string (e.g. "audio-mono-8000"). Any change to the file changes the key; moving
+/// the file to another folder (e.g. the video library to another drive) does not.
 [[nodiscard]] std::string cache_key(const std::filesystem::path& file, std::string_view purpose);
 
 /// Writes a file via a temporary name and a final rename, so readers never see partial files.

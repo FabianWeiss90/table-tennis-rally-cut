@@ -17,8 +17,7 @@ std::uint64_t fnv1a64(std::string_view data) noexcept {
 }
 
 std::string cache_key(const std::filesystem::path& file, std::string_view purpose) {
-    const auto absolute = std::filesystem::absolute(file);
-    const auto u8 = absolute.generic_u8string();
+    const auto u8 = file.filename().generic_u8string();
     const std::string identity =
         std::format("{}|{}|{}|{}", std::string(u8.begin(), u8.end()),
                     std::filesystem::file_size(file),

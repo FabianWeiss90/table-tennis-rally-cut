@@ -11,11 +11,20 @@
 
 namespace ttrally::launcher {
 
-/// Port: what is in the project's data directory.
+/// Port: what is in a video library (match day folders with videos and the tool's files).
 class WorkspaceScanner {
   public:
     virtual ~WorkspaceScanner() = default;
-    [[nodiscard]] virtual WorkspaceSnapshot scan() = 0;
+    [[nodiscard]] virtual WorkspaceSnapshot scan(const std::filesystem::path& library) = 0;
+};
+
+/// Port: settings kept between sessions of the launcher.
+class LauncherSettings {
+  public:
+    virtual ~LauncherSettings() = default;
+    /// The library chosen last, if any.
+    [[nodiscard]] virtual std::optional<std::filesystem::path> library() = 0;
+    virtual void save_library(const std::filesystem::path& library) = 0;
 };
 
 /// A program to start.

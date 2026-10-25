@@ -1,23 +1,20 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 AND MIT
 # Adapted from spin-detector by Yuwei Ba (MIT License)
 # https://github.com/ibigbug/spin-detector
-# Original files: src/supervised/mstcn_model.py (train_one_fold, _calibrate_temperature,
-#   run_lovo), src/supervised/common.py (sweep_params)
-# Changes: feature normalisation and padding masks; leave-one-group-out instead of one video;
-#   decoding parameters (threshold or Viterbi, in seconds) tuned on the other groups only;
-#   reproducible random number generators.
-"""Training of the rally detector and its evaluation by leave-one-group-out cross-validation.
+# Original files: src/supervised/mstcn_model.py (train_one_fold, _calibrate_temperature),
+#   src/supervised/common.py (sweep_params)
+# Changes: feature normalisation and padding masks; a chosen validation set instead of
+#   leave-one-video-out; decoding parameters (threshold or Viterbi, in seconds) tuned on the
+#   validation videos; reproducible random number generators.
+"""Training of the rally detector and its validation on videos it was not trained on.
 
-Each video (or group of videos, e.g. one channel) is held out once: a model is trained on the
-others and predicts the held-out one. The decoding parameters for a held-out group are chosen on
-the predictions of the other groups only, so the reported metrics are not tuned on the data they
-are measured on.
+The model is trained on the chosen training videos and predicts the validation videos; the
+decoding parameters are chosen on these predictions and the metrics are measured with them.
 """
 
 from __future__ import annotations
 
 import random
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -155,25 +152,6 @@ def learning_rate_schedule(optimizer: torch.optim.Optimizer,
         milestones=[warmup])
 
 
-def cross_validate(videos: list[Video], groups: dict[str, str], config: TrainConfig,
-                   seed: int, runs: int, device: torch.device,
-                   log: Log = print) -> dict[str, np.ndarray]:
-    """Held-out rally probabilities of every video (mean over `runs` seeds)."""
-    names = sorted(set(groups.values()))
-    if len(names) < 2:
-        raise ValueError("cross-validation needs videos from at least two groups")
-    probabilities: dict[str, list[np.ndarray]] = {v.video_id: [] for v in videos}
-    for run in range(runs):
-        for fold, held_out in enumerate(names):
-            log(f"  run {run + 1}/{runs}, fold {fold + 1}/{len(names)}: holding out {held_out}")
-            training = [v for v in videos if groups[v.video_id] != held_out]
-            trained = train(training, config, seed + run, device, log)
-            for video in videos:
-                if groups[video.video_id] == held_out:
-                    probabilities[video.video_id].append(trained.predict(video.features, device))
-    return {video_id: np.mean(p, axis=0) for video_id, p in probabilities.items()}
-
-
 def annotated_segments(video: Video):
     return segments_of(video.labels > 0.5)
 
@@ -197,26 +175,15 @@ def best_params(videos: list[Video], probabilities: dict[str, np.ndarray]) -> di
 
 
 @dataclass
-class Evaluation:
+class Validation:
+    decoding: dict  # decoding parameters chosen on the validation videos
     per_video: dict[str, SegmentMetrics]
-    params_per_group: dict[str, dict]
-
-    def most_common_params(self) -> dict:
-        counts = Counter(tuple(sorted(p.items())) for p in self.params_per_group.values())
-        return dict(counts.most_common(1)[0][0])
 
 
-def evaluate_held_out(videos: list[Video], groups: dict[str, str],
-                      probabilities: dict[str, np.ndarray]) -> Evaluation:
-    """Metrics of each video, decoded with parameters tuned on the other groups only."""
-    per_video: dict[str, SegmentMetrics] = {}
-    params_per_group: dict[str, dict] = {}
-    for held_out in sorted(set(groups.values())):
-        others = [v for v in videos if groups[v.video_id] != held_out]
-        params = best_params(others, probabilities)
-        params_per_group[held_out] = params
-        for video in videos:
-            if groups[video.video_id] == held_out:
-                per_video[video.video_id] = evaluate_video(video, probabilities[video.video_id],
-                                                           params)
-    return Evaluation(per_video, params_per_group)
+def validate(trained: TrainedModel, videos: list[Video], device: torch.device) -> Validation:
+    """Predicts the validation videos, chooses the decoding parameters on them and measures each
+    video with these parameters."""
+    probabilities = {v.video_id: trained.predict(v.features, device) for v in videos}
+    decoding = best_params(videos, probabilities)
+    return Validation(decoding, {v.video_id: evaluate_video(v, probabilities[v.video_id], decoding)
+                                 for v in videos})

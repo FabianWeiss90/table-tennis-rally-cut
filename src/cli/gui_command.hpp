@@ -18,6 +18,7 @@ class GuiCommand {
   private:
     CLI::App* command_;
     std::filesystem::path project_ = ".";
+    std::filesystem::path library_;
 };
 
 } // namespace ttrally::cli

@@ -16,15 +16,19 @@ namespace {
 
 class OneVideo final : public launcher::WorkspaceScanner {
   public:
-    launcher::WorkspaceSnapshot scan() override {
+    launcher::WorkspaceSnapshot scan(const std::filesystem::path& library) override {
         launcher::WorkspaceSnapshot workspace;
+        workspace.library = library.string();
         launcher::VideoEntry video;
-        video.original = "data/Match_FHD.mp4";
+        video.match_day = "2026-10-03 Club";
+        video.original = "/lib/2026-10-03 Club/Match_FHD.mp4";
         video.video_id = "match";
-        video.cut_candidates = {"data/Match_FHD_cut.mp4"};
+        video.work_dir = "/lib/2026-10-03 Club/ttrally-data";
+        video.cut_candidates = {"/lib/2026-10-03 Club/Liimba/Match_FHD.mp4"};
         video.aligned = true;
         video.annotation = launcher::AnnotationProgress::InProgress;
         workspace.videos = {video};
+        workspace.trainable = {video.key(), "2026-10-10 Away/other"};
         return workspace;
     }
 };
@@ -67,7 +71,7 @@ TEST_CASE("the launcher window opens and renders the forms") {
     use_offscreen_video_driver();
     OneVideo scanner;
     IdleRunner runner;
-    launcher::LauncherSession session(scanner, runner, "ttrally", ".");
+    launcher::LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
     const auto screenshot = std::filesystem::temp_directory_path() / "ttrally_launcher_smoke.bmp";
     std::filesystem::remove(screenshot);
     GreyPreview preview;

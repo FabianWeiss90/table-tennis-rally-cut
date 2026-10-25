@@ -54,4 +54,15 @@ bool is_derived_from(std::string_view candidate, std::string_view original) {
             candidate[original.size()] == ' ');
 }
 
+bool is_pre_cut_of(std::string_view candidate, std::string_view original) {
+    std::size_t digits = 0;
+    while (digits < candidate.size() && std::isdigit(static_cast<unsigned char>(candidate[digits]))) {
+        ++digits;
+    }
+    if (digits > 0 && digits < candidate.size() && candidate[digits] == '_') {
+        candidate.remove_prefix(digits + 1);
+    }
+    return candidate == original || is_derived_from(candidate, original);
+}
+
 } // namespace ttrally::launcher

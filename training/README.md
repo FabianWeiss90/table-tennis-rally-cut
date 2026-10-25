@@ -52,16 +52,28 @@ Writes the tiny model with the same interface that the C++ tests use instead of 
 ## Training the rally detector
 
 ```sh
-uv run python -m ttrally_training.train
+uv run python -m ttrally_training.train --library /path/to/library
+uv run python -m ttrally_training.train --library /path/to/library \
+    --videos "2026-10-03-Club-Away/weiss-heinemeier" "2026-10-10-Home/picht-handte"
 ```
 
-Trains the rally detector (an MS-TCN, adapted from spin-detector) on the features of all
-annotated videos and exports it to `../weights/rally-detector.onnx`, with a report next to it
-(`rally-detector.report.json`).
+Trains the rally detector (an MS-TCN, adapted from spin-detector) on the chosen videos of a
+[video library](../README.md#video-library), validates it on all its other annotated videos and
+exports it to
+`<library>/ttrally-data/models/rally-detector.onnx`, with a report next to it
+(`rally-detector.report.json`). Videos are named `<match day>/<video id>`. The launcher
+(`ttrally gui`, tab "Train") lists the usable ones by match day; the ticked ones are the training
+videos.
 
-**Which videos are used.** Every video with labels in `../data/annotations/<video_id>.csv`, features in
-`../data/features/<video_id>/` and a **complete review** in `annotate` (every segment and gap
-done, see `data/annotations/<video_id>.review.csv`). Videos with open items are skipped with a note,
+Without `--library`, the videos come from `--features-dir` and `--annotations-dir` (default
+`../data/features` and `../data/annotations`) and the model goes to
+`../weights/rally-detector.onnx`.
+
+**Which videos are used.** Every video with labels
+(`ttrally-data/annotations/<video_id>.csv` in its match day), features
+(`ttrally-data/features/<video_id>/`) and a **complete review** in `annotate` (every segment and
+gap done, see `<video_id>.review.csv` next to the labels). The ones given with `--videos` are
+the training videos, all others the validation videos. Videos with open items are not used,
 because an unchecked gap may hide a missed rally that would be learned as "no rally". All rallies
 count, including those flagged `aborted_toss` or `let`. Ignored sections (rows flagged `ignore`)
 count neither in training nor in the evaluation; predictions lying mostly inside one are not
@@ -71,13 +83,14 @@ mixed features are refused.
 
 **What happens.**
 
-1. Cross-validation: each video is held out once, a model is trained on the others and predicts
-   it. The decoding parameters (threshold or Viterbi, see below) for a held-out video are tuned on
-   the predictions of the other videos only. The output shows segment F1, precision, recall and
-   the mean boundary error in seconds per video and on average; these numbers estimate how well
-   the detector works on a new video.
-2. The decoding parameters that work best on all held-out predictions are chosen.
-3. The final model is trained on all videos, calibrated (temperature scaling) and exported.
+1. The model is trained on the training videos and calibrated (temperature scaling).
+2. Validation: it predicts the validation videos; the decoding parameters (threshold or Viterbi,
+   see below) that work best on them are chosen. The output shows segment F1, precision, recall
+   and the mean boundary error in seconds per validation video and on average. Since the decoding
+   is chosen on the same videos, the numbers are slightly optimistic; they tell most when the
+   validation videos come from other halls, camera positions or players than the training videos.
+   Without validation videos, the default decoding is used.
+3. The model is exported with the chosen decoding.
 
 Per row of the features (10 per second), the model returns a rally probability; `ttrally detect`
 turns these into rallies with the stored decoding: either a threshold with merging of short
@@ -88,17 +101,14 @@ durations. All durations are in seconds, independent of the frame rate.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--groups FILE` | one group per video | CSV `video_id,group`: videos of one group (e.g. one YouTube channel or the same players) are held out together, so the evaluation is not flattered by near-identical videos |
-| `--runs N` | 1 | cross-validation runs with different seeds, averaged (more stable numbers) |
+| `--library DIR` | – | the video library (otherwise `--features-dir` and `--annotations-dir`) |
 | `--epochs`, `--hidden`, `--levels`, `--stages` | 120, 128, 8, 4 | training length and model size |
-| `--skip-evaluation` | – | train only the final model, with default decoding (also used automatically with fewer than two groups) |
-| `--videos ID ...` | all annotated | restrict the videos |
+| `--videos KEY ...` | all usable (then no validation) | the training videos (`<match day>/<video id>` in a library); all other usable videos validate |
 | `--device` | `auto` | `cuda` if PyTorch sees a GPU (CUDA or ROCm build), else `cpu` |
-| `--out`, `--report` | `../weights/rally-detector.onnx` | output files |
+| `--out`, `--report` | `<library>/ttrally-data/models/rally-detector.onnx` (without a library `../weights/…`) | output files |
 
 **Duration.** On a CPU with 12 threads, one epoch takes about 7 s per 30 minutes of training
-video. Six videos of 10 minutes: about 30 minutes per model, about 3 hours including the
-cross-validation (one model per held-out video). PyTorch is installed as a CPU build; a GPU build
+video. Six training videos of 10 minutes: about 30 minutes. PyTorch is installed as a CPU build; a GPU build
 shortens this considerably.
 
 **Exported model.** Input `features` (1, rows, 4608) float32 exactly as `ttrally features` writes
@@ -106,7 +116,7 @@ them (normalisation is part of the model), output `rally_probability` (1, rows).
 `ttrally.kind`, `ttrally.backbone` (e.g. `facebook/dinov2-base (fp16)`),
 `ttrally.backbone_execution_provider`, `ttrally.parts`, `ttrally.part_dims`, `ttrally.input_size`,
 `ttrally.sample_rate_hz`, `ttrally.decoding` (JSON) and `ttrally.training` (JSON: videos, rallies,
-temperature, cross-validation results). `ttrally detect` uses them to refuse features of another
+temperature, validation videos and results). `ttrally detect` uses them to refuse features of another
 model variant.
 
 ## Fixtures for the C++ tests
@@ -128,4 +138,4 @@ uv run pytest
 ```
 
 Synthetic data only (no videos needed): label derivation, video selection, decoding, metrics,
-training windows, a short training with cross-validation and the ONNX export.
+training windows, a short training with validation and the ONNX export.

@@ -9,6 +9,9 @@ Each feature row belongs to one frame of the original (frames.npy), so a row is 
 "rally" if that frame lies inside an annotated rally. All rallies count, including those flagged
 aborted_toss or let. Rows inside ignored sections (label rows flagged `ignore`, e.g. a rally whose
 start was not recorded) are masked: they count neither in training nor in the evaluation.
+
+In a library (one folder per match day, each with the tool's files in ttrally-data/), a video is
+named by its key "<match day>/<video id>".
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import numpy as np
 CONSISTENT_FIELDS = ("model", "execution_provider", "parts", "part_dims", "sample_rate_hz",
                      "input_size")
 IGNORE_FLAG = "ignore"
+WORK_FOLDER = "ttrally-data"  # the tool's files in every match day folder of a library
 
 
 class DataError(Exception):
@@ -145,21 +149,60 @@ def select_videos(features_dir: Path, annotations_dir: Path,
     the selected videos were computed differently (model, execution provider, sampling, ...).
     """
     if video_ids is None:
-        video_ids = sorted(p.name.removesuffix(".csv") for p in annotations_dir.glob("*.csv")
-                           if not p.name.endswith(".review.csv"))
+        video_ids = labelled_ids(annotations_dir)
+    return _select([(video_id, features_dir, annotations_dir, video_id)
+                    for video_id in video_ids])
+
+
+def labelled_ids(annotations_dir: Path) -> list[str]:
+    return sorted(p.name.removesuffix(".csv") for p in annotations_dir.glob("*.csv")
+                  if not p.name.endswith(".review.csv"))
+
+
+def match_days(library: Path) -> list[Path]:
+    """The match day folders of a library."""
+    return sorted(p for p in library.iterdir()
+                  if p.is_dir() and p.name != WORK_FOLDER and not p.name.startswith("."))
+
+
+def library_keys(library: Path) -> list[str]:
+    """Keys "<match day>/<video id>" of all videos with labels in the library."""
+    return [f"{day.name}/{video_id}" for day in match_days(library)
+            for video_id in labelled_ids(day / WORK_FOLDER / "annotations")]
+
+
+def select_library_videos(library: Path, keys: list[str] | None = None) -> Selection:
+    """Like select_videos, for videos of a library named by their keys
+    "<match day>/<video id>" (default: all with labels)."""
+    if not library.is_dir():
+        raise DataError(f"library {library} does not exist")
+    entries = []
+    for key in library_keys(library) if keys is None else keys:
+        day, slash, video_id = key.rpartition("/")
+        if not slash or not day or not video_id:
+            raise DataError(f"{key!r} is no video key <match day>/<video id>")
+        work = library / day / WORK_FOLDER
+        entries.append((key, work / "features", work / "annotations", video_id))
+    return _select(entries)
+
+
+def _select(entries: list[tuple[str, Path, Path, str]]) -> Selection:
+    """Loads (name, features_dir, annotations_dir, video_id) entries; see select_videos."""
     videos: list[Video] = []
     skipped: dict[str, str] = {}
-    for video_id in video_ids:
+    for name, features_dir, annotations_dir, video_id in entries:
         review = load_review(annotations_dir, video_id)
         if not review.complete:
-            skipped[video_id] = (
+            skipped[name] = (
                 "review not started" if review.items == 0
                 else f"review incomplete ({review.open_items} of {review.items} items open)")
             continue
         if not (features_dir / video_id / "manifest.json").exists():
-            skipped[video_id] = f"no features in {features_dir / video_id}"
+            skipped[name] = f"no features in {features_dir / video_id}"
             continue
-        videos.append(load_video(features_dir, annotations_dir, video_id))
+        video = load_video(features_dir, annotations_dir, video_id)
+        video.video_id = name
+        videos.append(video)
     check_consistent(videos)
     return Selection(videos, skipped)
 
@@ -176,16 +219,3 @@ def check_consistent(videos: list[Video]) -> None:
                     f"features of {video.video_id} and {reference.video_id} differ in {field}: "
                     f"{video.manifest.get(field)!r} vs. {reference.manifest.get(field)!r}; "
                     "recompute them with the same model and options")
-
-
-def load_groups(path: Path | None, videos: list[Video]) -> dict[str, str]:
-    """Group of each video for the cross-validation (CSV video_id,group, e.g. one group per
-    YouTube channel); videos not listed form a group of their own."""
-    groups = {video.video_id: video.video_id for video in videos}
-    if path is None:
-        return groups
-    with path.open(newline="", encoding="utf-8") as file:
-        for row in csv.DictReader(file):
-            if row["video_id"] in groups:
-                groups[row["video_id"]] = row["group"]
-    return groups

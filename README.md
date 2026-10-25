@@ -319,8 +319,30 @@ Without a supported GPU, decoding and inference run on the CPU.
 ## Usage
 
 The examples write `ttrally` for the built program (`build/linux-release/src/ttrally` on Linux,
-`build\windows-release\src\ttrally.exe` on Windows). Run it from the repository directory,
-where `data/` lies; all paths are relative to it.
+`build\windows-release\src\ttrally.exe` on Windows). Run it from the repository directory.
+The command-line examples below use the default paths under `data/`; the `gui` works on a
+video library instead and fills in the paths in it.
+
+### Video library
+
+The videos can lie anywhere, e.g. on an external disk, in one folder per match day:
+
+```
+<library>/
+  2026-10-03-Club-Away/              one folder per match day
+    Weiss-Heinemeier_FHD.MP4         the untrimmed originals
+    Liimba-Videos/                   any subfolder with "liimba" in its name
+      4808_Weiss-Heinemeier_FHD.MP4  pre-cut versions (a number prefix or a suffix such as
+                                     _cut_33_rallies is recognised)
+    ttrally-data/                    created by the tool: everything it computes for this day
+      align/  annotations/  features/  detections/  cuts/  cache/
+  ttrally-data/                      shared by all match days
+    models/                          image models and trained rally detectors
+```
+
+Other subfolders (e.g. photos) are ignored. A video is named by its match day and its id, e.g.
+`2026-10-03-Club-Away/weiss-heinemeier`. Caches are keyed by file name, size and modification
+time, so a library can be moved or copied (keeping the modification times) without recomputing.
 
 ### `gui`
 
@@ -332,26 +354,29 @@ build/linux-release/src/ttrally gui          # Linux
 build\windows-release\src\ttrally.exe gui     # Windows
 ```
 
-Put the videos (originals and their pre-cut versions) into `data/` first; the window lists
-them.
+On the first start, choose the [video library](#video-library) with "Choose..." at the top left;
+the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttrally\`).
 
-- **Left:** the videos in `data/` (pre-cut versions such as `<name>_cut_...` are recognised and
-  offered to `align`) with their progress: aligned, labels (complete or in progress), features,
-  detected, cut. Below, a preview frame of the selected video; the slider picks another
-  position (the frame is decoded in the background).
+- **Left:** the videos of the library by match day, with their progress: aligned, labels
+  (complete or in progress), features, detected, cut. Below, a preview frame of the selected
+  video; the slider picks another position (the frame is decoded in the background).
 - **Right:** a tab per command (align, annotate, features, detect, cut, train), filled in for
-  the selected video: its id (suggested from the file name, e.g. `Weiss-Heinemeier_FHD.MP4` →
-  `weiss-heinemeier`), the paths that follow from it, and suggestions such as the image models
-  in `data/models` or the detectors in `weights/` and `data/models`. Rarely needed options are
-  folded away under "Advanced" with the commands' defaults. Fields for files have a "..." button
-  for the file dialog.
+  the selected video: its pre-cut version, its id (suggested from the file name, e.g.
+  `Weiss-Heinemeier_FHD.MP4` → `weiss-heinemeier`), the paths in the match day's
+  `ttrally-data/`, and suggestions such as the image models and detectors in the library's
+  `ttrally-data/models` and the detectors in `weights/`. Rarely needed options are folded away
+  under "Advanced" with the commands' defaults. Fields for files have a "..." button for the file
+  dialog.
 - **Run:** the command runs as its own process; its output appears below, and it can be
   cancelled. The exact command line is shown above the button and can be copied. The list of
   videos is updated when a command has finished.
 - **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
-  "Advanced"; a copy in `external/uv/` is found automatically).
+  "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
+  and features are listed by match day; the ticked ones are trained on, all others validate the
+  model (see [the training](training/README.md#training-the-rally-detector)).
 
-Options: `--project` (project directory, default the current one).
+Options: `--library` (the library to open, remembered for the next start), `--project`
+(project directory with `weights/` and `training/`, default the current one).
 
 ### `align`
 
@@ -658,8 +683,8 @@ match_a,2,12950,13104,59.94,,aborted_toss,
 ## Data
 
 **Videos are not published**, and neither are audio tracks, extracted frames, caches or the
-annotations (`data/annotations/`), which belong to the videos and name the players in their
-video ids. Only the code and trained model weights are part of this repository.
+annotations (in the library's `ttrally-data/annotations/` or `data/annotations/`), which belong to
+the videos and name the players in their video ids. Only the code and trained model weights are part of this repository.
 
 If you record your own footage: filming people requires their **consent**. Ask everyone visible
 in the recording before you film, and before you share any footage.

@@ -171,7 +171,7 @@ ttrally_layer(ttrally_launcher_application
 ttrally_layer(ttrally_launcher_infrastructure
     SOURCES
         launcher/infrastructure/ffmpeg_video_preview.cpp
-        launcher/infrastructure/filesystem_workspace_scanner.cpp
+        launcher/infrastructure/library_scanner.cpp
         launcher/infrastructure/subprocess_runner.cpp
     DEPENDS
         ttrally_launcher_application ttrally_annotation_infrastructure ttrally_media_infrastructure

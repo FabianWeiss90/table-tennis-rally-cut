@@ -17,13 +17,18 @@ namespace ttrally::launcher {
 /// forms for the selected video, and the command currently running with its output.
 class LauncherSession {
   public:
-    /// `ttrally` is the program run for the tool's own commands (normally this executable).
+    /// `ttrally` is the program run for the tool's own commands (normally this executable); the
+    /// commands run in the project directory (which holds weights/ and the training).
     LauncherSession(WorkspaceScanner& scanner, ProcessRunner& runner, std::string ttrally,
-                    std::filesystem::path project_directory);
+                    std::filesystem::path project_directory, std::filesystem::path library);
 
     [[nodiscard]] const WorkspaceSnapshot& workspace() const noexcept { return workspace_; }
+    [[nodiscard]] const std::filesystem::path& library() const noexcept { return library_; }
+    /// Switches to another library (not while a command runs) and scans it.
+    void set_library(std::filesystem::path library);
     [[nodiscard]] std::optional<std::size_t> selected_video() const noexcept { return selected_; }
-    /// Fills the forms in for the video (edits made for the previous video are dropped).
+    /// Fills the forms in for the video (edits made for the previous video are dropped, except
+    /// in the training form, which does not depend on the video).
     void select_video(std::size_t index);
     [[nodiscard]] std::vector<CommandForm>& forms() noexcept { return forms_; }
 
@@ -54,6 +59,7 @@ class LauncherSession {
     ProcessRunner& runner_;
     std::string ttrally_;
     std::filesystem::path project_directory_;
+    std::filesystem::path library_;
     WorkspaceSnapshot workspace_;
     std::optional<std::size_t> selected_;
     std::vector<CommandForm> forms_;

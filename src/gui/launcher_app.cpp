@@ -33,6 +33,7 @@ constexpr float kLabelWidth = 230.0F;
 constexpr float kLogShare = 0.38F; ///< of the right side's height
 constexpr int kPreviewHeight = 360;  ///< decoded preview size (shown scaled to the sidebar)
 constexpr int kDefaultPreviewPercent = 20; ///< far enough in to be past the warm-up
+constexpr float kSelectedVideoHeight = 440.0F; ///< preview and details below the video list
 const ImVec4 kDone{0.5F, 0.85F, 0.5F, 1.0F};
 const ImVec4 kPartly{0.95F, 0.75F, 0.35F, 1.0F};
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
@@ -65,6 +66,14 @@ std::vector<std::string> lines_of(const std::string& value) {
 }
 
 bool is_output(const Field& field) { return field.flag == "--out" || field.flag == "--report"; }
+
+/// Splits a video key "<match day>/<video id>".
+std::pair<std::string, std::string> split_key(const std::string& key) {
+    const auto slash = key.rfind('/');
+    return slash == std::string::npos
+               ? std::pair{std::string(), key}
+               : std::pair{key.substr(0, slash), key.substr(slash + 1)};
+}
 
 /// Decodes preview frames on a background thread, so the window stays responsive; only the
 /// latest request counts.
@@ -140,6 +149,9 @@ class PreviewWorker {
     std::thread thread_; ///< last member: started after everything it uses
 };
 
+/// Dialog target meaning "the library folder" instead of a form field.
+constexpr std::size_t kLibraryTarget = static_cast<std::size_t>(-1);
+
 /// A path chosen in a native file dialog, delivered on SDL's thread and applied on ours.
 struct DialogResult {
     std::size_t form = 0;
@@ -150,8 +162,10 @@ struct DialogResult {
 class LauncherApp {
   public:
     LauncherApp(launcher::LauncherSession& session, launcher::VideoPreview& preview,
-                const GuiContext& gui, std::filesystem::path project)
+                const GuiContext& gui, std::filesystem::path project,
+                launcher::LauncherSettings* settings)
         : session_(session), gui_(gui), project_(std::filesystem::absolute(project)),
+          settings_(settings),
           preview_worker_(preview), preview_texture_(gui.renderer()) {}
 
     void draw() {
@@ -180,20 +194,47 @@ class LauncherApp {
   private:
     // ------------------------------------------------------------------ videos
 
-    void draw_videos() {
-        ImGui::TextUnformatted("Videos in data/");
-        ImGui::SameLine(kSidebarWidth - 90);
+    void draw_library() {
+        ImGui::TextUnformatted("Library");
+        ImGui::SameLine(kSidebarWidth - 140);
+        ImGui::BeginDisabled(session_.running());
+        if (ImGui::SmallButton("Choose...")) {
+            pending_target_ = {kLibraryTarget, 0, {}};
+            const std::string start = session_.library().string();
+            SDL_ShowOpenFolderDialog(&LauncherApp::on_dialog, this, gui_.window(),
+                                     start.empty() ? nullptr : start.c_str(), false);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Folder with one folder per match day");
+        ImGui::SameLine();
         if (ImGui::SmallButton("Rescan")) {
             session_.rescan();
         }
+        const std::string& library = session_.workspace().library;
+        ImGui::TextColored(library.empty() ? kError : kMuted, "%s",
+                           library.empty() ? "none chosen" : library.c_str());
+        if (!library.empty()) {
+            ImGui::SetItemTooltip("%s", library.c_str());
+        }
         ImGui::Separator();
+    }
+
+    void draw_videos() {
+        draw_library();
         const auto& videos = session_.workspace().videos;
         if (videos.empty()) {
-            ImGui::TextWrapped("No videos found. Put the originals (and their pre-cut versions) "
-                               "into data/ and press Rescan.");
+            ImGui::TextWrapped(
+                "No videos found. Choose the library: a folder with one folder per match day, "
+                "each holding the original videos and a folder with their Liimba cuts. The "
+                "tool's files go into a folder ttrally-data in every match day.");
         }
+        const bool selected_any = session_.selected_video().has_value();
+        ImGui::BeginChild("##list", {0, selected_any ? -kSelectedVideoHeight : 0});
         for (std::size_t i = 0; i < videos.size(); ++i) {
             const VideoEntry& video = videos[i];
+            if (i == 0 || video.match_day != videos[i - 1].match_day) {
+                ImGui::SeparatorText(video.match_day.c_str());
+            }
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::Selectable(video.video_id.c_str(), session_.selected_video() == i)) {
                 if (!session_.running()) {
@@ -204,6 +245,7 @@ class LauncherApp {
             ImGui::PopID();
             ImGui::Spacing();
         }
+        ImGui::EndChild();
         if (const auto selected = session_.selected_video()) {
             ImGui::Separator();
             draw_preview(videos[*selected]);
@@ -268,13 +310,20 @@ class LauncherApp {
         ImGui::Unindent();
     }
 
+    /// "Name: file name", with the full path as tooltip.
+    static void file_line(const char* name, const std::string& path) {
+        ImGui::TextWrapped("%s: %s", name,
+                           std::filesystem::path(path).filename().string().c_str());
+        ImGui::SetItemTooltip("%s", path.c_str());
+    }
+
     static void draw_details(const VideoEntry& video) {
-        ImGui::TextWrapped("Original: %s", video.original.c_str());
+        file_line("Original", video.original);
         if (video.cut_candidates.empty()) {
             ImGui::TextColored(kMuted, "No pre-cut version (needed by align)");
         }
         for (const std::string& cut : video.cut_candidates) {
-            ImGui::TextWrapped("Pre-cut: %s", cut.c_str());
+            file_line("Pre-cut", cut);
         }
         const char* labels = video.annotation == AnnotationProgress::Complete     ? "complete"
                              : video.annotation == AnnotationProgress::InProgress ? "in progress"
@@ -284,7 +333,7 @@ class LauncherApp {
                                                ? "none"
                                                : video.features_model.c_str());
         for (const std::string& cut : video.cuts) {
-            ImGui::TextWrapped("Cut: %s", cut.c_str());
+            file_line("Cut", cut);
         }
         ImGui::TextColored(kMuted, "+ done   ~ in progress   - not yet");
     }
@@ -414,9 +463,21 @@ class LauncherApp {
         std::vector<std::string> selected = lines_of(field.value);
         bool changed = false;
         ImGui::BeginGroup();
-        for (const std::string& choice : field.choices) {
+        std::string group;
+        for (std::size_t i = 0; i < field.choices.size(); ++i) {
+            const std::string& choice = field.choices[i];
+            const auto [match_day, video_id] = split_key(choice);
+            if (i == 0 || match_day != group) {
+                group = match_day;
+                ImGui::TextColored(kMuted, "%s", group.c_str());
+            }
+            ImGui::PushID(static_cast<int>(i));
             bool on = std::ranges::find(selected, choice) != selected.end();
-            if (ImGui::Checkbox(choice.c_str(), &on)) {
+            ImGui::Indent();
+            const bool clicked = ImGui::Checkbox(video_id.c_str(), &on);
+            ImGui::Unindent();
+            ImGui::PopID();
+            if (clicked) {
                 changed = true;
                 if (on) {
                     selected.push_back(choice);
@@ -496,9 +557,10 @@ class LauncherApp {
 
     void open_dialog(const Field& field, std::size_t form_index, std::size_t field_index) {
         pending_target_ = {form_index, field_index, {}};
-        const std::string start = (project_ / (field.value.empty() ? "data" : field.value))
-                                      .parent_path()
-                                      .string();
+        const std::filesystem::path library(session_.workspace().library);
+        const std::string start =
+            field.value.empty() ? library.string()
+                                : (project_ / field.value).parent_path().string();
         if (field.kind == FieldKind::Directory) {
             SDL_ShowOpenFolderDialog(&LauncherApp::on_dialog, this, gui_.window(), start.c_str(),
                                      false);
@@ -527,6 +589,10 @@ class LauncherApp {
             const std::lock_guard lock(dialog_mutex_);
             result = std::exchange(dialog_result_, std::nullopt);
         }
+        if (result && result->form == kLibraryTarget) {
+            choose_library(result->path);
+            return;
+        }
         auto& forms = session_.forms();
         if (!result || result->form >= forms.size() ||
             result->field >= forms[result->form].fields.size()) {
@@ -539,9 +605,22 @@ class LauncherApp {
             inside ? relative.generic_string() : chosen.string();
     }
 
+    void choose_library(const std::filesystem::path& library) {
+        try {
+            session_.set_library(library);
+            if (settings_ != nullptr) {
+                settings_->save_library(library);
+            }
+            error_.clear();
+        } catch (const std::exception& error) {
+            error_ = error.what();
+        }
+    }
+
     launcher::LauncherSession& session_;
     const GuiContext& gui_;
     std::filesystem::path project_;
+    launcher::LauncherSettings* settings_;
     std::string error_;
     std::size_t shown_log_size_ = 0;
     DialogResult pending_target_;
@@ -562,7 +641,7 @@ class LauncherApp {
 void run_launcher(launcher::LauncherSession& session, launcher::VideoPreview& preview,
                   const LauncherOptions& options) {
     const GuiContext gui(options.title, 1500, 950);
-    LauncherApp app(session, preview, gui, options.project_directory);
+    LauncherApp app(session, preview, gui, options.project_directory, options.settings);
     for (int rendered = 0; options.max_frames == 0 || rendered < options.max_frames; ++rendered) {
         if (gui.poll_events()) {
             break;

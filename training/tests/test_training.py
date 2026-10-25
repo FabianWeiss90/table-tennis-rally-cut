@@ -13,7 +13,7 @@ from ttrally_training.data import select_videos
 from ttrally_training.decoding import DEFAULT_PARAMS
 from ttrally_training.export_detector import TOLERANCE, detector_metadata, export
 from ttrally_training.model import ModelConfig
-from ttrally_training.training import TrainConfig, cross_validate, evaluate_held_out, train
+from ttrally_training.training import TrainConfig, train, validate
 from ttrally_training.windows import WindowConfig
 
 SMALL = TrainConfig(epochs=12, batch_size=4,
@@ -30,16 +30,14 @@ def videos(tmp_path_factory):
     return select_videos(root / "features", root / "annotations").videos
 
 
-def test_held_out_videos_are_segmented(videos):
-    groups = {v.video_id: v.video_id for v in videos}
-    probabilities = cross_validate(videos, groups, SMALL, seed=1, runs=1, device=CPU,
-                                   log=lambda _: None)
-    evaluation = evaluate_held_out(videos, groups, probabilities)
-    assert set(evaluation.per_video) == {v.video_id for v in videos}
-    for metrics in evaluation.per_video.values():
+def test_validation_videos_are_segmented(videos):
+    trained = train(videos[:2], SMALL, seed=1, device=CPU, log=lambda _: None)
+    validation = validate(trained, videos[2:], CPU)
+    assert set(validation.per_video) == {videos[2].video_id}
+    for metrics in validation.per_video.values():
         assert metrics.f1 > 0.8
         assert metrics.boundary_mae_s < 1.0
-    assert evaluation.most_common_params()["method"] in {"threshold", "viterbi"}
+    assert validation.decoding["method"] in {"threshold", "viterbi"}
 
 
 def test_training_is_reproducible(videos):

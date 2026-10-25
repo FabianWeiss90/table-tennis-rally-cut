@@ -3,7 +3,9 @@
 #include "launcher/domain/forms.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
+#include <initializer_list>
 
 namespace ttrally::launcher {
 
@@ -64,22 +66,27 @@ std::string preferred_backbone(const WorkspaceSnapshot& workspace) {
     const auto fp16 = std::ranges::find_if(workspace.backbones, [](const std::string& path) {
         return path.find(kPreferredBackbone) != std::string::npos;
     });
-    return fp16 != workspace.backbones.end() ? *fp16
-                                             : first_or(workspace.backbones,
-                                                        "data/models/dinov2-vitb14-fp16.onnx");
+    return fp16 != workspace.backbones.end()
+               ? *fp16
+               : first_or(workspace.backbones,
+                          (std::filesystem::path(workspace.shared_dir()) / "models" /
+                           "dinov2-vitb14-fp16.onnx")
+                              .string());
 }
 
-std::string joined_lines(const std::vector<std::string>& values) {
-    std::string text;
-    for (const std::string& value : values) {
-        text += value + "\n";
+/// A file or folder in a video's work folder (the match day's ttrally-data).
+std::string in_work_dir(const VideoEntry& video, std::initializer_list<std::string> parts) {
+    std::filesystem::path path(video.work_dir);
+    for (const std::string& part : parts) {
+        path /= part;
     }
-    return text;
+    return path.string();
 }
 
-Field cache_dir() {
-    return advanced(option("--cache-dir", "Cache directory", FieldKind::Directory, "data/cache",
-                           "data/cache", "Frame timestamps and decoded audio"));
+Field cache_dir(const VideoEntry& video) {
+    return advanced(option("--cache-dir", "Cache directory", FieldKind::Directory,
+                           in_work_dir(video, {"cache"}), "data/cache",
+                           "Frame timestamps and decoded audio"));
 }
 
 Field decode_backend() {
@@ -99,11 +106,11 @@ CommandForm align_form(const VideoEntry& video) {
                                          "Cut video made from the original"),
                               video.cut_candidates),
              required(option("--out", "Segments CSV", FieldKind::File,
-                             std::format("data/align/{}.csv", id), "",
+                             in_work_dir(video, {"align", id + ".csv"}), "",
                              "Gaps are written next to it")),
              option("--report", "HTML report", FieldKind::File,
-                    std::format("data/align/{}.html", id), "", "Summary with plot"),
-             cache_dir(),
+                    in_work_dir(video, {"align", id + ".html"}), "", "Summary with plot"),
+             cache_dir(video),
              advanced(flag("--no-cache", "Do not use the cache", "")),
              decode_backend(),
              advanced(flag("--no-visual-check", "Skip the visual check",
@@ -123,14 +130,14 @@ CommandForm annotate_form(const VideoEntry& video) {
             Program::Ttrally, "", "", {"annotate"},
             {positional("Original video", FieldKind::File, video.original, "Untrimmed original"),
              required(option("--segments", "Segments CSV (from align)", FieldKind::File,
-                             std::format("data/align/{}.csv", id), "", "")),
+                             in_work_dir(video, {"align", id + ".csv"}), "", "")),
              option("--video-id", "Video id", FieldKind::Text, id, "",
                     "Name of the label file"),
              advanced(option("--gaps", "Gaps CSV", FieldKind::File, "", "",
                              "Default: <segments>.gaps.csv")),
              advanced(option("--annotations-dir", "Labels directory", FieldKind::Directory,
-                             "data/annotations", "data/annotations", "")),
-             cache_dir(),
+                             in_work_dir(video, {"annotations"}), "data/annotations", "")),
+             cache_dir(video),
              decode_backend(),
              advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
                              "1080", "Pixels of the shown video")),
@@ -151,8 +158,8 @@ CommandForm features_form(const VideoEntry& video, const WorkspaceSnapshot& work
                                      "Use the variant the detector is trained with (fp16)"),
                               workspace.backbones),
              advanced(option("--out-dir", "Output directory", FieldKind::Directory,
-                             "data/features", "data/features", "")),
-             cache_dir(),
+                             in_work_dir(video, {"features"}), "data/features", "")),
+             cache_dir(video),
              advanced(choice("--ep", "Model runs on", kExecutionProviders, "auto",
                              "auto picks the GPU if possible")),
              decode_backend(),
@@ -179,12 +186,12 @@ CommandForm detect_form(const VideoEntry& video, const WorkspaceSnapshot& worksp
                                               "For missing features; the detector's model")),
                               workspace.backbones),
              advanced(option("--features-dir", "Features directory", FieldKind::Directory,
-                             "data/features", "data/features", "")),
-             cache_dir(),
+                             in_work_dir(video, {"features"}), "data/features", "")),
+             cache_dir(video),
              advanced(option("--out-dir", "Output directory", FieldKind::Directory,
-                             "data/detections", "data/detections", "")),
+                             in_work_dir(video, {"detections"}), "data/detections", "")),
              advanced(option("--labels-dir", "Labels directory", FieldKind::Directory,
-                             "data/annotations", "data/annotations",
+                             in_work_dir(video, {"annotations"}), "data/annotations",
                              "Compared with the detections if present")),
              advanced(flag("--no-evaluation", "Do not compare with labels", "")),
              advanced(choice("--ep", "Image model runs on", kExecutionProviders, "auto", "")),
@@ -194,8 +201,8 @@ CommandForm detect_form(const VideoEntry& video, const WorkspaceSnapshot& worksp
 
 CommandForm cut_form(const VideoEntry& video) {
     const std::string id = video.video_id;
-    const std::string detections = std::format("data/detections/{}.csv", id);
-    const std::string labels = std::format("data/annotations/{}.csv", id);
+    const std::string detections = in_work_dir(video, {"detections", id + ".csv"});
+    const std::string labels = in_work_dir(video, {"annotations", id + ".csv"});
     std::vector<std::string> cut_lists;
     if (video.detected) {
         cut_lists.push_back(detections);
@@ -212,7 +219,7 @@ CommandForm cut_form(const VideoEntry& video) {
                                               "Detections or annotations (label format)")),
                               cut_lists),
              option("--out", "Output video", FieldKind::File,
-                    std::format("data/cuts/{}.mp4", id), "", ""),
+                    in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
              option("--before", "Seconds before each rally", FieldKind::Text, "2", "2", ""),
              option("--after", "Seconds after each rally", FieldKind::Text, "2", "2", ""),
              with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
@@ -225,43 +232,34 @@ CommandForm cut_form(const VideoEntry& video) {
              advanced(option("--video-id", "Video id", FieldKind::Text, id, "", "")),
              advanced(option("--encoder", "Encoder", FieldKind::Text, "auto", "auto",
                              "e.g. hevc_vaapi, h264_nvenc, libopenh264")),
-             cache_dir()}};
+             cache_dir(video)}};
 }
 
 CommandForm train_form(const WorkspaceSnapshot& workspace) {
-    Field videos = option("--videos", "Videos", FieldKind::MultiChoice,
-                          joined_lines(workspace.trainable), "",
-                          "Videos with complete labels and features");
+    const std::filesystem::path shared(workspace.shared_dir());
+    Field videos = option("--videos", "Training videos", FieldKind::MultiChoice, "", "",
+                          "Videos with complete labels and features, by match day; the ones "
+                          "not ticked validate the model");
     videos.choices = workspace.trainable;
-    std::vector<Field> fields{
-        videos,
-        with_suggestions(option("--groups", "Groups CSV", FieldKind::File, "", "",
-                                "video_id,group: held out together in the evaluation"),
-                         {"data/annotations/groups.csv"}),
-        option("--out", "Detector file", FieldKind::File, "weights/rally-detector.onnx",
-               "weights/rally-detector.onnx", "A report is written next to it"),
-        option("--epochs", "Epochs", FieldKind::Text, "120", "120", ""),
-        option("--runs", "Runs", FieldKind::Text, "1", "1",
-               "Cross-validation runs with different seeds, averaged"),
-        advanced(flag("--skip-evaluation", "Skip the cross-validation", "")),
-        advanced(option("--features-dir", "Features directory", FieldKind::Directory,
-                        "data/features", "data/features", "")),
-        advanced(option("--annotations-dir", "Labels directory", FieldKind::Directory,
-                        "data/annotations", "data/annotations", "")),
-        advanced(option("--hidden", "Hidden channels", FieldKind::Text, "128", "128", "")),
-        advanced(option("--levels", "Levels", FieldKind::Text, "8", "8", "")),
-        advanced(option("--stages", "Stages", FieldKind::Text, "4", "4", "")),
-        advanced(option("--seed", "Seed", FieldKind::Text, "42", "42", "")),
-        advanced(choice("--device", "Device", {"auto", "cpu", "cuda"}, "auto", ""))};
-    for (Field& field : fields) {
-        // The training runs in training/; paths are entered relative to the project. Its own
-        // defaults (../data/..., ../weights/...) are the same places, so they are left out.
-        field.project_path = field.kind == FieldKind::File || field.kind == FieldKind::Directory;
-    }
-    return {"train", "Train", "Train the rally detector on the selected videos and export it "
-                              "(Python, runs with uv in training/; takes a long time).",
+    videos.required = true;
+    return {"train", "Train", "Train the rally detector on the ticked videos and export it "
+                              "(Python, runs with uv in training/; takes a long time). All other "
+                              "videos listed here validate it: the decoding is chosen on them and "
+                              "the result is measured on them.",
             Program::Uv, workspace.uv, "training",
-            {"run", "python", "-u", "-m", "ttrally_training.train"}, fields};
+            {"run", "python", "-u", "-m", "ttrally_training.train"},
+            {videos,
+             required(option("--library", "Library", FieldKind::Directory, workspace.library, "",
+                             "Folder with the match day folders")),
+             option("--out", "Detector file", FieldKind::File,
+                    (shared / "models" / "rally-detector.onnx").string(), "",
+                    "A report is written next to it"),
+             option("--epochs", "Epochs", FieldKind::Text, "120", "120", ""),
+             advanced(option("--hidden", "Hidden channels", FieldKind::Text, "128", "128", "")),
+             advanced(option("--levels", "Levels", FieldKind::Text, "8", "8", "")),
+             advanced(option("--stages", "Stages", FieldKind::Text, "4", "4", "")),
+             advanced(option("--seed", "Seed", FieldKind::Text, "42", "42", "")),
+             advanced(choice("--device", "Device", {"auto", "cpu", "cuda"}, "auto", ""))}};
 }
 
 } // namespace

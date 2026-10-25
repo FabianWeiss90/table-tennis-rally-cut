@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
-// The workspace scanner on a small project directory, and the process runner with the cmake
+// The library scanner on a small library, and the process runner with the cmake
 // command-line tool as a portable test program.
 
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
-#include "launcher/infrastructure/filesystem_workspace_scanner.hpp"
+#include "launcher/infrastructure/library_scanner.hpp"
 #include "launcher/infrastructure/subprocess_runner.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -42,42 +42,70 @@ void wait_for(const SubprocessRunner& runner) {
 
 } // namespace
 
-TEST_CASE("the scanner finds videos, their pre-cuts and their progress") {
-    const fs::path root = temp_dir();
-    touch(root / "data" / "Match-A_FHD.MP4");
-    touch(root / "data" / "Match-A_FHD_cut_12_rallies.mp4");
-    touch(root / "data" / "Match-B.mov");
-    touch(root / "data" / "notes.txt");
-    touch(root / "data" / "align" / "match-a.csv");
-    touch(root / "data" / "annotations" / "match-a.csv",
+TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress") {
+    const fs::path library = temp_dir();
+    const fs::path day = library / "2026-10-03 Club";
+    const fs::path work = day / "ttrally-data";
+    touch(day / "Match-A_FHD.MP4");
+    touch(day / "Match-B.mov");
+    touch(day / "notes.txt");
+    touch(day / "Liimba-Cut" / "3_Match-A_FHD.mp4");
+    touch(day / "Liimba-Cut" / "4_Match-C_FHD.mp4");
+    touch(work / "align" / "match-a.csv");
+    touch(work / "annotations" / "match-a.csv",
           "video_id,rally_id,start_frame,end_frame,fps,serve_contact_frame,flags,notes\n"
           "match-a,1,10,20,60,,,\nmatch-a,,30,40,60,,ignore,\n");
-    touch(root / "data" / "annotations" / "match-a.review.csv",
+    touch(work / "annotations" / "match-a.review.csv",
           "kind,id,first_frame,last_frame,status\ngap,1,0,9,reviewed\ncandidate,1,10,20,annotated\n");
-    touch(root / "data" / "features" / "match-a" / "manifest.json",
+    touch(work / "features" / "match-a" / "manifest.json",
           R"json({"model": "facebook/dinov2-base (fp16)"})json");
-    touch(root / "data" / "cuts" / "match-a.mp4");
-    touch(root / "data" / "models" / "dinov2-vitb14-fp16.onnx");
-    touch(root / "data" / "models" / "rally-detector-test.onnx");
-    touch(root / "weights" / "rally-detector.onnx");
+    touch(work / "cuts" / "match-a.mp4");
+    touch(work / "cache" / "x.f32");
+    touch(library / "2026-10-10 Away" / "Match-D.mp4");
+    touch(library / ".hidden" / "Match-E.mp4");
+    touch(library / "ttrally-data" / "models" / "dinov2-vitb14-fp16.onnx");
+    touch(library / "ttrally-data" / "models" / "rally-detector-test.onnx");
+    const fs::path project = temp_dir();
+    touch(project / "weights" / "rally-detector.onnx");
 
-    const WorkspaceSnapshot workspace = FilesystemWorkspaceScanner(root).scan();
-    REQUIRE(workspace.videos.size() == 2);
+    const WorkspaceSnapshot workspace = LibraryScanner(project).scan(library);
+    CHECK(fs::path(workspace.library) == fs::absolute(library).lexically_normal());
+    REQUIRE(workspace.videos.size() == 3);
     const VideoEntry& a = workspace.videos[0];
-    CHECK(a.original == "data/Match-A_FHD.MP4");
+    CHECK(a.match_day == "2026-10-03 Club");
+    CHECK(fs::path(a.original) == day / "Match-A_FHD.MP4");
+    CHECK(fs::path(a.work_dir) == work);
     CHECK(a.video_id == "match-a");
-    CHECK(a.cut_candidates == std::vector<std::string>{"data/Match-A_FHD_cut_12_rallies.mp4"});
+    CHECK(a.key() == "2026-10-03 Club/match-a");
+    REQUIRE(a.cut_candidates.size() == 1);
+    CHECK(fs::path(a.cut_candidates[0]) == day / "Liimba-Cut" / "3_Match-A_FHD.mp4");
     CHECK(a.aligned);
     CHECK(a.annotation == AnnotationProgress::Complete);
     CHECK(a.rallies == 1); // the ignored section is no rally
     CHECK(a.features_model == "facebook/dinov2-base (fp16)");
     CHECK_FALSE(a.detected);
-    CHECK(a.cuts == std::vector<std::string>{"data/cuts/match-a.mp4"});
+    REQUIRE(a.cuts.size() == 1);
+    CHECK(fs::path(a.cuts[0]) == work / "cuts" / "match-a.mp4");
+    CHECK(workspace.videos[1].video_id == "match-b");
     CHECK(workspace.videos[1].annotation == AnnotationProgress::None);
-    CHECK(workspace.trainable == std::vector<std::string>{"match-a"});
-    CHECK(workspace.backbones == std::vector<std::string>{"data/models/dinov2-vitb14-fp16.onnx"});
-    CHECK(workspace.detectors == std::vector<std::string>{"weights/rally-detector.onnx",
-                                                          "data/models/rally-detector-test.onnx"});
+    CHECK(workspace.videos[1].cut_candidates.empty());
+    CHECK(workspace.videos[2].match_day == "2026-10-10 Away");
+    CHECK(workspace.trainable == std::vector<std::string>{"2026-10-03 Club/match-a"});
+    REQUIRE(workspace.backbones.size() == 1);
+    CHECK(fs::path(workspace.backbones[0]).filename() == "dinov2-vitb14-fp16.onnx");
+    REQUIRE(workspace.detectors.size() == 2);
+    CHECK(fs::path(workspace.detectors[0]).filename() == "rally-detector-test.onnx");
+    CHECK(fs::path(workspace.detectors[1]) == project / "weights" / "rally-detector.onnx");
+    fs::remove_all(library);
+    fs::remove_all(project);
+}
+
+TEST_CASE("the launcher remembers the library") {
+    const fs::path root = temp_dir();
+    FileLauncherSettings settings(root / "config" / "launcher.txt");
+    CHECK_FALSE(settings.library());
+    settings.save_library(root / "My Videos");
+    CHECK(settings.library() == root / "My Videos");
     fs::remove_all(root);
 }
 

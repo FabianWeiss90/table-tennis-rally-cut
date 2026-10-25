@@ -11,6 +11,22 @@ namespace ttrally::launcher {
 namespace {
 
 constexpr std::size_t kMaxLogBytes = 1 << 20; ///< older output is dropped beyond this
+constexpr std::string_view kVideoIndependentForm = "train"; ///< kept when another video is chosen
+
+/// Drops ticked choices that are no longer offered.
+void drop_unknown_choices(Field& field) {
+    std::string kept;
+    std::size_t begin = 0;
+    while (begin < field.value.size()) {
+        const std::size_t end = std::min(field.value.find('\n', begin), field.value.size());
+        const std::string choice = field.value.substr(begin, end - begin);
+        if (std::ranges::find(field.choices, choice) != field.choices.end()) {
+            kept += choice + "\n";
+        }
+        begin = end + 1;
+    }
+    field.value = kept;
+}
 
 /// Takes the suggestions and choices of `fresh` for fields the user may have edited.
 void update_suggestions(std::vector<CommandForm>& forms, const std::vector<CommandForm>& fresh) {
@@ -22,6 +38,9 @@ void update_suggestions(std::vector<CommandForm>& forms, const std::vector<Comma
             if (match != fresh[f].fields.end()) {
                 field.suggestions = match->suggestions;
                 field.choices = match->choices;
+                if (field.kind == FieldKind::MultiChoice) {
+                    drop_unknown_choices(field);
+                }
             }
         }
     }
@@ -30,9 +49,24 @@ void update_suggestions(std::vector<CommandForm>& forms, const std::vector<Comma
 } // namespace
 
 LauncherSession::LauncherSession(WorkspaceScanner& scanner, ProcessRunner& runner,
-                                 std::string ttrally, std::filesystem::path project_directory)
+                                 std::string ttrally, std::filesystem::path project_directory,
+                                 std::filesystem::path library)
     : scanner_(scanner), runner_(runner), ttrally_(std::move(ttrally)),
-      project_directory_(std::move(project_directory)), workspace_(scanner_.scan()) {
+      project_directory_(std::move(project_directory)), library_(std::move(library)),
+      workspace_(scanner_.scan(library_)) {
+    if (!workspace_.videos.empty()) {
+        selected_ = 0;
+    }
+    rebuild_forms();
+}
+
+void LauncherSession::set_library(std::filesystem::path library) {
+    if (running_) {
+        throw std::logic_error("cannot switch the library while a command runs");
+    }
+    library_ = std::move(library);
+    workspace_ = scanner_.scan(library_);
+    selected_.reset();
     if (!workspace_.videos.empty()) {
         selected_ = 0;
     }
@@ -42,7 +76,13 @@ LauncherSession::LauncherSession(WorkspaceScanner& scanner, ProcessRunner& runne
 void LauncherSession::select_video(std::size_t index) {
     static_cast<void>(workspace_.videos.at(index)); // bounds check
     selected_ = index;
+    std::vector<CommandForm> previous = std::move(forms_);
     rebuild_forms();
+    for (std::size_t f = 0; f < forms_.size() && f < previous.size(); ++f) {
+        if (forms_[f].name == kVideoIndependentForm && previous[f].name == forms_[f].name) {
+            forms_[f] = std::move(previous[f]);
+        }
+    }
 }
 
 void LauncherSession::rebuild_forms() {
@@ -53,7 +93,7 @@ void LauncherSession::rebuild_forms() {
 void LauncherSession::rescan() {
     const std::string original =
         selected_ ? workspace_.videos[*selected_].original : std::string();
-    workspace_ = scanner_.scan();
+    workspace_ = scanner_.scan(library_);
     selected_.reset();
     for (std::size_t i = 0; i < workspace_.videos.size(); ++i) {
         if (workspace_.videos[i].original == original) {

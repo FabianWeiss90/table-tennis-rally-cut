@@ -98,6 +98,15 @@ TEST_CASE("cache keys depend on purpose and file") {
     CHECK(a.size() == 16);
     CHECK(a == ttrally::io::cache_key(path, "audio"));
     CHECK(a != ttrally::io::cache_key(path, "video"));
+
+    // The same file in another folder (e.g. the library on another drive) keeps its key
+    const auto folder = std::filesystem::temp_directory_path() / "ttrally_test_cache_key_moved";
+    std::filesystem::create_directories(folder);
+    const auto moved = folder / path.filename();
+    std::filesystem::copy_file(path, moved, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::last_write_time(moved, std::filesystem::last_write_time(path));
+    CHECK(ttrally::io::cache_key(moved, "audio") == a);
+    std::filesystem::remove_all(folder);
     std::filesystem::remove(path);
 }
 

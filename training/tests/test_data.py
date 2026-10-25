@@ -4,7 +4,15 @@ import numpy as np
 import pytest
 
 from tests.synthetic import FRAMES_PER_ROW, write_video
-from ttrally_training.data import DataError, Rally, load_groups, row_labels, select_videos
+from ttrally_training.data import (
+    WORK_FOLDER,
+    DataError,
+    Rally,
+    row_labels,
+    select_library_videos,
+    select_videos,
+)
+from ttrally_training.train import split
 
 
 def test_rows_are_labelled_by_their_frame():
@@ -42,16 +50,6 @@ def test_features_of_different_model_variants_are_not_mixed(tmp_path):
         select_videos(tmp_path / "features", tmp_path / "annotations")
 
 
-def test_groups_default_to_one_per_video(tmp_path):
-    write_video(tmp_path, "a", 1000, seed=1)
-    write_video(tmp_path, "b", 1000, seed=2)
-    videos = select_videos(tmp_path / "features", tmp_path / "annotations").videos
-    groups_file = tmp_path / "groups.csv"
-    groups_file.write_text("video_id,group\na,channel\n")
-    assert load_groups(None, videos) == {"a": "a", "b": "b"}
-    assert load_groups(groups_file, videos) == {"a": "channel", "b": "b"}
-
-
 def test_ignored_sections_are_masked_and_are_no_rallies(tmp_path):
     rallies = write_video(tmp_path, "late", 1500, seed=4, ignore=(0, 599))
     video = select_videos(tmp_path / "features", tmp_path / "annotations").videos[0]
@@ -61,3 +59,26 @@ def test_ignored_sections_are_masked_and_are_no_rallies(tmp_path):
     assert video.mask[100:].min() == 1
     assert video.labels[:100].sum() == 0
 
+
+
+def test_library_videos_are_named_by_match_day(tmp_path):
+    write_video(tmp_path / "day 1" / WORK_FOLDER, "a", 1000, seed=1)
+    write_video(tmp_path / "day 1" / WORK_FOLDER, "b", 1000, seed=2)
+    write_video(tmp_path / "day 2" / WORK_FOLDER, "a", 1000, seed=3, review="incomplete")
+    write_video(tmp_path / WORK_FOLDER, "shared", 1000, seed=4)  # not a match day
+    (tmp_path / "day 3").mkdir()
+
+    selection = select_library_videos(tmp_path)
+    assert [v.video_id for v in selection.videos] == ["day 1/a", "day 1/b"]
+    assert list(selection.skipped) == ["day 2/a"]
+
+    chosen = select_library_videos(tmp_path, ["day 1/b"]).videos
+    assert [v.video_id for v in chosen] == ["day 1/b"]
+
+    training, validation = split(selection, ["day 1/b"])
+    assert [v.video_id for v in training] == ["day 1/b"]
+    assert [v.video_id for v in validation] == ["day 1/a"]
+    with pytest.raises(DataError, match="review incomplete"):
+        split(selection, ["day 2/a"])
+    with pytest.raises(DataError, match="no video key"):
+        select_library_videos(tmp_path, ["a"])

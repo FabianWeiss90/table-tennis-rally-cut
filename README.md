@@ -634,7 +634,7 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   `data/detections/<video_id>.csv` from `detect`. The launcher chooses the same way (annotations
   still in progress only if there are no detections) and offers the others as suggestions.
   Ignored sections are not rallies and are not cut.
-- **Margins:** `--before` and `--after` (seconds, default 2 each). Rallies whose margins overlap
+- **Margins:** `--before` and `--after` (seconds, default 1 each). Rallies whose margins overlap
   or touch become one continuous section, so nothing is shown twice.
 - **Frame-accurate (default):** every section starts and ends exactly at a frame; the video is
   re-encoded as **H.265 (HEVC)** with the GPU (VAAPI on AMD/Intel under Linux, NVENC, Quick Sync,

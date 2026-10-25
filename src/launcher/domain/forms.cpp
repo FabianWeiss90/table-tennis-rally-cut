@@ -232,8 +232,8 @@ CommandForm cut_form(const VideoEntry& video) {
                               cut_lists),
              option("--out", "Output video", FieldKind::File,
                     in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
-             option("--before", "Seconds before each rally", FieldKind::Text, "2", "2", ""),
-             option("--after", "Seconds after each rally", FieldKind::Text, "2", "2", ""),
+             option("--before", "Seconds before each rally", FieldKind::Text, "1", "1", ""),
+             option("--after", "Seconds after each rally", FieldKind::Text, "1", "1", ""),
              with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
                                      "From 1; empty: 5 with H.265, 10 with H.264 (Full HD, "
                                      "60 fps). Size per minute: about 7.5 MB per Mbit/s"),

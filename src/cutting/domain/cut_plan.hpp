@@ -15,8 +15,8 @@ struct TimeSpan {
 
 /// Time added before and after every rally.
 struct Margins {
-    double before_s = 2.0;
-    double after_s = 2.0;
+    double before_s = 1.0;
+    double after_s = 1.0;
 };
 
 /// A part of the video that goes into the cut, end exclusive; one or more rallies whose margins

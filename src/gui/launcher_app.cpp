@@ -9,11 +9,15 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <condition_variable>
+#include <deque>
 #include <format>
 #include <imgui.h>
+#include <map>
+#include <memory>
 #include <mutex>
-#include <thread>
 #include <optional>
+#include <set>
+#include <thread>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -34,6 +38,8 @@ constexpr float kLogShare = 0.38F; ///< of the right side's height
 constexpr int kPreviewHeight = 360;  ///< decoded preview size (shown scaled to the sidebar)
 constexpr int kDefaultPreviewPercent = 20; ///< far enough in to be past the warm-up
 constexpr float kSelectedVideoHeight = 440.0F; ///< preview and details below the video list
+constexpr int kThumbnailHeight = 72;           ///< decoded and shown size of the thumbnails
+constexpr float kThumbnailWidth = 128.0F;
 const ImVec4 kDone{0.5F, 0.85F, 0.5F, 1.0F};
 const ImVec4 kPartly{0.95F, 0.75F, 0.35F, 1.0F};
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
@@ -149,6 +155,65 @@ class PreviewWorker {
     std::thread thread_; ///< last member: started after everything it uses
 };
 
+/// Decodes thumbnails (one frame per video) one after another on a background thread.
+class ThumbnailWorker {
+  public:
+    explicit ThumbnailWorker(launcher::VideoPreview& preview)
+        : preview_(preview), thread_([this] { loop(); }) {}
+    ~ThumbnailWorker() {
+        {
+            const std::lock_guard lock(mutex_);
+            stop_ = true;
+        }
+        wake_.notify_all();
+        thread_.join();
+    }
+    ThumbnailWorker(const ThumbnailWorker&) = delete;
+    ThumbnailWorker& operator=(const ThumbnailWorker&) = delete;
+
+    void request(std::string video) {
+        {
+            const std::lock_guard lock(mutex_);
+            pending_.push_back(std::move(video));
+        }
+        wake_.notify_one();
+    }
+
+    /// Finished thumbnails: video and frame (nullopt if the video could not be read).
+    [[nodiscard]] std::vector<std::pair<std::string, std::optional<media::VideoFrame>>>
+    take_results() {
+        const std::lock_guard lock(mutex_);
+        return std::exchange(results_, {});
+    }
+
+  private:
+    void loop() {
+        for (;;) {
+            std::string video;
+            {
+                std::unique_lock lock(mutex_);
+                wake_.wait(lock, [&] { return stop_ || !pending_.empty(); });
+                if (stop_) {
+                    return;
+                }
+                video = std::move(pending_.front());
+                pending_.pop_front();
+            }
+            auto frame = preview_.frame_at(video, kDefaultPreviewPercent / 100.0, kThumbnailHeight);
+            const std::lock_guard lock(mutex_);
+            results_.emplace_back(std::move(video), std::move(frame));
+        }
+    }
+
+    launcher::VideoPreview& preview_;
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    std::deque<std::string> pending_;
+    std::vector<std::pair<std::string, std::optional<media::VideoFrame>>> results_;
+    bool stop_ = false;
+    std::thread thread_; ///< last member: started after everything it uses
+};
+
 /// Dialog target meaning "the library folder" instead of a form field.
 constexpr std::size_t kLibraryTarget = static_cast<std::size_t>(-1);
 
@@ -166,11 +231,12 @@ class LauncherApp {
                 launcher::LauncherSettings* settings)
         : session_(session), gui_(gui), project_(std::filesystem::absolute(project)),
           settings_(settings),
-          preview_worker_(preview), preview_texture_(gui.renderer()) {}
+          preview_worker_(preview), preview_texture_(gui.renderer()), thumbnail_worker_(preview) {}
 
     void draw() {
         session_.poll();
         apply_dialog_result();
+        collect_thumbnails();
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -455,7 +521,53 @@ class LauncherApp {
         }
     }
 
-    static void draw_multi_choice(Field& field) {
+    void collect_thumbnails() {
+        for (auto& [video, frame] : thumbnail_worker_.take_results()) {
+            if (!frame) {
+                continue; // stays a placeholder
+            }
+            frame->index = 0;
+            auto texture = std::make_unique<FrameTexture>(gui_.renderer());
+            texture->show(*frame);
+            thumbnails_[video] = std::move(texture);
+        }
+    }
+
+    /// The workspace video with this key ("<match day>/<video id>"), if any.
+    [[nodiscard]] std::optional<std::size_t> video_with_key(const std::string& key) const {
+        const auto& videos = session_.workspace().videos;
+        for (std::size_t i = 0; i < videos.size(); ++i) {
+            if (videos[i].key() == key) {
+                return i;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// A video's thumbnail (requested on first use); clicking it selects the video.
+    void draw_thumbnail(std::size_t video_index) {
+        const std::string& original = session_.workspace().videos[video_index].original;
+        if (thumbnails_requested_.insert(original).second) {
+            thumbnail_worker_.request(original);
+        }
+        const ImVec2 size{kThumbnailWidth, static_cast<float>(kThumbnailHeight)};
+        const auto found = thumbnails_.find(original);
+        if (found != thumbnails_.end() && found->second->texture() != nullptr) {
+            ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(found->second->texture())),
+                         size);
+        } else {
+            ImGui::Dummy(size);
+            ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(),
+                                                      ImGui::GetItemRectMax(),
+                                                      ImGui::GetColorU32(ImGuiCol_FrameBg));
+        }
+        if (ImGui::IsItemClicked() && !session_.running()) {
+            session_.select_video(video_index);
+        }
+        ImGui::SetItemTooltip("Show this video on the left");
+    }
+
+    void draw_multi_choice(Field& field) {
         if (field.choices.empty()) {
             ImGui::TextColored(kMuted, "none yet (complete labels and features are needed)");
             return;
@@ -474,7 +586,22 @@ class LauncherApp {
             ImGui::PushID(static_cast<int>(i));
             bool on = std::ranges::find(selected, choice) != selected.end();
             ImGui::Indent();
-            const bool clicked = ImGui::Checkbox(video_id.c_str(), &on);
+            const auto video = video_with_key(choice);
+            bool clicked = false;
+            if (video) {
+                clicked = ImGui::Checkbox("##tick", &on);
+                ImGui::SameLine();
+                draw_thumbnail(*video);
+                ImGui::SameLine();
+                ImGui::AlignTextToFramePadding();
+                if (ImGui::Selectable(video_id.c_str(), false,
+                                      ImGuiSelectableFlags_None)) {
+                    on = !on;
+                    clicked = true;
+                }
+            } else {
+                clicked = ImGui::Checkbox(video_id.c_str(), &on);
+            }
             ImGui::Unindent();
             ImGui::PopID();
             if (clicked) {
@@ -628,6 +755,9 @@ class LauncherApp {
     std::optional<DialogResult> dialog_result_;
     PreviewWorker preview_worker_;
     FrameTexture preview_texture_;
+    ThumbnailWorker thumbnail_worker_;
+    std::map<std::string, std::unique_ptr<FrameTexture>> thumbnails_; ///< by original video
+    std::set<std::string> thumbnails_requested_;
     std::string preview_video_;
     int preview_percent_ = kDefaultPreviewPercent;
     std::int64_t preview_count_ = 0;

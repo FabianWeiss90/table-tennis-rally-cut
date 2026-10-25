@@ -5,6 +5,7 @@
 
 #include "gui/launcher_app.hpp"
 
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -54,7 +55,7 @@ class GreyPreview final : public launcher::VideoPreview {
         ++requests;
         return frame;
     }
-    int requests = 0;
+    std::atomic<int> requests = 0; // called by the preview and the thumbnail threads
 };
 
 void use_offscreen_video_driver() {

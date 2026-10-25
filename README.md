@@ -372,8 +372,8 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
   videos is updated when a command has finished.
 - **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
   "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
-  and features are listed by match day; the ticked ones are trained on, all others validate the
-  model (see [the training](training/README.md#training-the-rally-detector)).
+  and features are listed by match day with a thumbnail (a click shows the video with its preview
+  on the left); the ticked ones are trained on, all others validate the model (see [the training](training/README.md#training-the-rally-detector)).
 
 Options: `--library` (the library to open, remembered for the next start), `--project`
 (project directory with `weights/` and `training/`, default the current one).

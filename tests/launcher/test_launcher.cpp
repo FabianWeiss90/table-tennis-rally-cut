@@ -131,14 +131,25 @@ TEST_CASE("forms are filled in for the selected video, with its files in the wor
     auto features = form_named(forms_for(snapshot.videos[0], snapshot), "features");
     CHECK(features.field("--model")->value == "/lib/ttrally-data/models/dinov2-vitb14-fp16.onnx");
 
-    // Cut: detections if there are any, else the labels
+    // Cut: complete labels first, then the detections, then labels still in progress
     auto cut_a = form_named(forms_for(snapshot.videos[0], snapshot), "cut");
     CHECK(cut_a.field("--rallies")->value ==
           in_library("day-1/ttrally-data/detections/match-a.csv"));
     auto cut_b = form_named(forms_for(snapshot.videos[1], snapshot), "cut");
+    CHECK(cut_b.field("--rallies")->value ==
+          in_library("day-1/ttrally-data/annotations/match-b.csv"));
     CHECK(cut_b.field("--rallies")->suggestions ==
-          std::vector<std::string>{in_library("day-1/ttrally-data/detections/match-b.csv"),
-                                   in_library("day-1/ttrally-data/annotations/match-b.csv")});
+          std::vector<std::string>{in_library("day-1/ttrally-data/annotations/match-b.csv"),
+                                   in_library("day-1/ttrally-data/detections/match-b.csv")});
+    auto in_progress = snapshot;
+    in_progress.videos[1].annotation = AnnotationProgress::InProgress;
+    auto cut_c = form_named(forms_for(in_progress.videos[1], in_progress), "cut");
+    CHECK(cut_c.field("--rallies")->value ==
+          in_library("day-1/ttrally-data/detections/match-b.csv"));
+    in_progress.videos[1].detected = false;
+    auto cut_d = form_named(forms_for(in_progress.videos[1], in_progress), "cut");
+    CHECK(cut_d.field("--rallies")->value ==
+          in_library("day-1/ttrally-data/annotations/match-b.csv"));
 }
 
 TEST_CASE("the training gets the library and the selected videos by match day") {

@@ -623,14 +623,17 @@ video: the evaluation shows how it does on footage it has never seen.
 Cuts a video down to its rallies, with a margin before and after each, into one MP4 file:
 
 ```sh
-ttrally cut data/original.mp4 --video-id <video_id>                  # detected rallies
-ttrally cut data/original.mp4 --rallies data/annotations/<video_id>.csv  # annotated rallies
+ttrally cut data/original.mp4 --video-id <video_id>                  # annotated or detected
+ttrally cut data/original.mp4 --rallies data/detections/<video_id>.csv  # a chosen cut list
 ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 ```
 
-- **Cut list:** any file in the [label format](#annotation-definitions-and-label-format), by
-  default `data/detections/<video_id>.csv` from `detect`. Ignored sections are not rallies and
-  are not cut.
+- **Cut list:** any file in the [label format](#annotation-definitions-and-label-format). By
+  default the annotations `data/annotations/<video_id>.csv` if they are complete (every segment
+  and gap done in `annotate`), since they are exact; otherwise the detections
+  `data/detections/<video_id>.csv` from `detect`. The launcher chooses the same way (annotations
+  still in progress only if there are no detections) and offers the others as suggestions.
+  Ignored sections are not rallies and are not cut.
 - **Margins:** `--before` and `--after` (seconds, default 2 each). Rallies whose margins overlap
   or touch become one continuous section, so nothing is shown twice.
 - **Frame-accurate (default):** every section starts and ends exactly at a frame; the video is
@@ -657,7 +660,8 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every
   4 s).
 
-Options: `--rallies`, `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
+Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the default looks,
+`data/annotations` and `data/detections`), `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
 `--fast`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
 `libopenh264`; default: the first of the codec that works), `--cache-dir`.
 

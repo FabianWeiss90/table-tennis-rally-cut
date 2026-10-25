@@ -22,6 +22,8 @@ class CutCommand {
     std::string video_id_;
     std::filesystem::path rallies_;
     std::filesystem::path out_;
+    std::filesystem::path annotations_dir_ = "data/annotations";
+    std::filesystem::path detections_dir_ = "data/detections";
     std::filesystem::path cache_dir_ = "data/cache";
     double before_s_ = 2.0;
     double after_s_ = 2.0;

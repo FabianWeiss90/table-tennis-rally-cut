@@ -209,11 +209,16 @@ CommandForm cut_form(const VideoEntry& video) {
     const std::string id = video.video_id;
     const std::string detections = in_work_dir(video, {"detections", id + ".csv"});
     const std::string labels = in_work_dir(video, {"annotations", id + ".csv"});
+    // Complete labels are exact, so they come first; then the detections; labels still in
+    // progress would leave out the rallies not marked yet
     std::vector<std::string> cut_lists;
+    if (video.annotation == AnnotationProgress::Complete) {
+        cut_lists.push_back(labels);
+    }
     if (video.detected) {
         cut_lists.push_back(detections);
     }
-    if (video.annotation != AnnotationProgress::None) {
+    if (video.annotation == AnnotationProgress::InProgress) {
         cut_lists.push_back(labels);
     }
     return {"cut", "Cut", "Cut the video down to its rallies, with a margin before and after "
@@ -222,7 +227,8 @@ CommandForm cut_form(const VideoEntry& video) {
             {positional("Video", FieldKind::File, video.original, "Original video"),
              with_suggestions(required(option("--rallies", "Rallies", FieldKind::File,
                                               first_or(cut_lists, detections), "",
-                                              "Detections or annotations (label format)")),
+                                              "Default: the annotations if complete, else the "
+                                              "detections")),
                               cut_lists),
              option("--out", "Output video", FieldKind::File,
                     in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),

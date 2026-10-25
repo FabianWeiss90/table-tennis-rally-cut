@@ -3,6 +3,7 @@
 #include "cli/cut_command.hpp"
 
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
+#include "annotation/infrastructure/csv_review_state_store.hpp"
 #include "cli/stream_progress_reporter.hpp"
 #include "cutting/application/cut_video.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
@@ -11,10 +12,27 @@
 #include "media/infrastructure/ffmpeg_media_reader.hpp"
 #include "shared/io/formatting.hpp"
 
+#include <algorithm>
 #include <format>
 #include <iostream>
+#include <stdexcept>
 
 namespace ttrally::cli {
+
+namespace {
+
+/// The labels of a video are complete once every segment and gap of its review is done.
+bool labels_complete(const std::filesystem::path& annotations_dir, const std::string& video_id) {
+    if (!std::filesystem::exists(annotations_dir / (video_id + ".csv"))) {
+        return false;
+    }
+    const auto statuses = annotation::CsvReviewStateStore(annotations_dir).load(video_id);
+    return !statuses.empty() && std::ranges::none_of(statuses, [](const auto& entry) {
+        return entry.second == annotation::ReviewStatus::Open;
+    });
+}
+
+} // namespace
 
 CutCommand::CutCommand(CLI::App& app)
     : command_(app.add_subcommand(
@@ -23,9 +41,16 @@ CutCommand::CutCommand(CLI::App& app)
     command_->add_option("--video-id", video_id_,
                          "Video id (default: file name without extension)");
     command_->add_option("--rallies", rallies_,
-                         "Cut list in the label format (default: data/detections/<video-id>.csv; "
-                         "annotations work too)")
+                         "Cut list in the label format (default: the annotations "
+                         "<annotations-dir>/<video-id>.csv if they are complete, else "
+                         "<detections-dir>/<video-id>.csv)")
         ->check(CLI::ExistingFile);
+    command_->add_option("--annotations-dir", annotations_dir_,
+                         "Where the default looks for annotations")
+        ->capture_default_str();
+    command_->add_option("--detections-dir", detections_dir_,
+                         "Where the default looks for detections")
+        ->capture_default_str();
     command_->add_option("--out", out_, "Output video (default: data/cuts/<video-id>.mp4)");
     command_->add_option("--before", before_s_, "Seconds kept before each rally")
         ->check(CLI::NonNegativeNumber)
@@ -57,7 +82,15 @@ int CutCommand::run() {
         video_id_ = video_.stem().string();
     }
     if (rallies_.empty()) {
-        rallies_ = std::filesystem::path("data/detections") / (video_id_ + ".csv");
+        const bool annotated = labels_complete(annotations_dir_, video_id_);
+        rallies_ = (annotated ? annotations_dir_ : detections_dir_) / (video_id_ + ".csv");
+        std::cout << std::format("Rallies: {} ({})\n", rallies_.string(),
+                                 annotated ? "complete annotations" : "detections");
+        if (!std::filesystem::exists(rallies_)) {
+            throw std::runtime_error(std::format(
+                "{} does not exist: run detect first, or give the rallies with --rallies",
+                rallies_.string()));
+        }
     }
     if (out_.empty()) {
         out_ = std::filesystem::path("data/cuts") / (video_id_ + ".mp4");

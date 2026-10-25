@@ -16,8 +16,13 @@
 namespace ttrally::media {
 
 /// Decodes frames around a requested position on a background thread and keeps them in a
-/// bounded cache, so that stepping and scrubbing stay responsive. When the cache is full, the
-/// frames farthest from the latest requested position are dropped.
+/// bounded cache, so that stepping and scrubbing stay responsive in both directions. Frames at
+/// and after the position come first, then the ones before it, nearest first. Every pass keeps
+/// the frames decoded on the way from the keyframe, so going back costs one pass per keyframe
+/// interval, and right after a jump the frames before the target are mostly there already. A
+/// newer request lets a running pass finish if it still needs it, so stepping does not restart
+/// passes. When the cache is full, the frames farthest from the latest requested position are
+/// dropped.
 class FramePrefetcher {
   public:
     FramePrefetcher(std::unique_ptr<FrameDecoder> decoder, std::size_t capacity);
@@ -51,6 +56,10 @@ class FramePrefetcher {
 
     void run();
     [[nodiscard]] std::optional<std::int64_t> first_missing(const Window& window) const;
+    /// Whether a running pass for `missing` should go on after a newer request.
+    [[nodiscard]] bool still_useful(std::int64_t missing) const;
+    /// Last frame to decode for a missing one: up to the next cached frame or the window's end.
+    [[nodiscard]] std::int64_t decode_end(const Window& window, std::int64_t missing) const;
     void store(VideoFrame&& frame, std::int64_t centre);
 
     std::unique_ptr<FrameDecoder> decoder_;

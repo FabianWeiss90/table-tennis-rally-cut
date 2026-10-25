@@ -50,18 +50,30 @@ std::optional<std::string> FramePrefetcher::error() const {
 }
 
 std::optional<std::int64_t> FramePrefetcher::first_missing(const Window& window) const {
-    // Frames at and after the centre are needed first, then the ones before it.
+    // Frames at and after the centre are needed first, then the ones before it, nearest first
     for (std::int64_t i = window.centre; i <= window.last; ++i) {
         if (!cache_.contains(i)) {
             return i;
         }
     }
-    for (std::int64_t i = window.first; i < window.centre; ++i) {
+    for (std::int64_t i = window.centre - 1; i >= window.first; --i) {
         if (!cache_.contains(i)) {
             return i;
         }
     }
     return std::nullopt;
+}
+
+bool FramePrefetcher::still_useful(std::int64_t missing) const {
+    // A newer request (e.g. the next step) keeps the pass going if it still needs the frame the
+    // pass was started for and has its own frame already; restarting would seek again
+    return missing >= window_.first && missing <= window_.last && cache_.contains(window_.centre);
+}
+
+std::int64_t FramePrefetcher::decode_end(const Window& window, std::int64_t missing) const {
+    const auto next_cached = cache_.upper_bound(missing);
+    return next_cached != cache_.end() ? std::min(next_cached->first - 1, window.last)
+                                       : window.last;
 }
 
 void FramePrefetcher::store(VideoFrame&& frame, std::int64_t centre) {
@@ -91,17 +103,19 @@ void FramePrefetcher::run() {
             changed_.notify_all();
             continue;
         }
+        const std::int64_t last = decode_end(window, *missing);
 
         lock.unlock();
         bool delivered = false;
         try {
-            decoder_->decode(*missing, window.last, [&](VideoFrame&& frame) {
+            decoder_->decode_with_lead_in(*missing, last, [&](VideoFrame&& frame) {
                 const std::lock_guard guard(mutex_);
                 delivered = true;
-                if (frame.index >= window.first && frame.index <= window.last) {
-                    store(std::move(frame), window.centre);
+                // Lead-in frames before the window help going back, so they are kept too
+                if (frame.index <= std::max(window.last, window_.last)) {
+                    store(std::move(frame), window_.centre);
                 }
-                return requested_ == generation && !stopping_;
+                return !stopping_ && (requested_ == generation || still_useful(*missing));
             });
         } catch (const std::exception& exception) {
             lock.lock();

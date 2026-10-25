@@ -28,9 +28,11 @@ using annotation::ReviewStatus;
 
 constexpr float kSidebarWidth = 400.0F;
 constexpr int kLegendColumns = 3; ///< Shortcut/action pairs per row
-constexpr std::int64_t kFramesBehind = 90;
-constexpr std::int64_t kFramesAhead = 90;
-constexpr std::int64_t kFramesAheadPlaying = 240;
+// Frames kept decoded around the current one, in seconds of video (the prefetcher also keeps the
+// frames decoded on the way from each keyframe, so going back usually has more)
+constexpr double kBufferBehindSeconds = 2.0;
+constexpr double kBufferAheadSeconds = 2.0;
+constexpr double kBufferAheadPlayingSeconds = 4.0;
 constexpr double kTimelineMarginSeconds = 2.0;
 constexpr std::array kSpeeds{0.1, 0.25, 0.5, 1.0, 2.0, 4.0};
 constexpr std::size_t kNormalSpeed = 3;
@@ -150,6 +152,10 @@ class AnnotatorApp {
         return static_cast<std::int64_t>(std::lround(fps_));
     }
 
+    [[nodiscard]] std::int64_t frames_in(double seconds) const {
+        return static_cast<std::int64_t>(std::lround(seconds * fps_));
+    }
+
     void go_to(std::int64_t frame) {
         current_ = std::clamp<std::int64_t>(frame, 0, last_frame());
         request_frames();
@@ -161,7 +167,8 @@ class AnnotatorApp {
     }
 
     void request_frames() {
-        frames_.request(current_, kFramesBehind, playing_ ? kFramesAheadPlaying : kFramesAhead);
+        frames_.request(current_, frames_in(kBufferBehindSeconds),
+                        frames_in(playing_ ? kBufferAheadPlayingSeconds : kBufferAheadSeconds));
     }
 
     /// Shows the start of the current item.

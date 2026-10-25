@@ -27,9 +27,12 @@ class AnnotateCommand {
     /// Where earlier versions kept the review progress; read once, then moved to the labels
     std::filesystem::path legacy_state_dir_ = "data/annotate";
     std::filesystem::path cache_dir_ = "data/cache";
-    std::string decode_backend_ = "auto";
+    /// The CPU, not auto: annotating needs every frame in main memory, and copying them back from
+    /// the GPU made VAAPI decoding about 3 times slower (94 vs. 276 frames/s, RX 7800 XT, 24
+    /// threads); with the CPU, stepping back from a segment start never waited.
+    std::string decode_backend_ = "cpu";
     int display_height_ = 1080;
-    int frame_memory_mb_ = 1024;
+    int frame_memory_mb_ = 2048; ///< about 10 s of decoded Full HD frames
 };
 
 } // namespace ttrally::cli

@@ -90,19 +90,12 @@ class FfmpegFrameDecoder final : public FrameDecoder {
     [[nodiscard]] FrameSize frame_size() const override { return size_; }
 
     void decode(std::int64_t first, std::int64_t last, const FrameConsumer& consume) override {
-        first = std::max<std::int64_t>(first, 0);
-        last = std::min(last, frame_count() - 1);
-        if (first > last) {
-            return;
-        }
-        auto decoded = advance_to(first);
-        while (decoded.frame) {
-            const std::int64_t index = decoded.index;
-            if (!consume(convert(std::move(decoded))) || index >= last) {
-                return;
-            }
-            decoded = next();
-        }
+        decode_range(first, last, consume, false);
+    }
+
+    void decode_with_lead_in(std::int64_t first, std::int64_t last,
+                             const FrameConsumer& consume) override {
+        decode_range(first, last, consume, true);
     }
 
     void decode_selected(std::span<const std::int64_t> indices,
@@ -123,6 +116,34 @@ class FfmpegFrameDecoder final : public FrameDecoder {
         ff::FramePtr frame; ///< nullptr at the end of the video
         std::int64_t index = -1;
     };
+    /// Receives the frames decoded on the way to a target; returning false stops decoding.
+    using LeadIn = std::function<bool(Decoded&&)>;
+
+    void decode_range(std::int64_t first, std::int64_t last, const FrameConsumer& consume,
+                      bool lead_in) {
+        first = std::max<std::int64_t>(first, 0);
+        last = std::min(last, frame_count() - 1);
+        if (first > last) {
+            return;
+        }
+        bool stopped = false;
+        auto decoded = lead_in ? advance_to(first,
+                                            [&](Decoded&& passed) {
+                                                stopped = !consume(convert(std::move(passed)));
+                                                return !stopped;
+                                            })
+                               : advance_to(first);
+        if (stopped) {
+            return;
+        }
+        while (decoded.frame) {
+            const std::int64_t index = decoded.index;
+            if (!consume(convert(std::move(decoded))) || index >= last) {
+                return;
+            }
+            decoded = next();
+        }
+    }
 
     /// The next frame in presentation order.
     [[nodiscard]] Decoded next() {
@@ -137,7 +158,9 @@ class FfmpegFrameDecoder final : public FrameDecoder {
     }
 
     /// Positions the decoder on the target frame (forward decoding or seeking) and returns it.
-    [[nodiscard]] Decoded advance_to(std::int64_t target) {
+    /// Frames before the target are passed to `lead_in` if given; if it returns false, the
+    /// result is empty.
+    [[nodiscard]] Decoded advance_to(std::int64_t target, const LeadIn& lead_in = {}) {
         if (!can_continue_to(target)) {
             seek_before(target, 0);
         }
@@ -154,6 +177,9 @@ class FfmpegFrameDecoder final : public FrameDecoder {
             just_seeked = false;
             if (decoded.index >= target) {
                 return decoded;
+            }
+            if (lead_in && !lead_in(std::move(decoded))) {
+                return {};
             }
         }
     }

@@ -32,6 +32,15 @@ class FrameDecoder {
     /// seeks to the keyframe before `first`.
     virtual void decode(std::int64_t first, std::int64_t last, const FrameConsumer& consume) = 0;
 
+    /// Like decode(), but also passes the frames decoded on the way to `first` (from the keyframe
+    /// it seeks to, or from the current position), in presentation order before the others.
+    /// Going backwards costs one pass per keyframe interval then, not one per frame. By default
+    /// the same as decode().
+    virtual void decode_with_lead_in(std::int64_t first, std::int64_t last,
+                                     const FrameConsumer& consume) {
+        decode(first, last, consume);
+    }
+
     /// Decodes only the given frames (sorted ascending). Frames in between are decoded but not
     /// converted, and long distances are skipped by seeking. Much faster than decode() when only
     /// every n-th frame is needed.

@@ -89,9 +89,10 @@ Field cache_dir(const VideoEntry& video) {
                            "Frame timestamps and decoded audio"));
 }
 
-Field decode_backend() {
-    return advanced(choice("--decode-backend", "Video decoding", kDecodeBackends, "auto",
-                           "Hardware decoder; auto tries the GPU first"));
+Field decode_backend(std::string default_value = "auto",
+                     std::string help = "Hardware decoder; auto tries the GPU first") {
+    return advanced(choice("--decode-backend", "Video decoding", kDecodeBackends,
+                           std::move(default_value), std::move(help)));
 }
 
 CommandForm align_form(const VideoEntry& video) {
@@ -144,11 +145,12 @@ CommandForm annotate_form(const VideoEntry& video) {
              advanced(option("--annotations-dir", "Labels directory", FieldKind::Directory,
                              in_work_dir(video, {"annotations"}), "data/annotations", "")),
              cache_dir(video),
-             decode_backend(),
+             decode_backend("cpu", "cpu is fastest for stepping (every frame is needed in "
+                                   "main memory); auto tries the GPU first"),
              advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
                              "1080", "Pixels of the shown video")),
-             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "1024",
-                             "1024", "More allows longer steps back without decoding"))}};
+             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "2048",
+                             "2048", "About 10 s of Full HD frames"))}};
 }
 
 CommandForm features_form(const VideoEntry& video, const WorkspaceSnapshot& workspace) {

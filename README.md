@@ -532,8 +532,13 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 
 Options: `--gaps` (default `<segments>.gaps.csv`), `--video-id` (default: name of the segments
 CSV), `--annotations-dir` (labels and review progress, default `data/annotations`),
-`--decode-backend`, `--display-height` (default 1080) and `--frame-memory` (MB for decoded frames,
-default 1024; more memory allows longer steps back without decoding again).
+`--decode-backend` (default `cpu`: the window needs every frame in main memory, and copying them
+back from the GPU makes VAAPI about 3 times slower here), `--display-height` (default 1080) and
+`--frame-memory` (MB for decoded frames, default 2048, about 10 s of Full HD frames). The window
+keeps at least 2 s before and after the current frame decoded (4 s ahead while playing). Going
+back is as smooth as going forward, also right after jumping to a segment or gap: the frames
+from the keyframe before the target are kept, and the earlier ones are decoded one keyframe
+interval at a time, nearest first, while you step.
 
 Saved rallies must follow the annotation rules below; the window refuses, for example,
 overlapping rallies or an end before the start.

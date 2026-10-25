@@ -39,7 +39,8 @@ AnnotateCommand::AnnotateCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_option("--cache-dir", cache_dir_, "Cache for frame timestamps")
         ->capture_default_str();
-    command_->add_option("--decode-backend", decode_backend_, "Video decoding")
+    command_->add_option("--decode-backend", decode_backend_,
+                         "Video decoding (cpu is fastest for stepping through frames)")
         ->check(CLI::IsMember(media::decode_backend_names()))
         ->capture_default_str();
     command_->add_option("--display-height", display_height_,

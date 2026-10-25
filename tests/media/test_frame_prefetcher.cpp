@@ -10,7 +10,8 @@ using namespace ttrally::media;
 
 namespace {
 
-/// Delivers frames whose single pixel value is the frame index; counts seeks.
+/// Delivers frames whose single pixel value is the frame index; counts decoded frames and
+/// decoding passes (each pass starts with a seek).
 class CountingDecoder final : public FrameDecoder {
   public:
     explicit CountingDecoder(std::int64_t frames, std::atomic<int>& decoded)
@@ -19,6 +20,7 @@ class CountingDecoder final : public FrameDecoder {
     std::int64_t frame_count() const override { return frames_; }
     FrameSize frame_size() const override { return {2, 2}; }
     void decode(std::int64_t first, std::int64_t last, const FrameConsumer& consume) override {
+        ++passes;
         if (fail_at && *fail_at >= first && *fail_at <= last) {
             throw std::runtime_error("corrupt frame");
         }
@@ -34,6 +36,13 @@ class CountingDecoder final : public FrameDecoder {
             }
         }
     }
+    /// Starts at the keyframe before `first`, as a real decoder after a seek.
+    void decode_with_lead_in(std::int64_t first, std::int64_t last,
+                             const FrameConsumer& consume) override {
+        const std::int64_t keyframe =
+            keyframe_interval > 0 ? first - first % keyframe_interval : first;
+        decode(keyframe, last, consume); // counts as one pass
+    }
     void decode_selected(std::span<const std::int64_t> indices,
                          const FrameConsumer& consume) override {
         for (const std::int64_t i : indices) {
@@ -41,6 +50,8 @@ class CountingDecoder final : public FrameDecoder {
         }
     }
     std::optional<std::int64_t> fail_at;
+    std::int64_t keyframe_interval = 0; ///< 0: every frame is a keyframe
+    std::atomic<int> passes{0};
 
   private:
     std::int64_t frames_;
@@ -89,4 +100,23 @@ TEST_CASE("decoding errors are reported instead of retried forever") {
     prefetcher.wait_until_idle();
     REQUIRE(prefetcher.error());
     CHECK(*prefetcher.error() == "corrupt frame");
+}
+
+TEST_CASE("right after a jump, stepping backwards finds every frame decoded already") {
+    std::atomic<int> decoded{0};
+    auto decoder = std::make_unique<CountingDecoder>(1000, decoded);
+    decoder->keyframe_interval = 50;
+    const auto* counting = decoder.get();
+    FramePrefetcher prefetcher(std::move(decoder), 400);
+    prefetcher.request(520, 20, 20); // e.g. the start of a segment
+    prefetcher.wait_until_idle();
+    for (std::int64_t frame = 500; frame < 520; ++frame) {
+        CHECK(prefetcher.frame(frame)); // decoded on the way from the keyframe at 500
+    }
+    for (std::int64_t frame = 519; frame >= 300; --frame) { // single steps back
+        REQUIRE(prefetcher.frame(frame)); // there before it is asked for
+        prefetcher.request(frame, 20, 20);
+        prefetcher.wait_until_idle();
+    }
+    CHECK(counting->passes <= 7); // about one pass per keyframe interval, not one per step
 }

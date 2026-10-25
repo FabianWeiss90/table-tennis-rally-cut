@@ -74,7 +74,7 @@ CutCommand::CutCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: by resolution and frame rate; for "
-                         "Full HD at 60 fps 5 with H.265, 10 with H.264)")
+                         "Full HD at 60 fps 4 with H.265, 8 with H.264)")
         ->check(CLI::Range(kMinBitrateMbps, kMaxBitrateMbps));
     command_->add_option("--cache-dir", cache_dir_, "Cache for frame timestamps")
         ->capture_default_str();

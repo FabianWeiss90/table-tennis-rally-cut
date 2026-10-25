@@ -645,8 +645,8 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   order they are tried), those that cannot be opened on this machine, and the one used with its
   bit rate.
 - **Bit rate:** `--bitrate` in Mbit/s, from 1. The default scales with resolution and frame rate: for
-  Full HD at 60 fps **5 Mbit/s with H.265** (no loss visible on fast rallies; a cut is about
-  70 % the size of the camera's original per minute) and 10 Mbit/s with H.264. Measured on fast
+  Full HD at 60 fps **4 Mbit/s with H.265** (about 30 MB per minute; at 5 Mbit/s no loss was
+  visible on fast rallies) and 8 Mbit/s with H.264. Measured on fast
   rallies with the VAAPI H.265 encoder (PSNR against the original):
 
   | `--bitrate` | 5 | 6 | 7 | 8 | 12 | 20 |

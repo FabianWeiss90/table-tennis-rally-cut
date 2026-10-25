@@ -27,13 +27,13 @@ namespace {
 
 constexpr double kTimeEpsilon = 1e-6;
 constexpr int kHardwareFramePool = 16;
-/// Default H.265 bit rate per pixel and frame: 5 Mbit/s for Full HD at 60 fps. Measured on fast
-/// rallies (hevc_vaapi, 2026-10-12): 41.4 dB PSNR, no loss visible to the eye; a cut is then
-/// about 70 % the size of the camera's H.264 original. Higher rates: 8 Mbit/s 43.3 dB,
-/// 20 Mbit/s 46.5 dB.
-constexpr double kH265BitsPerPixel = 0.04;
-/// H.264 needs about twice the bit rate for the same quality (10 Mbit/s for Full HD at 60 fps).
-constexpr double kH264BitsPerPixel = 0.08;
+/// Default H.265 bit rate per pixel and frame: 4 Mbit/s for Full HD at 60 fps (chosen by the user
+/// on 2026-10-25). Measured on fast rallies (hevc_vaapi, 2026-10-12): 5 Mbit/s 41.4 dB PSNR, no
+/// loss visible to the eye; 8 Mbit/s 43.3 dB, 20 Mbit/s 46.5 dB. On another clip (2026-10-25)
+/// 3 Mbit/s gave 39.9 dB.
+constexpr double kH265BitsPerPixel = 0.032;
+/// H.264 needs about twice the bit rate for the same quality (8 Mbit/s for Full HD at 60 fps).
+constexpr double kH264BitsPerPixel = 0.064;
 /// h264_vaapi hangs in the driver (Mesa, RX 7800 XT) at 20 Mbit/s and above or with constant
 /// quality; 15 Mbit/s was measured to work.
 constexpr std::int64_t kMaxH264VaapiBitrate = 15'000'000;

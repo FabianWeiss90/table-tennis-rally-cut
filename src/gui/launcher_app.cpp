@@ -305,9 +305,12 @@ class LauncherApp {
             const VideoEntry& video = videos[i];
             if (i == 0 || video.match_day != videos[i - 1].match_day) {
                 ImGui::SeparatorText(video.match_day.c_str());
+                draw_scene_detection(video.match_day);
             }
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(video.video_id.c_str(), session_.selected_video() == i)) {
+            const std::string label =
+                video.scene.empty() ? video.video_id : video.video_id + "   (scene " + video.scene + ")";
+            if (ImGui::Selectable(label.c_str(), session_.selected_video() == i)) {
                 if (!session_.running()) {
                     session_.select_video(i);
                 }
@@ -388,7 +391,7 @@ class LauncherApp {
         ImGui::SetItemTooltip("%s", path.c_str());
     }
 
-    static void draw_details(const VideoEntry& video) {
+    void draw_details(const VideoEntry& video) {
         file_line("Original", video.original);
         if (video.cut_candidates.empty()) {
             ImGui::TextColored(kMuted, "No pre-cut version (needed by align)");
@@ -396,8 +399,11 @@ class LauncherApp {
         for (const std::string& cut : video.cut_candidates) {
             file_line("Pre-cut", cut);
         }
-        if (!video.scene.empty()) {
-            ImGui::Text("Scene: %s", video.scene.c_str());
+        if (scenes_ != nullptr) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Scene:");
+            ImGui::SameLine();
+            draw_scene_choice(video);
         }
         const char* labels = video.annotation == AnnotationProgress::Complete     ? "complete"
                              : video.annotation == AnnotationProgress::InProgress ? "in progress"
@@ -621,10 +627,23 @@ class LauncherApp {
     void draw_match_day_header(const std::string& match_day) {
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(kMuted, "%s", match_day.c_str());
+        ImGui::SameLine();
+        draw_scene_detection(match_day);
+    }
+
+    /// "Detect scenes" for a match day, or a note while it runs.
+    void draw_scene_detection(const std::string& match_day) {
         if (scenes_ == nullptr) {
             return;
         }
-        ImGui::SameLine();
+        ImGui::PushID(match_day.c_str());
+        ImGui::PushID("detect");
+        draw_scene_detection_button(match_day);
+        ImGui::PopID();
+        ImGui::PopID();
+    }
+
+    void draw_scene_detection_button(const std::string& match_day) {
         if (scene_job_day_ == match_day) {
             ImGui::TextColored(kPartly, "detecting the scenes...");
             return;

@@ -374,9 +374,10 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
   "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
   and features are listed by match day with a thumbnail (a click shows the video with its preview
   on the left); the ticked ones are trained on, all others validate the model. Each video has a
-  **scene** (A, B, ...: the same hall seen from the same camera position): "Detect scenes" next to
-  a match day suggests them by comparing the videos' backgrounds (the median of 15 frames, which
-  removes the players), and the choice next to each video corrects them. They are stored in
+  **scene** (A, B, ...: the same hall seen from the same camera position): "Detect scenes" under
+  each match day (in the video list and in the Train tab) suggests them by comparing the videos' backgrounds (the median of 15 frames, which
+  removes the players); the choice in the details of the selected video and next to each video in
+  the Train tab corrects them. They are stored in
   `<match day>/ttrally-data/scenes.csv`. A scene with videos in both training and validation is
   pointed out, since such a validation flatters the model (see [the training](training/README.md#training-the-rally-detector)).
 

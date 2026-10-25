@@ -15,15 +15,19 @@ namespace ttrally::annotation {
 /// that may hide a missed rally.
 enum class ReviewKind { Candidate, Gap };
 
-/// Open: not looked at yet. Annotated: contains at least one rally (derived from the sheet).
-/// Ignored: contains no rally but an ignored section (derived from the sheet). Rejected: a
-/// candidate without a rally. Reviewed: a gap checked without finding a rally.
+/// Open: not looked at yet. Annotated: a candidate overlapping a rally, or a gap completely
+/// covered by rallies and ignored sections (derived from the sheet). Ignored: the same with
+/// ignored sections only (derived from the sheet). Rejected: a candidate without a rally.
+/// Reviewed: a gap checked by the user (with or without rallies found in it).
 enum class ReviewStatus { Open, Annotated, Rejected, Reviewed, Ignored };
 
 [[nodiscard]] std::string_view to_string(ReviewKind kind) noexcept;
 [[nodiscard]] std::string_view to_string(ReviewStatus status) noexcept;
 [[nodiscard]] std::optional<ReviewKind> parse_review_kind(std::string_view text) noexcept;
 [[nodiscard]] std::optional<ReviewStatus> parse_review_status(std::string_view text) noexcept;
+
+/// Source id of the gap that covers a whole video without alignment (alignment gaps start at 1).
+inline constexpr int kWholeVideoGapId = 0;
 
 struct ReviewItem {
     ReviewKind kind = ReviewKind::Candidate;
@@ -35,6 +39,10 @@ struct ReviewItem {
     [[nodiscard]] std::string title() const;
     [[nodiscard]] bool done() const noexcept { return status != ReviewStatus::Open; }
 };
+
+/// One gap over all frames, for a video without a pre-cut version: every rally is marked by
+/// hand, and the gap is checked (Reviewed) once the whole video has been looked at.
+[[nodiscard]] ReviewItem whole_video_gap(std::int64_t frame_count);
 
 struct ReviewProgress {
     std::size_t candidates = 0;
@@ -62,8 +70,11 @@ class ReviewPlan {
     void set_manual_status(std::size_t index, ReviewStatus status);
     [[nodiscard]] ReviewStatus manual_status(std::size_t index) const;
 
-    /// Recomputes the statuses: items overlapping a rally are Annotated, items overlapping only
-    /// an ignored section are Ignored, the others keep their manual status.
+    /// Recomputes the statuses: candidates overlapping a rally are Annotated, candidates
+    /// overlapping only an ignored section are Ignored. Gaps get these statuses only if rallies
+    /// and ignored sections cover them completely; a gap that is only partly covered may still
+    /// hide a rally and keeps its manual status (Open until checked). The others keep their
+    /// manual status.
     void refresh(const AnnotationSheet& sheet);
 
     [[nodiscard]] std::optional<std::size_t> next_open(std::size_t after) const;

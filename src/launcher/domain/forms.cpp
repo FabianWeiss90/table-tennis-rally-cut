@@ -125,14 +125,20 @@ CommandForm align_form(const VideoEntry& video) {
 
 CommandForm annotate_form(const VideoEntry& video) {
     const std::string id = video.video_id;
-    return {"annotate", "Annotate", "Open the annotation window to mark the rallies; it saves "
-                                    "every change at once.",
+    const bool pre_cut = !video.cut_candidates.empty();
+    return {"annotate", "Annotate",
+            pre_cut ? "Open the annotation window to mark the rallies in the segments found by "
+                      "align and check the gaps between them; it saves every change at once."
+                    : "Open the annotation window to mark every rally by hand: without a pre-cut "
+                      "video the whole video is one gap, checked with R at the end. It saves "
+                      "every change at once.",
             Program::Ttrally, "", "", {"annotate"},
             {positional("Original video", FieldKind::File, video.original, "Untrimmed original"),
-             required(option("--segments", "Segments CSV (from align)", FieldKind::File,
-                             in_work_dir(video, {"align", id + ".csv"}), "", "")),
-             option("--video-id", "Video id", FieldKind::Text, id, "",
-                    "Name of the label file"),
+             option("--segments", "Segments CSV (from align)", FieldKind::File,
+                    pre_cut ? in_work_dir(video, {"align", id + ".csv"}) : "", "",
+                    "Empty: mark every rally by hand in the whole video"),
+             required(option("--video-id", "Video id", FieldKind::Text, id, "",
+                             "Name of the label file")),
              advanced(option("--gaps", "Gaps CSV", FieldKind::File, "", "",
                              "Default: <segments>.gaps.csv")),
              advanced(option("--annotations-dir", "Labels directory", FieldKind::Directory,

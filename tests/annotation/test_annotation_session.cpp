@@ -95,7 +95,11 @@ TEST_CASE("only complete drafts are saved automatically") {
     CHECK(saved->id == 1);
     CHECK_FALSE(saved->ignored);
     CHECK(fixture.annotations.saved.size() == 1);
-    CHECK(session.plan().item(2).status == ReviewStatus::Annotated); // the gap now has a rally
+    // A rally found in a gap does not complete it: the rest of the gap may hide more
+    CHECK(session.plan().item(2).status == ReviewStatus::Open);
+    session.select_item(2);
+    session.mark_current_reviewed();
+    CHECK(session.plan().item(2).status == ReviewStatus::Reviewed);
 }
 
 TEST_CASE("an incomplete or invalid draft is not saved") {
@@ -218,7 +222,7 @@ TEST_CASE("marks can be saved as an ignored section that completes the item") {
     Fixture fixture;
     auto session = fixture.open(); // gap 1 (0-599)
     session.mark_start(0);
-    session.mark_end(450);
+    session.mark_end(599); // all of the gap; a part would leave it open
     session.set_notes("recording started mid-rally");
     CHECK(session.save_draft_as_ignored() == 1);
     REQUIRE(fixture.annotations.ignored.size() == 1);
@@ -258,3 +262,28 @@ TEST_CASE("a saved rally can become an ignored section and back") {
     CHECK(fixture.annotations.saved.size() == 1);
 }
 
+
+TEST_CASE("a video without alignment is annotated by hand in one gap over all of it") {
+    Fixture fixture;
+    WholeVideoReviewSource whole_video(5000);
+    AnnotationSession session({"match_a", {60, 1}, 5000}, fixture.annotations, whole_video,
+                              fixture.states);
+    REQUIRE(session.plan().items().size() == 1);
+    CHECK(session.plan().item(0).title() == "Whole video");
+    CHECK(session.plan().item(0).last_frame == 4999);
+    CHECK(session.current_item() == 0);
+
+    session.mark_start(1200);
+    session.mark_end(1300);
+    CHECK(session.save_draft() == 1);
+    session.mark_start(3000);
+    session.mark_end(3400);
+    CHECK(session.save_draft() == 2);
+    CHECK_FALSE(session.plan().progress().complete()); // not looked at to the end yet
+    CHECK(session.entry_frame(0) == 3401); // reopened later, it continues after the last rally
+
+    session.select_item(0);
+    session.mark_current_reviewed();
+    CHECK(session.plan().progress().complete());
+    CHECK(fixture.annotations.saved.size() == 2);
+}

@@ -56,6 +56,9 @@ class AnnotationSession {
     [[nodiscard]] const ReviewPlan& plan() const noexcept { return plan_; }
     [[nodiscard]] const RallyDraft& draft() const noexcept { return draft_; }
     [[nodiscard]] std::optional<std::size_t> current_item() const noexcept { return current_; }
+    /// Frame to show when an item is selected: its first frame; in the gap over a whole video
+    /// without alignment, the frame after the last rally or ignored section, to continue there.
+    [[nodiscard]] std::int64_t entry_frame(std::size_t index) const;
 
     // Navigation through the review items
     void select_item(std::size_t index);

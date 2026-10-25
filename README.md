@@ -465,18 +465,30 @@ ttrally annotate data/original.mp4 --segments data/align/<video_id>.csv
 The window shows the original frame by frame (hardware decoding as in `align`), a timeline of the
 current segment or gap, and the list of all segments and gaps with their status.
 
+**Without a pre-cut video** (no Liimba cut, e.g. a video from elsewhere), leave out `--segments`
+and give the video id; every rally is then marked by hand:
+
+```sh
+ttrally annotate data/original.mp4 --video-id <video_id>
+```
+
+The whole video is one gap. Go through it and mark each rally; when you reach the end, press
+**R** to check the gap, and the video is complete for training. Opened again later, the window
+continues after the last marked rally. The launcher (`ttrally gui`) does this by itself for videos
+without a recognised pre-cut version.
+
 Annotating a rally takes three keys, anywhere in the video (inside a segment, in a gap, or
 elsewhere):
 
 1. **A** on the first frame in which the ball leaves the palm,
 2. **D** on the frame in which the point is decided,
 3. **Enter**: the rally is saved to `data/annotations/<video_id>.csv` and the window jumps to the
-   next segment that has no rally yet.
+   next segment that has no rally yet (without segments it stays where it is).
 
 **Ignored sections** leave a stretch of the video out of training, e.g. a rally whose start is
 missing because the recording began late: mark it with **A** and **D** as well, then press
 **I** instead of Enter. Ignored sections are no rallies; they must not overlap rallies, and a
-segment or gap containing one counts as done. Rather mark them a little too wide than too narrow.
+segment containing one counts as done. Rather mark them a little too wide than too narrow.
 
 Marks are never lost: if start and end are set, they are also saved when you switch to another
 segment or close the window (as a rally, or as an ignored section if you were editing one).
@@ -487,9 +499,11 @@ and "Complete" at the top of the list (next to the number of saved rallies, how 
 are lets, and the number of ignored sections). Only finished videos are used for training, because an
 unchecked gap may hide a missed rally that would be learned as "no rally":
 
-- Segments and gaps that contain a saved rally are done automatically.
+- Segments that contain a saved rally are done automatically. Gaps are not: a rally reaching
+  into a gap, or found in it, leaves the rest of the gap unchecked. Only a gap that rallies and
+  ignored sections cover completely is done by itself.
 - **X** marks a segment that contains no rally (e.g. a false match of the pre-cut).
-- **R** marks a gap that you watched (e.g. at 4x speed) and that contains no rally, and jumps to
+- **R** marks a gap that you watched (e.g. at 4x speed) once all its rallies are marked, and jumps to
   the next gap that is not done yet.
 
 The progress is saved next to the labels in `data/annotations/<video_id>.review.csv` (every

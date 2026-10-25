@@ -26,6 +26,20 @@ bool derived_from_sheet(ReviewStatus status) {
     return status == ReviewStatus::Annotated || status == ReviewStatus::Ignored;
 }
 
+/// Every frame of [first, last] lies in a rally or an ignored section.
+bool covered(const AnnotationSheet& sheet, std::int64_t first, std::int64_t last) {
+    for (std::int64_t frame = first; frame <= last;) {
+        if (const auto rally = sheet.rally_at(frame)) {
+            frame = sheet.rally(*rally).end_frame + 1;
+        } else if (const auto section = sheet.ignored_at(frame)) {
+            frame = sheet.ignored_section(*section).end_frame + 1;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
 template <typename Enum, std::size_t N>
 std::string_view name_of(const std::array<std::pair<Enum, std::string_view>, N>& names,
                          Enum value) noexcept {
@@ -60,7 +74,14 @@ std::optional<ReviewStatus> parse_review_status(std::string_view text) noexcept 
 }
 
 std::string ReviewItem::title() const {
+    if (kind == ReviewKind::Gap && source_id == kWholeVideoGapId) {
+        return "Whole video";
+    }
     return std::format("{} {}", kind == ReviewKind::Candidate ? "Segment" : "Gap", source_id);
+}
+
+ReviewItem whole_video_gap(std::int64_t frame_count) {
+    return {ReviewKind::Gap, kWholeVideoGapId, 0, std::max<std::int64_t>(frame_count, 1) - 1};
 }
 
 ReviewPlan::ReviewPlan(std::vector<ReviewItem> items) : items_(std::move(items)) {
@@ -93,6 +114,11 @@ ReviewStatus ReviewPlan::manual_status(std::size_t index) const { return manual_
 void ReviewPlan::refresh(const AnnotationSheet& sheet) {
     for (std::size_t i = 0; i < items_.size(); ++i) {
         auto& item = items_[i];
+        if (item.kind == ReviewKind::Gap &&
+            !covered(sheet, item.first_frame, item.last_frame)) {
+            item.status = manual_[i]; // the rest of the gap may still hide a rally
+            continue;
+        }
         if (!sheet.rallies_overlapping(item.first_frame, item.last_frame).empty()) {
             item.status = ReviewStatus::Annotated;
         } else if (!sheet.ignored_overlapping(item.first_frame, item.last_frame).empty()) {

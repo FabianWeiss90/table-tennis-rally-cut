@@ -294,3 +294,18 @@ TEST_CASE("the scenes of videos are detected from frames spread over them") {
     CHECK(detect_scenes(halls, {"left-1.mp4", "right-1.mp4", "left-2.mp4", "broken.mp4"}) ==
           std::vector<std::string>{"A", "B", "A", "C"});
 }
+
+TEST_CASE("a video without a pre-cut version is annotated without segments") {
+    auto snapshot = workspace();
+    snapshot.videos[0].cut_candidates.clear();
+    auto manual = form_named(forms_for(snapshot.videos[0], snapshot), "annotate");
+    CHECK(manual.field("--segments")->value.empty());
+    CHECK(manual.missing().empty());
+    const auto arguments = manual.arguments();
+    CHECK(std::ranges::find(arguments, "--segments") == arguments.end());
+    CHECK(manual.field("--video-id")->value == "match-a");
+
+    auto aligned = form_named(forms_for(snapshot.videos[1], snapshot), "annotate");
+    CHECK(aligned.field("--segments")->value ==
+          in_library("day-1/ttrally-data/align/match-b.csv"));
+}

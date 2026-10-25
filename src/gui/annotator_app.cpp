@@ -168,7 +168,7 @@ class AnnotatorApp {
     void show_current_item() {
         if (const auto item = session_.current_item()) {
             playing_ = false;
-            go_to(session_.plan().item(*item).first_frame);
+            go_to(session_.entry_frame(*item));
             scroll_to_current_ = true;
         }
     }

@@ -22,12 +22,14 @@ namespace ttrally::cli {
 
 AnnotateCommand::AnnotateCommand(CLI::App& app)
     : command_(app.add_subcommand(
-          "annotate", "Set exact rally start and end frames, starting from the align output")) {
+          "annotate", "Set exact rally start and end frames, starting from the align output (or "
+                      "by hand in the whole video)")) {
     command_->add_option("ORIGINAL", original_, "Untrimmed original video")
         ->required()
         ->check(CLI::ExistingFile);
-    command_->add_option("--segments", segments_csv_, "Segments CSV written by `ttrally align`")
-        ->required()
+    command_->add_option("--segments", segments_csv_,
+                         "Segments CSV written by `ttrally align`; without it the whole video is "
+                         "one gap in which every rally is marked by hand (needs --video-id)")
         ->check(CLI::ExistingFile);
     command_->add_option("--gaps", gaps_csv_, "Gaps CSV (default: <segments>.gaps.csv)");
     command_->add_option("--video-id", video_id_,
@@ -51,7 +53,11 @@ AnnotateCommand::AnnotateCommand(CLI::App& app)
 }
 
 int AnnotateCommand::run() {
-    if (gaps_csv_.empty()) {
+    const bool aligned = !segments_csv_.empty();
+    if (!aligned && video_id_.empty()) {
+        throw std::runtime_error("--video-id is needed without --segments");
+    }
+    if (aligned && gaps_csv_.empty()) {
         gaps_csv_ = alignment::gaps_path_for(segments_csv_);
     }
     if (video_id_.empty()) {
@@ -74,7 +80,14 @@ int AnnotateCommand::run() {
 
     // Annotation session with its repositories
     annotation::CsvAnnotationRepository annotations(annotations_dir_);
-    annotation::AlignmentReviewSource items(segments_csv_, gaps_csv_);
+    annotation::AlignmentReviewSource aligned_items(segments_csv_, gaps_csv_);
+    annotation::WholeVideoReviewSource whole_video(timestamps.frame_count());
+    annotation::ReviewItemSource& items =
+        aligned ? static_cast<annotation::ReviewItemSource&>(aligned_items) : whole_video;
+    if (!aligned) {
+        std::cout << "No segments: the whole video is one gap; mark every rally by hand and "
+                     "check the gap (R) at the end.\n";
+    }
     annotation::CsvReviewStateStore states(annotations_dir_, legacy_state_dir_);
     const Rational fps = timestamps.timeline(info.video->nominal_frame_rate()).nominal_fps();
     annotation::AnnotationSession session({video_id_, fps, timestamps.frame_count()}, annotations,

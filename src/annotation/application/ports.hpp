@@ -5,6 +5,7 @@
 #include "annotation/domain/annotation_sheet.hpp"
 #include "annotation/domain/review_plan.hpp"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
@@ -32,6 +33,18 @@ class ReviewItemSource {
   public:
     virtual ~ReviewItemSource() = default;
     [[nodiscard]] virtual std::vector<ReviewItem> load() = 0;
+};
+
+/// Review items of a video without alignment: one gap over the whole video.
+class WholeVideoReviewSource final : public ReviewItemSource {
+  public:
+    explicit WholeVideoReviewSource(std::int64_t frame_count) : frame_count_(frame_count) {}
+    [[nodiscard]] std::vector<ReviewItem> load() override {
+        return {whole_video_gap(frame_count_)};
+    }
+
+  private:
+    std::int64_t frame_count_;
 };
 
 /// Manual review statuses, keyed by item kind and source id.

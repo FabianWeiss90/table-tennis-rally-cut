@@ -118,3 +118,22 @@ TEST_CASE("review items are ordered by frame and derive their status from the ra
     plan.refresh(sheet);
     CHECK(plan.item(1).status == ReviewStatus::Open);
 }
+
+TEST_CASE("a gap is only done by itself if rallies and ignored sections cover all of it") {
+    ReviewPlan plan({{ReviewKind::Gap, 1, 0, 699}, {ReviewKind::Candidate, 1, 700, 900}});
+    auto sheet = empty_sheet();
+    sheet.add(rally(650, 880)); // the candidate's rally starts inside the gap
+    plan.refresh(sheet);
+    CHECK(plan.item(0).status == ReviewStatus::Open);
+    CHECK(plan.item(1).status == ReviewStatus::Annotated);
+
+    plan.set_manual_status(0, ReviewStatus::Reviewed);
+    plan.refresh(sheet);
+    CHECK(plan.item(0).status == ReviewStatus::Reviewed);
+
+    plan.set_manual_status(0, ReviewStatus::Open);
+    sheet.add(rally(0, 300));
+    sheet.add_ignored({301, 649, ""});
+    plan.refresh(sheet);
+    CHECK(plan.item(0).status == ReviewStatus::Annotated); // nothing of it is left to look at
+}

@@ -232,4 +232,19 @@ void AnnotationSession::set_current_status(ReviewStatus status) {
 
 void AnnotationSession::save_states() { states_.save(video_id_, plan_.items()); }
 
+std::int64_t AnnotationSession::entry_frame(std::size_t index) const {
+    const ReviewItem& item = plan_.item(index);
+    if (item.kind != ReviewKind::Gap || item.source_id != kWholeVideoGapId) {
+        return item.first_frame;
+    }
+    std::int64_t after_last = item.first_frame;
+    for (const RallyLabel& rally : sheet_.rallies()) {
+        after_last = std::max(after_last, rally.end_frame + 1);
+    }
+    for (const IgnoredSection& section : sheet_.ignored_sections()) {
+        after_last = std::max(after_last, section.end_frame + 1);
+    }
+    return std::min(after_last, item.last_frame);
+}
+
 } // namespace ttrally::annotation

@@ -347,13 +347,28 @@ class VideoEncoder {
 VideoEncoder open_video_encoder(const CutOptions& options, const AVCodecContext& decoder,
                                 const AVStream& stream, ProgressReporter& progress) {
     const std::string& requested = options.encoder;
-    const std::vector<std::string> candidates = requested == "auto"
+    const bool automatic = requested == "auto";
+    const std::vector<std::string> candidates = automatic
                                                     ? automatic_video_encoders(options.codec)
                                                     : std::vector<std::string>{requested};
+    if (automatic) {
+        std::string list;
+        for (const std::string& name : candidates) {
+            list += (list.empty() ? "" : ", ") + name;
+        }
+        progress.report(std::format("Video encoders supported by this FFmpeg, tried in this "
+                                    "order: {}",
+                                    list.empty() ? "none" : list));
+    }
     for (const std::string& name : candidates) {
         const std::int64_t bitrate = video_bitrate(name, stream, options.bitrate_mbps, progress);
         if (auto encoder = VideoEncoder::open(name, decoder, stream, bitrate)) {
+            progress.report(std::format("Encoding with {} at {:.1f} Mbit/s", name,
+                                        static_cast<double>(bitrate) / 1e6));
             return std::move(*encoder);
+        }
+        if (automatic) {
+            progress.report(std::format("  {} cannot be opened on this machine", name));
         }
     }
     throw MediaError(requested == "auto" ? "no video encoder could be opened"

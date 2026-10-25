@@ -235,8 +235,9 @@ CommandForm cut_form(const VideoEntry& video) {
              option("--before", "Seconds before each rally", FieldKind::Text, "2", "2", ""),
              option("--after", "Seconds after each rally", FieldKind::Text, "2", "2", ""),
              with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
-                                     "Empty: 5 with H.265, 10 with H.264 (Full HD, 60 fps)"),
-                              {"5", "6", "8", "12"}),
+                                     "From 1; empty: 5 with H.265, 10 with H.264 (Full HD, "
+                                     "60 fps). Size per minute: about 7.5 MB per Mbit/s"),
+                              {"1", "2", "3", "4", "5", "6", "8", "12"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
              flag("--fast", "Fast (no re-encoding)",

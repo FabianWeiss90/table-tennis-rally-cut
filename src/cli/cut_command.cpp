@@ -21,6 +21,9 @@ namespace ttrally::cli {
 
 namespace {
 
+constexpr double kMinBitrateMbps = 1.0;
+constexpr double kMaxBitrateMbps = 200.0;
+
 /// The labels of a video are complete once every segment and gap of its review is done.
 bool labels_complete(const std::filesystem::path& annotations_dir, const std::string& video_id) {
     if (!std::filesystem::exists(annotations_dir / (video_id + ".csv"))) {
@@ -70,9 +73,9 @@ CutCommand::CutCommand(CLI::App& app)
                          "first of the codec that works, GPU first)")
         ->capture_default_str();
     command_->add_option("--bitrate", bitrate_mbps_,
-                         "Video bit rate in Mbit/s (default: by resolution and frame rate; for "
+                         "Video bit rate in Mbit/s, at least 1 (default: by resolution and frame rate; for "
                          "Full HD at 60 fps 5 with H.265, 10 with H.264)")
-        ->check(CLI::PositiveNumber);
+        ->check(CLI::Range(kMinBitrateMbps, kMaxBitrateMbps));
     command_->add_option("--cache-dir", cache_dir_, "Cache for frame timestamps")
         ->capture_default_str();
 }
@@ -119,7 +122,7 @@ int CutCommand::run() {
         io::format_clock(result.cut.duration_s),
         result.cut.video_encoder == "copy"
             ? "copied, cuts at keyframes"
-            : std::format("encoded with {} at {:.0f} Mbit/s", result.cut.video_encoder,
+            : std::format("encoded with {} at {:.1f} Mbit/s", result.cut.video_encoder,
                           result.cut.bitrate_mbps));
     std::cout << "Cut video: " << out_.string() << '\n';
     return 0;

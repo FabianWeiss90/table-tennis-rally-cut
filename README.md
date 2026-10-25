@@ -641,8 +641,10 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   AMF or Media Foundation). Without an H.265 encoder, H.264 is used (GPU, else OpenH264, else
   FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). Colours and value range of
   the source are kept, the audio is encoded as AAC. A 10-minute match takes about 40 s on an
-  RX 7800 XT.
-- **Bit rate:** `--bitrate` in Mbit/s. The default scales with resolution and frame rate: for
+  RX 7800 XT. Before encoding, the output lists the video encoders this FFmpeg supports (in the
+  order they are tried), those that cannot be opened on this machine, and the one used with its
+  bit rate.
+- **Bit rate:** `--bitrate` in Mbit/s, from 1. The default scales with resolution and frame rate: for
   Full HD at 60 fps **5 Mbit/s with H.265** (no loss visible on fast rallies; a cut is about
   70 % the size of the camera's original per minute) and 10 Mbit/s with H.264. Measured on fast
   rallies with the VAAPI H.265 encoder (PSNR against the original):
@@ -651,6 +653,9 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   |---|---|---|---|---|---|---|
   | PSNR | 41.4 dB | 41.9 dB | 42.8 dB | 43.3 dB | 44.4 dB | 46.5 dB |
   | MB per minute | 39 | 47 | 54 | 62 | 92 | 151 |
+
+  Below 5 Mbit/s the size goes down in proportion (about 7.5 MB per minute per Mbit/s, plus
+  1.5 MB per minute of audio); the quality below 5 has not been measured.
 - **H.265 playback:** VLC, mpv, current browsers, smartphones, Windows (with the HEVC
   extension) and YouTube play it. The files use the tag `hev1`; Apple's own players prefer
   `hvc1`, which the VAAPI encoder cannot produce correctly. For maximum compatibility use

@@ -33,6 +33,9 @@ constexpr int kLegendColumns = 3; ///< Shortcut/action pairs per row
 constexpr double kBufferBehindSeconds = 2.0;
 constexpr double kBufferAheadSeconds = 2.0;
 constexpr double kBufferAheadPlayingSeconds = 4.0;
+/// A gap up to this long is decoded as a whole when it is opened (about 1.9 GB of Full HD frames
+/// at 60 fps), so moving around in it never waits.
+constexpr double kWholeGapMaxSeconds = 10.0;
 constexpr double kTimelineMarginSeconds = 2.0;
 constexpr std::array kSpeeds{0.1, 0.25, 0.5, 1.0, 2.0, 4.0};
 constexpr std::size_t kNormalSpeed = 3;
@@ -167,8 +170,29 @@ class AnnotatorApp {
     }
 
     void request_frames() {
-        frames_.request(current_, frames_in(kBufferBehindSeconds),
-                        frames_in(playing_ ? kBufferAheadPlayingSeconds : kBufferAheadSeconds));
+        std::int64_t behind = frames_in(kBufferBehindSeconds);
+        std::int64_t ahead =
+            frames_in(playing_ ? kBufferAheadPlayingSeconds : kBufferAheadSeconds);
+        if (const auto gap = short_gap_near(current_, behind, ahead)) {
+            behind = std::max(behind, current_ - gap->first_frame);
+            ahead = std::max(ahead, gap->last_frame - current_);
+        }
+        frames_.request(current_, behind, ahead);
+    }
+
+    /// The current item if it is a gap of at most kWholeGapMaxSeconds and the frame lies in it
+    /// or in the buffers around it.
+    [[nodiscard]] std::optional<annotation::ReviewItem>
+    short_gap_near(std::int64_t frame, std::int64_t behind, std::int64_t ahead) const {
+        const auto index = session_.current_item();
+        if (!index) {
+            return std::nullopt;
+        }
+        const annotation::ReviewItem& item = session_.plan().item(*index);
+        const bool short_gap = item.kind == ReviewKind::Gap &&
+                               item.last_frame - item.first_frame < frames_in(kWholeGapMaxSeconds);
+        const bool near = frame >= item.first_frame - ahead && frame <= item.last_frame + behind;
+        return short_gap && near ? std::optional(item) : std::nullopt;
     }
 
     /// Shows the start of the current item.

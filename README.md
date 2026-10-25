@@ -534,8 +534,9 @@ Options: `--gaps` (default `<segments>.gaps.csv`), `--video-id` (default: name o
 CSV), `--annotations-dir` (labels and review progress, default `data/annotations`),
 `--decode-backend` (default `cpu`: the window needs every frame in main memory, and copying them
 back from the GPU makes VAAPI about 3 times slower here), `--display-height` (default 1080) and
-`--frame-memory` (MB for decoded frames, default 2048, about 10 s of Full HD frames). The window
-keeps at least 2 s before and after the current frame decoded (4 s ahead while playing). Going
+`--frame-memory` (MB of main memory for decoded frames, default 3072, about 16 s of Full HD
+frames at 3.1 MB each). The window keeps at least 2 s before and after the current frame decoded
+(4 s ahead while playing), and a gap of up to 10 s as a whole once it is opened (about 1.9 GB). Going
 back is as smooth as going forward, also right after jumping to a segment or gap: the frames
 from the keyframe before the target are kept, and the earlier ones are decoded one keyframe
 interval at a time, nearest first, while you step.

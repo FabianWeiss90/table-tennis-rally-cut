@@ -32,7 +32,9 @@ class AnnotateCommand {
     /// threads); with the CPU, stepping back from a segment start never waited.
     std::string decode_backend_ = "cpu";
     int display_height_ = 1080;
-    int frame_memory_mb_ = 2048; ///< about 10 s of decoded Full HD frames
+    /// About 16 s of decoded Full HD frames (3.1 MB each): a gap of up to 10 s as a whole plus
+    /// the buffers before and after it.
+    int frame_memory_mb_ = 3072;
 };
 
 } // namespace ttrally::cli

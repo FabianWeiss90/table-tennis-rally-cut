@@ -149,8 +149,9 @@ CommandForm annotate_form(const VideoEntry& video) {
                                    "main memory); auto tries the GPU first"),
              advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
                              "1080", "Pixels of the shown video")),
-             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "2048",
-                             "2048", "About 10 s of Full HD frames"))}};
+             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "3072",
+                             "3072", "About 16 s of Full HD frames: a gap of up to 10 s "
+                                     "as a whole plus buffers"))}};
 }
 
 CommandForm features_form(const VideoEntry& video, const WorkspaceSnapshot& workspace) {

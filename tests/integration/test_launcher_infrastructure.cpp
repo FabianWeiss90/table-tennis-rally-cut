@@ -3,6 +3,7 @@
 // The library scanner on a small library, and the process runner with the cmake
 // command-line tool as a portable test program.
 
+#include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
 #include "launcher/infrastructure/library_scanner.hpp"
@@ -118,6 +119,39 @@ TEST_CASE("scenes are stored per match day and read by the scanner") {
     REQUIRE(workspace.videos.size() == 2);
     CHECK(workspace.videos[0].scene == "B");
     CHECK(workspace.videos[1].scene.empty());
+    fs::remove_all(library);
+}
+
+TEST_CASE("the chosen pre-cut video is stored per match day and offered first") {
+    const fs::path library = temp_dir();
+    const fs::path day = library / "day";
+    const fs::path work = day / "ttrally-data";
+    touch(day / "Match-A.mp4");
+    touch(day / "Match-B.mp4");
+    touch(day / "Liimba" / "1_Match-A.mp4");
+    touch(day / "Liimba" / "renamed.mp4");
+    const fs::path outside = library / "elsewhere.mp4";
+    CsvPreCutStore store;
+    CHECK(store.load(work).empty());
+    store.save(work, {{"match-a", day / "Liimba" / "renamed.mp4"},
+                      {"match-b", outside},
+                      {"match-c", day / "Liimba" / "gone.mp4"}});
+    const std::string csv = [&] {
+        std::ifstream in(work / "pre-cuts.csv");
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    }();
+    CHECK(csv.find("match-a,Liimba/renamed.mp4") != std::string::npos); // relative inside the day
+    CHECK(store.load(work).at("match-b") == fs::absolute(outside).lexically_normal());
+
+    const WorkspaceSnapshot workspace = LibraryScanner(library).scan(library);
+    REQUIRE(workspace.videos.size() == 2);
+    CHECK(workspace.videos[0].cut_candidates ==
+          std::vector<std::string>{(fs::absolute(day) / "Liimba" / "renamed.mp4").string(),
+                                   (fs::absolute(day) / "Liimba" / "1_Match-A.mp4").string()});
+    CHECK(workspace.videos[1].cut_candidates.empty()); // the stored file does not exist
+    touch(outside);
+    CHECK(LibraryScanner(library).scan(library).videos[1].cut_candidates ==
+          std::vector<std::string>{fs::absolute(outside).lexically_normal().string()});
     fs::remove_all(library);
 }
 

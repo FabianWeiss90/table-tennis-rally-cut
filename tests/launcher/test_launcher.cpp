@@ -4,6 +4,7 @@
 
 #include "launcher/application/detect_scenes.hpp"
 #include "launcher/application/launcher_session.hpp"
+#include "launcher/domain/batch.hpp"
 #include "launcher/domain/scenes.hpp"
 #include "launcher/domain/video_id.hpp"
 
@@ -85,6 +86,20 @@ class FakeRunner final : public ProcessRunner {
     bool cancelled = false;
     std::string output;
     int code = 0;
+};
+
+class FakePreCutStore final : public PreCutStore {
+  public:
+    std::map<std::string, std::filesystem::path>
+    load(const std::filesystem::path& work_dir) override {
+        return stored[work_dir];
+    }
+    void save(const std::filesystem::path& work_dir,
+              const std::map<std::string, std::filesystem::path>& pre_cuts) override {
+        stored[work_dir] = pre_cuts;
+    }
+
+    std::map<std::filesystem::path, std::map<std::string, std::filesystem::path>> stored;
 };
 
 } // namespace
@@ -210,6 +225,140 @@ TEST_CASE("the session runs a command and reports its result") {
     CHECK(session.status() == "cut failed (exit code 1)");
     CHECK(scanner.scans == 2); // rescanned after the command
     CHECK(session.forms()[4].field("--before")->value == "3"); // edits survive the rescan
+}
+
+TEST_CASE("a pre-cut video chosen in the align form is kept for the video") {
+    FakeScanner scanner;
+    FakeRunner runner;
+    FakePreCutStore pre_cuts;
+    LauncherSession session(scanner, runner, "ttrally", "/project", "/lib", &pre_cuts);
+    session.select_video(1);
+    const std::string work_dir = session.workspace().videos[1].work_dir;
+    pre_cuts.stored[work_dir] = {{"another-video", "/x.mp4"}};
+    auto& align = session.forms()[0];
+    REQUIRE(align.name == "align");
+
+    align.fields[1].value = "/elsewhere/other-name.mp4";
+    session.field_edited(align, align.fields[1]);
+    CHECK(pre_cuts.stored[work_dir] ==
+          std::map<std::string, std::filesystem::path>{
+              {"another-video", "/x.mp4"}, {"match-b", "/elsewhere/other-name.mp4"}});
+    CHECK(scanner.scans == 2); // shown at once
+    CHECK(runner.started.program.empty()); // without running align
+
+    align.fields[1].value = "cuts/relative.mp4"; // as the file dialog gives paths in the project
+    session.field_edited(align, align.fields[1]);
+    CHECK(pre_cuts.stored[work_dir].at("match-b") == "/project/cuts/relative.mp4");
+    align.fields[1].value.clear();
+    session.field_edited(align, align.fields[1]);
+    CHECK_FALSE(pre_cuts.stored[work_dir].contains("match-b"));
+    session.field_edited(align, align.fields[2]); // other fields keep nothing
+    CHECK(pre_cuts.stored.size() == 1);
+}
+
+TEST_CASE("annotate opens the segments once a pre-cut video is chosen") {
+    FakeScanner scanner;
+    scanner.snapshot.videos[0].cut_candidates.clear();
+    FakeRunner runner;
+    FakePreCutStore pre_cuts;
+    LauncherSession session(scanner, runner, "ttrally", "/project", "/lib", &pre_cuts);
+    CHECK(session.forms()[1].field("--segments")->value.empty());
+    scanner.snapshot.videos[0].cut_candidates = {"/elsewhere/a.mp4"}; // as the store makes it
+    session.forms()[0].fields[1].value = "/elsewhere/a.mp4";
+    session.field_edited(session.forms()[0], session.forms()[0].fields[1]);
+    CHECK(session.forms()[1].field("--segments")->value ==
+          in_library("day-1/ttrally-data/align/match-a.csv"));
+}
+
+TEST_CASE("a batch runs a command for the videos of the match day") {
+    FakeScanner scanner;
+    scanner.snapshot.videos.push_back(video("match-c"));
+    scanner.snapshot.videos.push_back(video("match-d"));
+    scanner.snapshot.videos[3].match_day = "day-2"; // another match day: left out
+    scanner.snapshot.videos[0].aligned = true;
+    scanner.snapshot.videos[2].cut_candidates.clear(); // no pre-cut: skipped
+    FakeRunner runner;
+    LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    auto& align = session.forms()[0];
+    align.field("--min-confidence")->value = "3";       // the same for every video: carried over
+    align.field("--out")->value = "/edited/match-a.csv"; // depends on the video: not carried over
+
+    SECTION("only the videos without a result") {
+        session.run_batch(align, BatchScope::Missing);
+        CHECK(runner.started.arguments[1] == "/lib/day-1/match-b_FHD.mp4");
+        CHECK(session.log().find("1 already done") != std::string::npos);
+        CHECK(session.log().find("Skipped: match-c (no pre-cut video)") != std::string::npos);
+        runner.is_running = false;
+        session.poll();
+        CHECK_FALSE(session.running());
+        CHECK(session.status() == "align finished for 1 videos");
+    }
+    SECTION("all again; a failed video does not stop the others") {
+        session.run_batch(align, BatchScope::All);
+        const auto first = runner.started.arguments;
+        CHECK(first[1] == "/lib/day-1/match-a_FHD.mp4");
+        CHECK(std::ranges::find(first, "/edited/match-a.csv") != first.end());
+        CHECK_THROWS_AS(session.run(align), std::logic_error);
+        runner.is_running = false;
+        runner.code = 2;
+        session.poll();
+        REQUIRE(session.running());
+        const auto second = runner.started.arguments;
+        CHECK(second[1] == "/lib/day-1/match-b_FHD.mp4");
+        CHECK(std::ranges::find(second, in_library("day-1/ttrally-data/align/match-b.csv")) !=
+              second.end());
+        const auto confidence = std::ranges::find(second, "--min-confidence");
+        REQUIRE(confidence != second.end());
+        CHECK(*std::next(confidence) == "3");
+        runner.is_running = false;
+        runner.code = 0;
+        session.poll();
+        CHECK_FALSE(session.running());
+        CHECK(session.status() == "align failed for 1 of 2 videos: match-a");
+    }
+    SECTION("cancelling stops the rest") {
+        session.run_batch(align, BatchScope::All);
+        session.cancel();
+        runner.is_running = false;
+        runner.code = -15;
+        session.poll();
+        CHECK_FALSE(session.running());
+        CHECK(session.status() ==
+              "align failed for 2 of 2 videos: match-b (cancelled), match-a");
+    }
+}
+
+TEST_CASE("a batch computes the features again only when all are asked for") {
+    FakeScanner scanner;
+    FakeRunner runner;
+    LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    auto& features = session.forms()[2];
+    REQUIRE(features.name == "features");
+    session.run_batch(features, BatchScope::All);
+    CHECK(std::ranges::find(runner.started.arguments, "--force") != runner.started.arguments.end());
+    session.cancel();
+    runner.is_running = false;
+    session.poll();
+    session.run_batch(features, BatchScope::Missing);
+    CHECK(std::ranges::find(runner.started.arguments, "--force") == runner.started.arguments.end());
+    CHECK_THROWS_AS(session.run_batch(session.forms()[1], BatchScope::All), std::logic_error);
+}
+
+TEST_CASE("which steps a batch can run, has done and lacks the input for") {
+    VideoEntry entry = video("match-a");
+    CHECK(supports_batch("cut"));
+    CHECK_FALSE(supports_batch("annotate"));
+    CHECK_FALSE(supports_batch("train"));
+    CHECK_FALSE(step_done("detect", entry));
+    entry.detected = true;
+    CHECK(step_done("detect", entry));
+    CHECK(missing_input("align", entry).empty());
+    CHECK(missing_input("cut", entry).empty()); // detections
+    entry.detected = false;
+    CHECK(missing_input("cut", entry) == "no labels or detections");
+    entry.cut_candidates.clear();
+    CHECK(missing_input("align", entry) == "no pre-cut video");
+    CHECK(missing_input("features", entry).empty());
 }
 
 TEST_CASE("a form with empty required fields is not run") {

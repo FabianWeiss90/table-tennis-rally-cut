@@ -99,7 +99,7 @@ CommandForm align_form(const VideoEntry& video) {
     const std::string id = video.video_id;
     return {"align", "Align", "Find the segments of a pre-cut video (e.g. from Liimba) in the "
                              "original via the audio; the result is the list of candidates for "
-                             "annotate.",
+                             "annotate. A pre-cut video chosen here is kept for the video.",
             Program::Ttrally, "", "", {"align"},
             {positional("Original video", FieldKind::File, video.original, "Untrimmed original"),
              with_suggestions(positional("Pre-cut video", FieldKind::File,
@@ -126,7 +126,7 @@ CommandForm align_form(const VideoEntry& video) {
 
 CommandForm annotate_form(const VideoEntry& video) {
     const std::string id = video.video_id;
-    const bool pre_cut = !video.cut_candidates.empty();
+    const bool pre_cut = !video.cut_candidates.empty() || video.aligned;
     return {"annotate", "Annotate",
             pre_cut ? "Open the annotation window to mark the rallies in the segments found by "
                       "align and check the gaps between them; it saves every change at once."

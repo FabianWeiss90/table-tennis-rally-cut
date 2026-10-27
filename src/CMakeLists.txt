@@ -160,6 +160,7 @@ ttrally_layer(ttrally_cutting_infrastructure
 # Launcher context (the window that runs the commands)
 ttrally_layer(ttrally_launcher_domain
     SOURCES
+        launcher/domain/batch.cpp
         launcher/domain/command_form.cpp
         launcher/domain/forms.cpp
         launcher/domain/scenes.cpp
@@ -173,6 +174,7 @@ ttrally_layer(ttrally_launcher_application
 
 ttrally_layer(ttrally_launcher_infrastructure
     SOURCES
+        launcher/infrastructure/csv_pre_cut_store.cpp
         launcher/infrastructure/csv_scene_store.cpp
         launcher/infrastructure/ffmpeg_video_preview.cpp
         launcher/infrastructure/library_scanner.cpp

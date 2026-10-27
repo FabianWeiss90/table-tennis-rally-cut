@@ -4,6 +4,7 @@
 
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
+#include "launcher/domain/batch.hpp"
 #include "launcher/domain/scenes.hpp"
 #include "shared/io/formatting.hpp"
 
@@ -498,6 +499,7 @@ class LauncherApp {
         const std::string hint = field.default_value.empty() ? std::string()
                                                              : "default: " + field.default_value;
         input_text("##value", field.value, ImGuiInputTextFlags_None, hint.c_str());
+        bool edited = ImGui::IsItemDeactivatedAfterEdit();
         if (!field.help.empty()) {
             ImGui::SetItemTooltip("%s", field.help.c_str());
         }
@@ -508,6 +510,7 @@ class LauncherApp {
                 for (const std::string& suggestion : field.suggestions) {
                     if (ImGui::Selectable(suggestion.c_str(), suggestion == field.value)) {
                         field.value = suggestion;
+                        edited = true;
                     }
                 }
                 ImGui::EndCombo();
@@ -520,6 +523,9 @@ class LauncherApp {
                 open_dialog(field, form_index, field_index);
             }
             ImGui::SetItemTooltip("Choose");
+        }
+        if (edited) { // after the suggestion loop: this may update the suggestions
+            session_.field_edited(session_.forms()[form_index], field);
         }
     }
 
@@ -798,6 +804,7 @@ class LauncherApp {
             }
         }
         ImGui::EndDisabled();
+        draw_batch(form);
         if (session_.running()) {
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {100, 0})) {
@@ -811,6 +818,49 @@ class LauncherApp {
             ImGui::SameLine();
             ImGui::TextColored(kError, "%s", error_.c_str());
         }
+    }
+
+    /// "Run all" and "Run missing" for the whole match day of the selected video.
+    void draw_batch(const CommandForm& form) {
+        const auto selected = session_.selected_video();
+        if (!launcher::supports_batch(form.name) || !selected) {
+            return;
+        }
+        const auto& videos = session_.workspace().videos;
+        const std::string& day = videos[*selected].match_day;
+        std::size_t total = 0;
+        std::size_t open = 0;
+        for (const VideoEntry& video : videos) {
+            if (video.match_day == day) {
+                ++total;
+                open += launcher::step_done(form.name, video) ? 0 : 1;
+            }
+        }
+        auto run = [&](launcher::BatchScope scope) {
+            try {
+                session_.run_batch(form, scope);
+                error_.clear();
+            } catch (const std::exception& error) {
+                error_ = error.what();
+            }
+        };
+        ImGui::BeginDisabled(session_.running());
+        ImGui::SameLine();
+        if (ImGui::Button(std::format("Run all ({})", total).c_str())) {
+            run(launcher::BatchScope::All);
+        }
+        ImGui::SetItemTooltip("Runs %s again for every video of %s, one after another, with the "
+                              "settings above; videos without its input are skipped",
+                              form.name.c_str(), day.c_str());
+        ImGui::SameLine();
+        ImGui::BeginDisabled(open == 0);
+        if (ImGui::Button(std::format("Run missing ({})", open).c_str())) {
+            run(launcher::BatchScope::Missing);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Runs %s only for the videos of %s that do not have its result yet",
+                              form.name.c_str(), day.c_str());
+        ImGui::EndDisabled();
     }
 
     // ------------------------------------------------------------------ output
@@ -879,8 +929,9 @@ class LauncherApp {
         const std::filesystem::path chosen(result->path);
         const auto relative = chosen.lexically_relative(project_);
         const bool inside = !relative.empty() && *relative.begin() != "..";
-        forms[result->form].fields[result->field].value =
-            inside ? relative.generic_string() : chosen.string();
+        Field& field = forms[result->form].fields[result->field];
+        field.value = inside ? relative.generic_string() : chosen.string();
+        session_.field_edited(forms[result->form], field);
     }
 
     void choose_library(const std::filesystem::path& library) {

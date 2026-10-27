@@ -4,6 +4,7 @@
 
 #include "gui/launcher_app.hpp"
 #include "launcher/application/launcher_session.hpp"
+#include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
 #include "launcher/infrastructure/library_scanner.hpp"
@@ -33,8 +34,9 @@ int GuiCommand::run() {
         library_.empty() ? settings.library().value_or(std::filesystem::path()) : library_;
     launcher::LibraryScanner scanner(project_);
     launcher::SubprocessRunner runner;
+    launcher::CsvPreCutStore pre_cuts;
     launcher::LauncherSession session(scanner, runner, launcher::current_executable().string(),
-                                      std::filesystem::absolute(project_), library);
+                                      std::filesystem::absolute(project_), library, &pre_cuts);
     gui::LauncherOptions options;
     options.project_directory = project_;
     options.settings = &settings;

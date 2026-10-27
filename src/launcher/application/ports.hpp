@@ -5,6 +5,7 @@
 #include "launcher/domain/workspace.hpp"
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -25,6 +26,18 @@ class LauncherSettings {
     /// The library chosen last, if any.
     [[nodiscard]] virtual std::optional<std::filesystem::path> library() = 0;
     virtual void save_library(const std::filesystem::path& library) = 0;
+};
+
+/// Port: the pre-cut video chosen for each original of a match day, kept so that it need not be
+/// found again by name.
+class PreCutStore {
+  public:
+    virtual ~PreCutStore() = default;
+    /// Video id -> pre-cut video (absolute path); empty if none are stored.
+    [[nodiscard]] virtual std::map<std::string, std::filesystem::path>
+    load(const std::filesystem::path& work_dir) = 0;
+    virtual void save(const std::filesystem::path& work_dir,
+                      const std::map<std::string, std::filesystem::path>& pre_cuts) = 0;
 };
 
 /// A program to start.

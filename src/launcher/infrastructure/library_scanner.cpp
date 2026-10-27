@@ -5,6 +5,7 @@
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "annotation/infrastructure/csv_review_state_store.hpp"
 #include "launcher/domain/video_id.hpp"
+#include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
 #include "shared/io/json.hpp"
 
@@ -135,6 +136,12 @@ void scan_match_day(const fs::path& match_day, WorkspaceSnapshot& workspace) {
     } catch (const std::exception&) {
         scenes.clear(); // an unreadable file only loses the scenes
     }
+    std::map<std::string, fs::path> chosen_pre_cuts;
+    try {
+        chosen_pre_cuts = CsvPreCutStore().load(work);
+    } catch (const std::exception&) {
+        chosen_pre_cuts.clear(); // an unreadable file only loses the choices
+    }
     for (const fs::path& video : entries(match_day, [](const fs::directory_entry& entry) {
              return entry.is_regular_file() && is_video(entry.path());
          })) {
@@ -142,8 +149,14 @@ void scan_match_day(const fs::path& match_day, WorkspaceSnapshot& workspace) {
         if (const auto scene = scenes.find(entry.video_id); scene != scenes.end()) {
             entry.scene = scene->second;
         }
+        if (const auto chosen = chosen_pre_cuts.find(entry.video_id);
+            chosen != chosen_pre_cuts.end() && fs::is_regular_file(chosen->second)) {
+            entry.cut_candidates.push_back(chosen->second.string()); // first: the default
+        }
         for (const fs::path& pre_cut : pre_cuts) {
-            if (is_pre_cut_of(pre_cut.stem().string(), video.stem().string())) {
+            if (is_pre_cut_of(pre_cut.stem().string(), video.stem().string()) &&
+                std::ranges::find(entry.cut_candidates, pre_cut.string()) ==
+                    entry.cut_candidates.end()) {
                 entry.cut_candidates.push_back(pre_cut.string());
             }
         }

@@ -335,12 +335,14 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       4808_Weiss-Heinemeier_FHD.MP4  pre-cut versions (a number prefix or a suffix such as
                                      _cut_33_rallies is recognised)
     ttrally-data/                    created by the tool: everything it computes for this day
-      align/  annotations/  features/  detections/  cuts/  cache/  scenes.csv
+      align/  annotations/  features/  detections/  cuts/  cache/  scenes.csv  pre-cuts.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
   exclude/                           videos the tool ignores
 ```
 
+Pre-cut videos are found by name; a pre-cut video chosen in the launcher's align form is kept in
+`pre-cuts.csv` and offered first from then on (emptying the field forgets it).
 A folder named `exclude` in the library is skipped. Other subfolders of a match day (e.g. photos)
 are ignored. A video is named by its match day and its id, e.g.
 `2026-10-03-Club-Away/weiss-heinemeier`. Caches are keyed by file name, size and modification
@@ -372,6 +374,13 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
 - **Run:** the command runs as its own process; its output appears below, and it can be
   cancelled. The exact command line is shown above the button and can be copied. The list of
   videos is updated when a command has finished.
+- **Run all / Run missing** (align, features, detect, cut): runs the command for every video of
+  the selected video's match day, one after another, or only for those without its result yet.
+  Settings changed in the form that are the same for every video (e.g. the bit rate) apply to all;
+  paths and ids follow each video. Videos without the input are skipped and listed in the output
+  (align without a pre-cut video, cut without labels or detections); a failed video does not stop
+  the others, and "Cancel" stops the rest. "Run all" computes the features again even if they are
+  current.
 - **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
   "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
   and features are listed by match day with a thumbnail (a click shows the video with its preview

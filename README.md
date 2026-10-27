@@ -338,9 +338,11 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       align/  annotations/  features/  detections/  cuts/  cache/  scenes.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
+  exclude/                           videos the tool ignores
 ```
 
-Other subfolders (e.g. photos) are ignored. A video is named by its match day and its id, e.g.
+A folder named `exclude` in the library is skipped. Other subfolders of a match day (e.g. photos)
+are ignored. A video is named by its match day and its id, e.g.
 `2026-10-03-Club-Away/weiss-heinemeier`. Caches are keyed by file name, size and modification
 time, so a library can be moved or copied (keeping the modification times) without recomputing.
 

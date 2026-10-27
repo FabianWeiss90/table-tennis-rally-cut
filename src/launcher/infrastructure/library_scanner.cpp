@@ -24,6 +24,8 @@ namespace {
 constexpr std::array<std::string_view, 6> kVideoExtensions{".mp4", ".mov", ".mkv",
                                                            ".mts", ".m4v", ".avi"};
 constexpr std::string_view kPreCutFolderHint = "liimba";
+/// A folder in the library root that holds videos the tool should not list.
+constexpr std::string_view kExcludedFolder = "exclude";
 
 std::string lower(std::string text) {
     std::ranges::transform(text, text.begin(),
@@ -166,7 +168,8 @@ WorkspaceSnapshot LibraryScanner::scan(const fs::path& library) {
     }
     for (const fs::path& match_day : entries(library, [](const fs::directory_entry& entry) {
              const std::string name = entry.path().filename().string();
-             return entry.is_directory() && name != kWorkFolder && !name.starts_with(".");
+             return entry.is_directory() && name != kWorkFolder && !name.starts_with(".") &&
+                    lower(name) != kExcludedFolder;
          })) {
         scan_match_day(fs::absolute(match_day), workspace);
     }

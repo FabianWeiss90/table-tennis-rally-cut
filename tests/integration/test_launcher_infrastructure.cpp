@@ -64,6 +64,7 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     touch(work / "cache" / "x.f32");
     touch(library / "2026-10-10 Away" / "Match-D.mp4");
     touch(library / ".hidden" / "Match-E.mp4");
+    touch(library / "Exclude" / "Match-F.mp4");
     touch(library / "ttrally-data" / "models" / "dinov2-vitb14-fp16.onnx");
     touch(library / "ttrally-data" / "models" / "rally-detector-test.onnx");
     const fs::path project = temp_dir();

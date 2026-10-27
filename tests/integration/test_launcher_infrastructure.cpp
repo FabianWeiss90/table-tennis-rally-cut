@@ -63,6 +63,7 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     touch(work / "cuts" / "match-a.mp4");
     touch(work / "cache" / "x.f32");
     touch(library / "2026-10-10 Away" / "Match-D.mp4");
+    touch(library / "2026-10-10 Away" / "Match-G.webm");
     touch(library / ".hidden" / "Match-E.mp4");
     touch(library / "Exclude" / "Match-F.mp4");
     touch(library / "ttrally-data" / "models" / "dinov2-vitb14-fp16.onnx");
@@ -72,7 +73,7 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
 
     const WorkspaceSnapshot workspace = LibraryScanner(project).scan(library);
     CHECK(fs::path(workspace.library) == fs::absolute(library).lexically_normal());
-    REQUIRE(workspace.videos.size() == 3);
+    REQUIRE(workspace.videos.size() == 4);
     const VideoEntry& a = workspace.videos[0];
     CHECK(a.match_day == "2026-10-03 Club");
     CHECK(fs::path(a.original) == day / "Match-A_FHD.MP4");
@@ -92,6 +93,7 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     CHECK(workspace.videos[1].annotation == AnnotationProgress::None);
     CHECK(workspace.videos[1].cut_candidates.empty());
     CHECK(workspace.videos[2].match_day == "2026-10-10 Away");
+    CHECK(workspace.videos[3].video_id == "match-g");
     CHECK(workspace.trainable == std::vector<std::string>{"2026-10-03 Club/match-a"});
     REQUIRE(workspace.backbones.size() == 1);
     CHECK(fs::path(workspace.backbones[0]).filename() == "dinov2-vitb14-fp16.onnx");

@@ -21,8 +21,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr std::array<std::string_view, 6> kVideoExtensions{".mp4", ".mov", ".mkv",
-                                                           ".mts", ".m4v", ".avi"};
+constexpr std::array<std::string_view, 7> kVideoExtensions{".mp4", ".mov", ".mkv", ".mts",
+                                                           ".m4v", ".avi", ".webm"};
 constexpr std::string_view kPreCutFolderHint = "liimba";
 /// A folder in the library root that holds videos the tool should not list.
 constexpr std::string_view kExcludedFolder = "exclude";

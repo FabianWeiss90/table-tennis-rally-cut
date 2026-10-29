@@ -10,8 +10,12 @@ cd training
 uv sync
 ```
 
-This installs CPU builds of PyTorch, Hugging Face Transformers, ONNX, ONNX Script (used by
-PyTorch's ONNX exporter) and ONNX Runtime into `training/.venv`.
+This installs PyTorch, Hugging Face Transformers, ONNX, ONNX Script (used by PyTorch's ONNX
+exporter) and ONNX Runtime into `training/.venv`. On Linux x86_64 PyTorch is the ROCm build
+(about 15 GB in all), which trains on AMD GPUs such as the RX 7800 XT and falls back to the CPU
+without one; elsewhere it is the CPU build. ROCm on Fedora is best-effort (not an officially
+supported distribution); the build brings its own ROCm libraries, the GPU only has to be
+accessible (user in the groups `video` and `render`).
 
 ## Export the image model for `ttrally features`
 
@@ -107,9 +111,11 @@ durations. All durations are in seconds, independent of the frame rate.
 | `--device` | `auto` | `cuda` if PyTorch sees a GPU (CUDA or ROCm build), else `cpu` |
 | `--out`, `--report` | `<library>/ttrally-data/models/rally-detector.onnx` (without a library `../weights/…`) | output files |
 
-**Duration.** On a CPU with 12 threads, one epoch takes about 7 s per 30 minutes of training
-video. Six training videos of 10 minutes: about 30 minutes. PyTorch is installed as a CPU build; a GPU build
-shortens this considerably.
+**Duration.** One epoch takes about 2.5 s per 30 minutes of training video on an RX 7800 XT
+(ROCm) and about 6.5 s on a CPU with 12 threads; loading the features and validating add about
+half a minute. Eleven training videos of 15 minutes and 120 epochs: about half an hour on the
+GPU, 1¼ hours on the CPU. On ROCm the training uses PyTorch's own convolutions instead of
+MIOpen's, which are slower for this model.
 
 **Exported model.** Input `features` (1, rows, 4608) float32 exactly as `ttrally features` writes
 them (normalisation is part of the model), output `rally_probability` (1, rows). Metadata:

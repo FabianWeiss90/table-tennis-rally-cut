@@ -13,6 +13,8 @@ dependencies = [
     "onnxscript>=0.5",
     "torch>=2.5",
     "transformers>=4.46",
+    # listed so that it comes from the ROCm index like the torch build that needs it
+    "triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [dependency-groups]
@@ -25,11 +27,21 @@ package = false
 testpaths = ["tests"]
 pythonpath = ["."]
 
-# CPU builds of PyTorch are enough for the export and keep the environment small.
+# On Linux x86_64 the ROCm build of PyTorch trains on AMD GPUs (e.g. the RX 7800 XT) and falls
+# back to the CPU without one; elsewhere the CPU build is enough.
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [
+    { index = "pytorch-rocm", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cpu", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+]
+triton-rocm = { index = "pytorch-rocm" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
 explicit = true

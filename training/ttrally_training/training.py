@@ -29,7 +29,7 @@ from ttrally_training.decoding import candidate_params, decode, segments_of
 from ttrally_training.losses import smooth_boundaries, stage_loss
 from ttrally_training.metrics import SegmentMetrics, evaluate
 from ttrally_training.model import ModelConfig, RallyMSTCN
-from ttrally_training.windows import WindowConfig, WindowDataset
+from ttrally_training.windows import WindowConfig, WindowDataset, add_noise
 
 Log = Callable[[str], None]
 TEMPERATURES = np.linspace(0.3, 3.0, 55)
@@ -107,7 +107,7 @@ def train(videos: list[Video], config: TrainConfig, seed: int, device: torch.dev
     targets = [smooth_boundaries(v.labels, rate, config.smoothing_sigma_s,
                                  config.label_smoothing) for v in videos]
     dataset = WindowDataset([(v.features, t, v.mask) for v, t in zip(videos, targets)], rate,
-                            config.windows, mean, std, augment=True, rng=rng)
+                            config.windows, mean, augment=True, rng=rng)
     generator = torch.Generator().manual_seed(seed)
     loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, generator=generator)
 
@@ -120,12 +120,15 @@ def train(videos: list[Video], config: TrainConfig, seed: int, device: torch.dev
     positives = sum(float((v.labels * v.mask).sum()) for v in videos)
     negatives = sum(float(v.mask.sum()) for v in videos) - positives
     pos_weight = torch.tensor([negatives / max(positives, 1.0)], device=device)
+    noise_scale = torch.from_numpy((std * config.windows.noise).astype(np.float32)).to(device)
 
     for epoch in range(config.epochs):
         model.train()
         epoch_loss = 0.0
         for x, y, mask in loader:
             x, y, mask = x.to(device), y.to(device), mask.to(device)
+            if config.windows.noise:
+                x = add_noise(x, noise_scale)
             loss = stage_loss(model(x), y, mask, pos_weight)
             optimizer.zero_grad()
             loss.backward()

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from ttrally_training.losses import focal_loss, smooth_boundaries
-from ttrally_training.windows import WindowConfig, WindowDataset
+from ttrally_training.windows import WindowConfig, WindowDataset, add_noise
 
 
 def test_labels_are_softened_only_near_boundaries():
@@ -29,12 +29,20 @@ def test_windows_cover_every_row_and_pad_short_videos():
     short_mask = np.ones(30, np.float32)
     short_mask[:5] = 0.0  # an ignored section
     short_video = (np.ones((30, 4), np.float32), np.ones(30, np.float32), short_mask)
-    mean, std = np.full(4, 7.0, np.float32), np.ones(4, np.float32)
+    mean = np.full(4, 7.0, np.float32)
     dataset = WindowDataset([long_video, short_video], sample_rate_hz=10.0,
                             config=WindowConfig(length_s=10.0, overlap=0.5), feature_mean=mean,
-                            feature_std=std, augment=False, rng=np.random.default_rng(0))
+                            augment=False, rng=np.random.default_rng(0))
     starts = [start for index, start in dataset.windows if index == 0]
     assert starts == [0, 50, 100, 150]  # last window ends at the last row
     x, y, mask = dataset[len(dataset) - 1]  # the short video
     assert x.shape == (100, 4) and mask.sum() == 25  # padding and ignored rows masked
     assert torch.all(x[30:] == 7.0)  # padding with the mean
+
+
+def test_noise_follows_the_spread_of_each_dimension():
+    torch.manual_seed(0)
+    x = torch.zeros(4, 500, 2)
+    noisy = add_noise(x, torch.tensor([0.1, 2.0]))
+    spread = noisy.reshape(-1, 2).std(dim=0)
+    assert abs(spread[0].item() - 0.1) < 0.01 and abs(spread[1].item() - 2.0) < 0.1

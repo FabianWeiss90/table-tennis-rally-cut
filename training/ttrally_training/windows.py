@@ -24,6 +24,7 @@ class WindowConfig:
     overlap: float = 0.75
     max_shift_s: float = 1.0  # random offset of each window per epoch
     noise: float = 0.05  # Gaussian noise in units of the per-dimension standard deviation
+    # (added in the training loop on the training device, see add_noise)
 
 
 class WindowDataset(Dataset):
@@ -36,14 +37,12 @@ class WindowDataset(Dataset):
 
     def __init__(self, videos: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
                  sample_rate_hz: float,
-                 config: WindowConfig, feature_mean: np.ndarray, feature_std: np.ndarray,
-                 augment: bool, rng: np.random.Generator):
+                 config: WindowConfig, feature_mean: np.ndarray, augment: bool,
+                 rng: np.random.Generator):
         self.videos = videos
         self.length = max(1, round(config.length_s * sample_rate_hz))
         self.max_shift = round(config.max_shift_s * sample_rate_hz) if augment else 0
-        self.noise = config.noise if augment else 0.0
         self.feature_mean = feature_mean.astype(np.float32)
-        self.feature_std = feature_std.astype(np.float32)
         self.rng = rng
         stride = max(1, round(self.length * (1 - config.overlap)))
         self.windows: list[tuple[int, int]] = []  # (video index, start row)
@@ -70,7 +69,13 @@ class WindowDataset(Dataset):
         x[: end - start] = features[start:end]
         y[: end - start] = labels[start:end]
         mask[: end - start] = row_mask[start:end]
-        if self.noise:
-            x[: end - start] += (self.rng.standard_normal((end - start, x.shape[1]))
-                                 .astype(np.float32) * self.noise * self.feature_std)
         return torch.from_numpy(x), torch.from_numpy(y), torch.from_numpy(mask)
+
+
+def add_noise(x: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+    """Adds Gaussian noise with a per-dimension scale (D,) to a batch (B, T, D) on its device.
+
+    Generated there rather than per window in the data loader: on the CPU the noise for a batch
+    takes about as long as the whole training step on a GPU.
+    """
+    return x + torch.randn_like(x) * scale

@@ -69,9 +69,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def choose_device(name: str) -> torch.device:
-    if name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(name)
+    device = torch.device(("cuda" if torch.cuda.is_available() else "cpu") if name == "auto"
+                          else name)
+    if device.type == "cuda" and torch.version.hip is not None:
+        # MIOpen's kernels for the dilated 1D convolutions are slower than PyTorch's own GEMM
+        # path (RX 7800 XT: 530 vs. 200 ms per batch, the CPU takes 530)
+        torch.backends.cudnn.enabled = False
+    return device
 
 
 def describe(videos: list[Video]) -> None:
@@ -108,9 +112,19 @@ def video_summary(videos: list[Video]) -> dict:
                          "ignored_rows": int((1 - v.mask).sum())} for v in videos}
 
 
+def describe_device(device: torch.device) -> str:
+    """e.g. "GPU AMD Radeon RX 7800 XT (ROCm 7.2.53211)" or "CPU (12 threads)"."""
+    if device.type == "cuda":
+        backend = (f"ROCm {torch.version.hip}" if torch.version.hip is not None
+                   else f"CUDA {torch.version.cuda}")
+        return f"GPU {torch.cuda.get_device_name(device)} ({backend})"
+    return f"CPU ({torch.get_num_threads()} threads)"
+
+
 def main() -> int:
     args = parse_args()
     device = choose_device(args.device)
+    print(f"Training on: {describe_device(device)}", flush=True)
     config = TrainConfig(epochs=args.epochs,
                          model=replace(ModelConfig(), hidden=args.hidden, levels=args.levels,
                                        stages=args.stages))
@@ -138,7 +152,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     manifest = training[0].manifest
     print(f"Features: {manifest['model']} on {manifest.get('execution_provider', '?')}, "
-          f"{manifest['sample_rate_hz']} per second; device {device}")
+          f"{manifest['sample_rate_hz']} per second")
     started = time.monotonic()
 
     print("Training:")

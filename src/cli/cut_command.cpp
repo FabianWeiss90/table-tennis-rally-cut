@@ -45,11 +45,15 @@ CutCommand::CutCommand(CLI::App& app)
                          "Video id (default: file name without extension)");
     command_->add_option("--rallies", rallies_,
                          "Cut list in the label format (default: the annotations "
-                         "<annotations-dir>/<video-id>.csv if they are complete, else "
+                         "<annotations-dir>/<video-id>.csv if they are complete, else the "
+                         "refined detections <refined-dir>/<video-id>.csv, else "
                          "<detections-dir>/<video-id>.csv)")
         ->check(CLI::ExistingFile);
     command_->add_option("--annotations-dir", annotations_dir_,
                          "Where the default looks for annotations")
+        ->capture_default_str();
+    command_->add_option("--refined-dir", refined_dir_,
+                         "Where the default looks for refined detections (annotate --detections)")
         ->capture_default_str();
     command_->add_option("--detections-dir", detections_dir_,
                          "Where the default looks for detections")
@@ -85,10 +89,14 @@ int CutCommand::run() {
         video_id_ = video_.stem().string();
     }
     if (rallies_.empty()) {
+        const std::string file = video_id_ + ".csv";
         const bool annotated = labels_complete(annotations_dir_, video_id_);
-        rallies_ = (annotated ? annotations_dir_ : detections_dir_) / (video_id_ + ".csv");
+        const bool refined = !annotated && std::filesystem::exists(refined_dir_ / file);
+        rallies_ = (annotated ? annotations_dir_ : refined ? refined_dir_ : detections_dir_) / file;
         std::cout << std::format("Rallies: {} ({})\n", rallies_.string(),
-                                 annotated ? "complete annotations" : "detections");
+                                 annotated ? "complete annotations"
+                                 : refined ? "refined detections"
+                                           : "detections");
         if (!std::filesystem::exists(rallies_)) {
             throw std::runtime_error(std::format(
                 "{} does not exist: run detect first, or give the rallies with --rallies",

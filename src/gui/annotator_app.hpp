@@ -13,6 +13,8 @@ namespace ttrally::gui {
 
 struct AnnotatorOptions {
     std::string title = "ttrally annotate";
+    /// Refining detected rallies for cut rather than labelling for training (changes the hints)
+    bool refining = false;
     int max_frames = 0; ///< Stop after this many rendered frames (0 = until closed; for tests)
     std::filesystem::path screenshot; ///< If set, the last rendered frame is saved here (BMP)
 };

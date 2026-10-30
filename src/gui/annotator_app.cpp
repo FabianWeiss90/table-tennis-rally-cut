@@ -42,7 +42,7 @@ constexpr std::size_t kNormalSpeed = 3;
 constexpr float kMaxZoom = 8.0F;
 
 /// Keyboard and mouse controls, always shown below the video.
-constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
+constexpr std::array<std::pair<const char*, const char*>, 17> kControls{{
     {"Left / Right", "1 frame back / forward"},
     {"Shift + arrows", "10 frames"},
     {"Ctrl + arrows", "1 second"},
@@ -59,6 +59,7 @@ constexpr std::array<std::pair<const char*, const char*>, 16> kControls{{
     {"O", "reopen item"},
     {"Del", "delete the rally or ignored section here"},
     {"Mouse wheel", "zoom, drag to pan, double-click resets"},
+    {"Drag an edge", "on the timeline: move it; onto a neighbour: merge"},
 }};
 
 const ImVec4 kErrorColor{1.0F, 0.45F, 0.4F, 1.0F};
@@ -85,8 +86,9 @@ ImVec4 status_color(ReviewStatus status) {
 class AnnotatorApp {
   public:
     AnnotatorApp(annotation::AnnotationSession& session, media::FramePrefetcher& frames,
-                 Rational fps, const GuiContext& gui)
-        : session_(session), frames_(frames), fps_(fps.value()), texture_(gui.renderer()) {
+                 Rational fps, const GuiContext& gui, bool refining)
+        : session_(session), frames_(frames), fps_(fps.value()), refining_(refining),
+          texture_(gui.renderer()) {
         if (session_.current_item()) {
             jump_to_item(*session_.current_item());
         }
@@ -308,6 +310,37 @@ class AnnotatorApp {
     }
 
 
+    /// An edge dragged on the timeline was released: moves it (merging rallies it reaches).
+    void drop_edge(const EdgeDrop& drop) {
+        const bool start = drop.edge == annotation::Edge::Start;
+        apply([&] {
+            switch (drop.owner) {
+            case MarkOwner::Draft:
+                start ? session_.mark_start(drop.frame) : session_.mark_end(drop.frame);
+                break;
+            case MarkOwner::Rally:
+                if (const auto id = session_.sheet().rally_at(drop.original_start)) {
+                    const std::size_t before = session_.sheet().rallies().size();
+                    const int moved = session_.move_rally_edge(*id, drop.edge, drop.frame);
+                    const std::size_t merged = before - session_.sheet().rallies().size();
+                    confirmation_ =
+                        merged > 0
+                            ? std::format("Merged {} rallies into rally {}.", merged + 1, moved)
+                            : std::format("Moved the {} of rally {}.", start ? "start" : "end",
+                                          moved);
+                }
+                break;
+            case MarkOwner::Ignored:
+                if (const auto id = session_.sheet().ignored_at(drop.original_start)) {
+                    const int moved = session_.move_ignored_edge(*id, drop.edge, drop.frame);
+                    confirmation_ = std::format("Moved the {} of ignored section {}.",
+                                                start ? "start" : "end", moved);
+                }
+                break;
+            }
+        });
+    }
+
     void handle_shortcuts() {
         const ImGuiIO& io = ImGui::GetIO();
         if (io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
@@ -521,9 +554,17 @@ class AnnotatorApp {
             range = {std::max<std::int64_t>(0, std::min(hint.first_frame, current_) - margin),
                      std::min(last_frame(), std::max(hint.last_frame, current_) + margin)};
         }
-        if (const auto clicked = timeline_.draw(range, session_, current_, fps_)) {
+        const TimelineInput input = timeline_.draw(range, session_, current_, fps_);
+        // Saved entries are moved one at a time: complete marks are saved before (as when
+        // switching items), so that the move does not discard them
+        if (input.grabbed && *input.grabbed != MarkOwner::Draft && !save_pending_marks()) {
+            timeline_.cancel_drag();
+        } else if (input.seek) {
             playing_ = false;
-            go_to(*clicked);
+            go_to(*input.seek);
+        }
+        if (input.drop) {
+            drop_edge(*input.drop);
         }
         timeline_.draw_legend();
 
@@ -569,7 +610,12 @@ class AnnotatorApp {
                     progress.candidates_done, progress.candidates, progress.gaps_done,
                     progress.gaps, session_.sheet().rallies().size(), lets,
                     lets == 1 ? "let" : "lets", session_.sheet().ignored_sections().size());
-        if (progress.complete()) {
+        if (refining_) {
+            ImGui::TextColored(progress.complete() ? kDoneColor : kMutedColor, "%s",
+                               progress.complete()
+                                   ? "Complete: cut uses these rallies."
+                                   : "Cut uses these rallies; check the gaps for missed ones.");
+        } else if (progress.complete()) {
             ImGui::TextColored(kDoneColor, "Complete: the video can be used for training.");
         } else {
             ImGui::TextColored(kMutedColor,
@@ -810,7 +856,7 @@ class AnnotatorApp {
             ImGui::TextWrapped("%s", segment_list(gaps).c_str());
             ImGui::TextColored(kMutedColor, "Watch each gap and press R if it has no rally.");
         }
-        if (!segments.empty() || !gaps.empty()) {
+        if ((!segments.empty() || !gaps.empty()) && !refining_) {
             ImGui::TextColored(kErrorColor,
                                "Training skips this video until every item is done.");
         }
@@ -865,6 +911,7 @@ class AnnotatorApp {
     annotation::AnnotationSession& session_;
     media::FramePrefetcher& frames_;
     double fps_;
+    bool refining_;
     FrameTexture texture_;
     TimelineView timeline_;
     std::int64_t current_ = 0;
@@ -886,7 +933,7 @@ class AnnotatorApp {
 void run_annotator(annotation::AnnotationSession& session, media::FramePrefetcher& frames,
                    Rational fps, const AnnotatorOptions& options) {
     const GuiContext gui(options.title);
-    AnnotatorApp app(session, frames, fps, gui);
+    AnnotatorApp app(session, frames, fps, gui, options.refining);
     for (int rendered = 0; options.max_frames == 0 || rendered < options.max_frames; ++rendered) {
         if (gui.poll_events()) {
             app.request_close();

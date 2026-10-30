@@ -4,9 +4,11 @@
 
 #include "alignment/infrastructure/csv_alignment_writer.hpp"
 #include "annotation/application/annotation_session.hpp"
+#include "annotation/application/detection_review_source.hpp"
 #include "annotation/infrastructure/alignment_review_source.hpp"
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "annotation/infrastructure/csv_review_state_store.hpp"
+#include "annotation/infrastructure/seeded_annotation_repository.hpp"
 #include "gui/annotator_app.hpp"
 #include "media/application/frame_prefetcher.hpp"
 #include "media/infrastructure/caching_media_reader.hpp"
@@ -32,8 +34,16 @@ AnnotateCommand::AnnotateCommand(CLI::App& app)
                          "one gap in which every rally is marked by hand (needs --video-id)")
         ->check(CLI::ExistingFile);
     command_->add_option("--gaps", gaps_csv_, "Gaps CSV (default: <segments>.gaps.csv)");
+    command_->add_option("--detections", detections_csv_,
+                         "Refine the rallies found by `ttrally detect` instead: they are loaded "
+                         "into the labels (until those exist) and the stretches between them "
+                         "are the gaps to check; use another --annotations-dir than the labels "
+                         "for training (e.g. <work dir>/refined)")
+        ->check(CLI::ExistingFile)
+        ->excludes("--segments");
     command_->add_option("--video-id", video_id_,
-                         "Video id in the label file (default: name of the segments CSV)");
+                         "Video id in the label file (default: name of the segments or "
+                         "detections CSV)");
     command_->add_option("--annotations-dir", annotations_dir_,
                          "Directory of the label files and the review progress")
         ->capture_default_str();
@@ -55,14 +65,15 @@ AnnotateCommand::AnnotateCommand(CLI::App& app)
 
 int AnnotateCommand::run() {
     const bool aligned = !segments_csv_.empty();
-    if (!aligned && video_id_.empty()) {
-        throw std::runtime_error("--video-id is needed without --segments");
+    const bool refining = !detections_csv_.empty();
+    if (!aligned && !refining && video_id_.empty()) {
+        throw std::runtime_error("--video-id is needed without --segments or --detections");
     }
     if (aligned && gaps_csv_.empty()) {
         gaps_csv_ = alignment::gaps_path_for(segments_csv_);
     }
     if (video_id_.empty()) {
-        video_id_ = segments_csv_.stem().string();
+        video_id_ = (refining ? detections_csv_ : segments_csv_).stem().string();
     }
 
     // Original video: frame rate, frame count and timestamps
@@ -79,19 +90,32 @@ int AnnotateCommand::run() {
                                  .video_stream_index = info.video->index})
              .video_timestamps;
 
-    // Annotation session with its repositories
+    // Annotation session with its repositories; when refining, the detected rallies (a cut
+    // list named after the video id) are the starting point and the candidates
     annotation::CsvAnnotationRepository annotations(annotations_dir_);
+    annotation::CsvAnnotationRepository detections(detections_csv_.parent_path());
+    const std::string detections_id = detections_csv_.stem().string();
+    annotation::SeededAnnotationRepository refined(annotations, detections, detections_id);
     annotation::AlignmentReviewSource aligned_items(segments_csv_, gaps_csv_);
+    annotation::DetectionReviewSource detected_items(detections, detections_id,
+                                                     timestamps.frame_count());
     annotation::WholeVideoReviewSource whole_video(timestamps.frame_count());
     annotation::ReviewItemSource& items =
-        aligned ? static_cast<annotation::ReviewItemSource&>(aligned_items) : whole_video;
-    if (!aligned) {
+        refining ? static_cast<annotation::ReviewItemSource&>(detected_items)
+        : aligned ? static_cast<annotation::ReviewItemSource&>(aligned_items)
+                  : whole_video;
+    if (refining) {
+        std::cout << "Refining the detected rallies: drag their edges on the timeline, add "
+                     "missed rallies and check the gaps (R).\n";
+    } else if (!aligned) {
         std::cout << "No segments: the whole video is one gap; mark every rally by hand and "
                      "check the gap (R) at the end.\n";
     }
     annotation::CsvReviewStateStore states(annotations_dir_, legacy_state_dir_);
     const Rational fps = timestamps.timeline(info.video->nominal_frame_rate()).nominal_fps();
-    annotation::AnnotationSession session({video_id_, fps, timestamps.frame_count()}, annotations,
+    annotation::AnnotationRepository& labels =
+        refining ? static_cast<annotation::AnnotationRepository&>(refined) : annotations;
+    annotation::AnnotationSession session({video_id_, fps, timestamps.frame_count()}, labels,
                                           items, states);
 
     // Frame access for display
@@ -106,7 +130,8 @@ int AnnotateCommand::run() {
 
     std::cout << std::format("Labels: {}\n", annotations.file_for(video_id_).string());
     gui::AnnotatorOptions options;
-    options.title = "ttrally annotate - " + video_id_;
+    options.title = (refining ? "ttrally refine - " : "ttrally annotate - ") + video_id_;
+    options.refining = refining;
     gui::run_annotator(session, frames, fps, options);
     return 0;
 }

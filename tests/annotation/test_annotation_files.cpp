@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
+#include "annotation/application/detection_review_source.hpp"
 #include "annotation/infrastructure/alignment_review_source.hpp"
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "annotation/infrastructure/csv_review_state_store.hpp"
+#include "annotation/infrastructure/seeded_annotation_repository.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
@@ -122,5 +124,46 @@ TEST_CASE("review progress of the older local format is read") {
     CHECK(store.load("match_a").at({ReviewKind::Gap, 3}) == ReviewStatus::Reviewed);
     store.save("match_a", {{ReviewKind::Gap, 3, 0, 599, ReviewStatus::Open}});
     CHECK(store.load("match_a").at({ReviewKind::Gap, 3}) == ReviewStatus::Open); // new file wins
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("detected rallies become candidates with the gaps between them") {
+    const auto dir = temp_dir();
+    CsvAnnotationRepository detections(dir / "detections");
+    AnnotationSheet detected("match_a", {60, 1}, 1000);
+    detected.add({500, 600, {}, false, ""});
+    detected.add({0, 99, {}, false, ""});
+    detected.add({601, 700, {}, false, ""}); // directly after the previous one: no gap between
+    detections.save(detected);
+
+    const auto items = DetectionReviewSource(detections, "match_a", 1000).load();
+    REQUIRE(items.size() == 5);
+    CHECK(items[0].kind == ReviewKind::Candidate);
+    CHECK((items[1].kind == ReviewKind::Gap && items[1].first_frame == 100 &&
+           items[1].last_frame == 499));
+    CHECK(items[3].first_frame == 601); // the third rally follows without a gap
+    CHECK((items[4].kind == ReviewKind::Gap && items[4].first_frame == 701 &&
+           items[4].last_frame == 999 && items[4].source_id == 2));
+
+    const auto none = DetectionReviewSource(detections, "nothing", 1000).load();
+    REQUIRE(none.size() == 1);
+    CHECK(none[0].source_id == kWholeVideoGapId);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("refined labels start from the detections until they are saved") {
+    const auto dir = temp_dir();
+    CsvAnnotationRepository detections(dir / "detections");
+    AnnotationSheet detected("match_a", {60, 1}, 1000);
+    detected.add({500, 600, {}, false, ""});
+    detections.save(detected);
+    CsvAnnotationRepository target(dir / "refined");
+    SeededAnnotationRepository refined(target, detections, "match_a");
+
+    REQUIRE(refined.load("match_a").rallies.size() == 1); // the detections
+    AnnotationSheet changed("match_a", {60, 1}, 1000);
+    refined.save(changed); // every detection deleted
+    CHECK(refined.load("match_a").rallies.empty());
+    CHECK(detections.load("match_a").rallies.size() == 1); // the detections stay
     std::filesystem::remove_all(dir);
 }

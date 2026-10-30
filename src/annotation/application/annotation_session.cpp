@@ -2,6 +2,9 @@
 
 #include "annotation/application/annotation_session.hpp"
 
+#include <algorithm>
+#include <functional>
+
 namespace ttrally::annotation {
 
 namespace {
@@ -167,6 +170,54 @@ void AnnotationSession::commit(AnnotationSheet changed) {
     plan_.refresh(sheet_);
     save_states();
     draft_ = RallyDraft{};
+}
+
+int AnnotationSession::move_rally_edge(int id, Edge edge, std::int64_t frame) {
+    RallyLabel moved = sheet_.rally(id);
+    (edge == Edge::Start ? moved.start_frame : moved.end_frame) = frame;
+    if (moved.end_frame < moved.start_frame) {
+        throw AnnotationRuleViolation("The end frame must not be before the start frame.");
+    }
+    // Merge every rally the moved one reaches, growing it until no further one overlaps
+    std::vector<int> merged{id};
+    for (bool grown = true; grown;) {
+        grown = false;
+        for (const int other : sheet_.rallies_overlapping(moved.start_frame, moved.end_frame)) {
+            if (std::ranges::find(merged, other) != merged.end()) {
+                continue;
+            }
+            const RallyLabel& rally = sheet_.rally(other);
+            moved.start_frame = std::min(moved.start_frame, rally.start_frame);
+            moved.end_frame = std::max(moved.end_frame, rally.end_frame);
+            if (rally.serve_contact_frame && (!moved.serve_contact_frame ||
+                                              *rally.serve_contact_frame <
+                                                  *moved.serve_contact_frame)) {
+                moved.serve_contact_frame = rally.serve_contact_frame;
+            }
+            if (!rally.notes.empty()) {
+                moved.notes += (moved.notes.empty() ? "" : "; ") + rally.notes;
+            }
+            merged.push_back(other);
+            grown = true;
+        }
+    }
+    AnnotationSheet changed = sheet_; // applied only if every step succeeds
+    std::ranges::sort(merged, std::greater<>());
+    for (const int other : merged) {
+        changed.remove(other); // from the back, so that the other ids stay valid
+    }
+    const int new_id = changed.add(std::move(moved));
+    commit(std::move(changed));
+    return new_id;
+}
+
+int AnnotationSession::move_ignored_edge(int id, Edge edge, std::int64_t frame) {
+    IgnoredSection moved = sheet_.ignored_section(id);
+    (edge == Edge::Start ? moved.start_frame : moved.end_frame) = frame;
+    AnnotationSheet changed = sheet_;
+    const int new_id = changed.replace_ignored(id, std::move(moved));
+    commit(std::move(changed));
+    return new_id;
 }
 
 void AnnotationSession::delete_rally(int id) {

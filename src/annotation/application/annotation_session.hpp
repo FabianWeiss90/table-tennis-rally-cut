@@ -31,6 +31,9 @@ struct RallyDraft {
     }
 };
 
+/// Which end of a rally or ignored section is moved.
+enum class Edge { Start, End };
+
 /// What saving the draft produced.
 struct SavedMarks {
     int id = 0;
@@ -98,6 +101,14 @@ class AnnotationSession {
     std::optional<SavedMarks> save_draft_if_complete();
     void delete_rally(int id);
     void delete_ignored(int id);
+    /// Moves the start or end of a saved rally to the frame and returns its new id. Rallies the
+    /// moved one then overlaps are merged into it (e.g. two halves of a rally detected as two):
+    /// it keeps its own flags, the notes are joined and the earliest serve hit is kept. Throws
+    /// AnnotationRuleViolation (e.g. end before start, overlap with an ignored section).
+    int move_rally_edge(int id, Edge edge, std::int64_t frame);
+    /// Moves the start or end of a saved ignored section (without merging) and returns its new
+    /// id. Throws AnnotationRuleViolation.
+    int move_ignored_edge(int id, Edge edge, std::int64_t frame);
 
     // Review status of the current item
     void reject_current();         ///< Candidate without a rally

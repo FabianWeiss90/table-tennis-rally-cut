@@ -102,6 +102,7 @@ VideoEntry describe(const fs::path& video, const fs::path& work) {
     }
     entry.features_model = features_model(work / "features" / id / "manifest.json");
     entry.detected = fs::exists(work / "detections" / (id + ".csv"));
+    entry.refinement = annotation_progress(work / "refined", id);
     for (const fs::path& cut : files_with(work / "cuts", ".mp4")) {
         if (cut.stem().string() == id || is_derived_from(cut.stem().string(), id)) {
             entry.cuts.push_back(cut.string());

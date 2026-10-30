@@ -380,6 +380,8 @@ class LauncherApp {
              video.annotation == AnnotationProgress::InProgress);
         step("features", !video.features_model.empty());
         step("detect", video.detected);
+        step("refine", video.refinement == AnnotationProgress::Complete,
+             video.refinement == AnnotationProgress::InProgress);
         step("cut", !video.cuts.empty());
         ImGui::NewLine();
         ImGui::Unindent();

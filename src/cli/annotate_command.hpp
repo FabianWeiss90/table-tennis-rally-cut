@@ -9,7 +9,7 @@
 namespace ttrally::cli {
 
 /// `ttrally annotate`: opens the annotation GUI for an original video and the candidates found
-/// by `ttrally align`.
+/// by `ttrally align`, or to refine the rallies found by `ttrally detect`.
 class AnnotateCommand {
   public:
     explicit AnnotateCommand(CLI::App& app);
@@ -22,6 +22,7 @@ class AnnotateCommand {
     std::filesystem::path original_;
     std::filesystem::path segments_csv_;
     std::filesystem::path gaps_csv_;
+    std::filesystem::path detections_csv_;
     std::string video_id_;
     std::filesystem::path annotations_dir_ = "data/annotations";
     /// Where earlier versions kept the review progress; read once, then moved to the labels

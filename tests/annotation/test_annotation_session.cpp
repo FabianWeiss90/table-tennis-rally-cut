@@ -287,3 +287,47 @@ TEST_CASE("a video without alignment is annotated by hand in one gap over all of
     CHECK(session.plan().progress().complete());
     CHECK(fixture.annotations.saved.size() == 2);
 }
+
+TEST_CASE("an edge of a saved rally can be moved") {
+    Fixture fixture;
+    fixture.annotations.saved = {{640, 870, 660, false, ""}};
+    auto session = fixture.open();
+    CHECK(session.move_rally_edge(1, Edge::End, 890) == 1);
+    CHECK(fixture.annotations.saved[0].end_frame == 890);
+    session.move_rally_edge(1, Edge::Start, 620);
+    CHECK(fixture.annotations.saved[0].start_frame == 620);
+    CHECK_THROWS_AS(session.move_rally_edge(1, Edge::Start, 900), AnnotationRuleViolation);
+    CHECK(fixture.annotations.saved[0].start_frame == 620); // unchanged after a refused move
+}
+
+TEST_CASE("moving an edge onto neighbouring rallies merges them") {
+    Fixture fixture;
+    fixture.annotations.saved = {{100, 200, {}, false, "first"},
+                                 {300, 400, 320, false, ""},
+                                 {450, 500, {}, false, "third"},
+                                 {700, 800, {}, false, ""}};
+    auto session = fixture.open();
+    // The end of the first is dragged into the third: the second lies between them
+    CHECK(session.move_rally_edge(1, Edge::End, 460) == 1);
+    REQUIRE(fixture.annotations.saved.size() == 2);
+    const RallyLabel& merged = fixture.annotations.saved[0];
+    CHECK(merged.start_frame == 100);
+    CHECK(merged.end_frame == 500); // the third reaches further than the drop
+    CHECK(merged.serve_contact_frame == 320);
+    CHECK(merged.notes == "first; third");
+    CHECK(fixture.annotations.saved[1].start_frame == 700);
+    // Moving the start of the last backwards onto the merged one merges them as well
+    CHECK(session.move_rally_edge(2, Edge::Start, 480) == 1);
+    CHECK(fixture.annotations.saved.size() == 1);
+    CHECK(fixture.annotations.saved[0].end_frame == 800);
+}
+
+TEST_CASE("a rally is not merged into an ignored section") {
+    Fixture fixture;
+    fixture.annotations.saved = {{100, 200, {}, false, ""}};
+    fixture.annotations.ignored = {{250, 300, ""}};
+    auto session = fixture.open();
+    CHECK_THROWS_AS(session.move_rally_edge(1, Edge::End, 260), AnnotationRuleViolation);
+    CHECK(session.move_ignored_edge(1, Edge::Start, 210) == 1);
+    CHECK(fixture.annotations.ignored[0].start_frame == 210);
+}

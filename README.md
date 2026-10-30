@@ -23,8 +23,9 @@ without notice.
 | 1 | `align`, `devices` | done |
 | 2 | `annotate` (GUI) | done |
 | 3 | `features` (image features with DINOv2) | done |
-| 4 | training (Python, `training/`) | implemented, not yet run on real data |
-| 6 | `detect` | implemented, waiting for a trained detector |
+| 4 | training (Python, `training/`) | done, first detector trained on 11 videos |
+| 6 | `detect` | done |
+| 7 | refine (`annotate --detections`) | done |
 | 8 | `cut` | done |
 | later | `benchmark` | planned |
 
@@ -42,7 +43,9 @@ without notice.
 5. **Training (Python, `training/`):** an MS-TCN is trained on the embeddings with per-frame
    labels "rally / no rally" and exported to ONNX.
 6. **`detect`:** C++ inference of the ONNX model and decoding into rally segments.
-7. **`cut`:** cuts the original video according to the resulting cut list, with a chosen margin
+7. **Refine (optional):** the detected rallies are corrected in the annotation window
+   (`annotate --detections`): edges dragged, split rallies merged, missed rallies added.
+8. **`cut`:** cuts the original video according to the resulting cut list, with a chosen margin
    before and after each rally.
 
 Everything that touches video runs in C++. Python is only needed to **train** models, never to
@@ -337,7 +340,8 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       4808_Weiss-Heinemeier_FHD.MP4  pre-cut versions (a number prefix or a suffix such as
                                      _cut_33_rallies is recognised)
     ttrally-data/                    created by the tool: everything it computes for this day
-      align/  annotations/  features/  detections/  cuts/  cache/  scenes.csv  pre-cuts.csv
+      align/  annotations/  features/  detections/  refined/  cuts/  cache/
+      scenes.csv  pre-cuts.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
   exclude/                           videos the tool ignores
@@ -366,7 +370,7 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
 - **Left:** the videos of the library by match day, with their progress: aligned, labels
   (complete or in progress), features, detected, cut. Below, a preview frame of the selected
   video; the slider picks another position (the frame is decoded in the background).
-- **Right:** a tab per command (align, annotate, features, detect, cut, train), filled in for
+- **Right:** a tab per command (align, annotate, features, detect, refine, cut, train), filled in for
   the selected video: its pre-cut version, its id (suggested from the file name, e.g.
   `Weiss-Heinemeier_FHD.MP4` → `weiss-heinemeier`), the paths in the match day's
   `ttrally-data/`, and suggestions such as the image models and detectors in the library's
@@ -529,6 +533,7 @@ Keyboard shortcuts (always shown below the video, together with a legend of the 
 
 | Keys | Action |
 |---|---|
+| Drag an edge | on the timeline: move the start or end of a rally, ignored section or mark; onto a neighbouring rally: merge them |
 | Left / Right | one frame back / forward (Shift: 10 frames, Ctrl: 1 second) |
 | Space, `[` / `]` | play / pause, slower / faster (0.1x to 4x) |
 | A / D / C | mark start / end / serve hit at the current frame |
@@ -621,8 +626,8 @@ ttrally detect data/original.mp4 --video-id <video_id>
    | `<video_id>.csv` | the rallies in the [label format](#annotation-definitions-and-label-format); notes: mean rally probability |
    | `<video_id>.probabilities.npy` | float32, rally probability of every feature row |
 
-   Because the detections use the label format, they can be checked and corrected in the
-   annotation window: `ttrally annotate ... --annotations-dir data/detections`.
+   Because the detections use the label format, they can be corrected in the annotation
+   window, see [Refining detections](#refining-detections).
 4. **Evaluation:** if the video has labels in `data/annotations/`, the detections are compared
    with them: segment F1, precision, recall and the mean boundary error in seconds (the same
    definitions as in training; ignored sections do not count). A note appears if the review of
@@ -637,6 +642,28 @@ To measure how well a detector works, train it without one of the videos
 (`uv run python -m ttrally_training.train --videos <the others>`) and run `detect` on the left-out
 video: the evaluation shows how it does on footage it has never seen.
 
+### Refining detections
+
+Detected rallies are rarely perfect: a rally may be cut off in the middle, split in two, or
+missed. `annotate --detections` opens them in the annotation window to correct them for `cut`:
+
+```sh
+ttrally annotate data/original.mp4 --detections data/detections/<video_id>.csv \
+    --annotations-dir data/refined
+```
+
+- Every detected rally is a segment and already counts as done; the stretches between them are
+  the gaps to check (**R**) for missed rallies, which are added with **A**, **D** and **Enter**
+  as usual.
+- **Drag** the start or end of a rally on the timeline to move it; the video follows the edge.
+  Dragged onto a neighbouring rally, both become one (e.g. the two halves of a split rally).
+- The result is saved in `data/refined/<video_id>.csv` (until the first change the detections
+  are shown). It is kept apart from the labels in `data/annotations/` on purpose: corrected
+  detections are good enough for cutting but usually not as exact as labels for training. To
+  start again from new detections, delete the refined file and its `.review.csv`.
+
+In the launcher this is the **Refine** tab.
+
 ### `cut`
 
 Cuts a video down to its rallies, with a margin before and after each, into one MP4 file:
@@ -649,9 +676,12 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 
 - **Cut list:** any file in the [label format](#annotation-definitions-and-label-format). By
   default the annotations `data/annotations/<video_id>.csv` if they are complete (every segment
-  and gap done in `annotate`), since they are exact; otherwise the detections
-  `data/detections/<video_id>.csv` from `detect`. The launcher chooses the same way (annotations
-  still in progress only if there are no detections) and offers the others as suggestions.
+  and gap done in `annotate`), since they are exact; otherwise the
+  [refined detections](#refining-detections) `data/refined/<video_id>.csv`, then the detections
+  `data/detections/<video_id>.csv` from `detect` (`--annotations-dir`, `--refined-dir`,
+  `--detections-dir` change where they are looked for). The launcher chooses the same way
+  (annotations still in progress only if there are no detections) and offers the others as
+  suggestions.
   Ignored sections are not rallies and are not cut.
 - **Margins:** `--before` and `--after` (seconds, default 1 before and 1.5 after). Rallies whose margins overlap
   or touch become one continuous section, so nothing is shown twice.

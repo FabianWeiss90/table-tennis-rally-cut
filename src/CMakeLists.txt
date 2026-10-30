@@ -102,6 +102,7 @@ ttrally_layer(ttrally_annotation_domain
 
 ttrally_layer(ttrally_annotation_application
     SOURCES annotation/application/annotation_session.cpp
+            annotation/application/detection_review_source.cpp
     DEPENDS ttrally_annotation_domain)
 
 ttrally_layer(ttrally_annotation_infrastructure
@@ -109,6 +110,7 @@ ttrally_layer(ttrally_annotation_infrastructure
         annotation/infrastructure/alignment_review_source.cpp
         annotation/infrastructure/csv_annotation_repository.cpp
         annotation/infrastructure/csv_review_state_store.cpp
+        annotation/infrastructure/seeded_annotation_repository.cpp
     DEPENDS ttrally_annotation_application ttrally_shared_io)
 
 # Features context (phase 3: per-frame image features for training and detection)

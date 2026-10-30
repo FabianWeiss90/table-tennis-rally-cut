@@ -9,7 +9,7 @@
 
 namespace ttrally::launcher {
 
-/// The forms of all commands (align, annotate, features, detect, cut, train), filled in for a
+/// The forms of all commands (align, annotate, features, detect, refine, cut, train), filled in for a
 /// video: its id, paths that follow from it, and suggestions from the workspace. Options that
 /// are rarely needed are marked advanced and keep the commands' defaults.
 [[nodiscard]] std::vector<CommandForm> forms_for(const VideoEntry& video,

@@ -32,6 +32,7 @@ struct VideoEntry {
     std::size_t rallies = 0;
     std::string features_model; ///< Image model of the stored features; empty: none
     bool detected = false;
+    AnnotationProgress refinement = AnnotationProgress::None; ///< of the detections (refine)
     std::vector<std::string> cuts; ///< Cut videos
     std::string scene; ///< e.g. "A": videos of a match day with the same hall and camera position
 

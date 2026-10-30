@@ -208,15 +208,43 @@ CommandForm detect_form(const VideoEntry& video, const WorkspaceSnapshot& worksp
              advanced(option("--batch", "Batch size", FieldKind::Text, "16", "16", ""))}};
 }
 
+CommandForm refine_form(const VideoEntry& video) {
+    const std::string id = video.video_id;
+    return {"refine", "Refine",
+            "Correct the rallies found by detect in the annotation window: drag their edges on "
+            "the timeline (onto a neighbour to merge two halves), add missed rallies and check "
+            "the gaps between them. The result is kept apart from the labels for training; cut "
+            "uses it instead of the detections.",
+            Program::Ttrally, "", "", {"annotate"},
+            {positional("Original video", FieldKind::File, video.original, "Untrimmed original"),
+             required(option("--detections", "Detections", FieldKind::File,
+                             in_work_dir(video, {"detections", id + ".csv"}), "",
+                             "Written by detect; loaded until refined rallies are saved")),
+             required(option("--video-id", "Video id", FieldKind::Text, id, "", "")),
+             advanced(option("--annotations-dir", "Refined rallies directory",
+                             FieldKind::Directory, in_work_dir(video, {"refined"}),
+                             "data/annotations", "Not the labels for training")),
+             cache_dir(video),
+             decode_backend("cpu", "cpu is fastest for stepping (every frame is needed in "
+                                   "main memory); auto tries the GPU first"),
+             advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
+                             "1080", "Pixels of the shown video")),
+             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "3072",
+                             "3072", ""))}};
+}
+
 CommandForm cut_form(const VideoEntry& video) {
     const std::string id = video.video_id;
     const std::string detections = in_work_dir(video, {"detections", id + ".csv"});
     const std::string labels = in_work_dir(video, {"annotations", id + ".csv"});
-    // Complete labels are exact, so they come first; then the detections; labels still in
-    // progress would leave out the rallies not marked yet
+    // Complete labels are exact, so they come first; then the refined detections, the
+    // detections; labels still in progress would leave out the rallies not marked yet
     std::vector<std::string> cut_lists;
     if (video.annotation == AnnotationProgress::Complete) {
         cut_lists.push_back(labels);
+    }
+    if (video.refinement != AnnotationProgress::None) {
+        cut_lists.push_back(in_work_dir(video, {"refined", id + ".csv"}));
     }
     if (video.detected) {
         cut_lists.push_back(detections);
@@ -231,7 +259,7 @@ CommandForm cut_form(const VideoEntry& video) {
              with_suggestions(required(option("--rallies", "Rallies", FieldKind::File,
                                               first_or(cut_lists, detections), "",
                                               "Default: the annotations if complete, else the "
-                                              "detections")),
+                                              "refined detections, else the detections")),
                               cut_lists),
              option("--out", "Output video", FieldKind::File,
                     in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
@@ -281,9 +309,10 @@ CommandForm train_form(const WorkspaceSnapshot& workspace) {
 } // namespace
 
 std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnapshot& workspace) {
-    return {align_form(video),          annotate_form(video),
+    return {align_form(video),           annotate_form(video),
             features_form(video, workspace), detect_form(video, workspace),
-            cut_form(video),            train_form(workspace)};
+            refine_form(video),          cut_form(video),
+            train_form(workspace)};
 }
 
 } // namespace ttrally::launcher

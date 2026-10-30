@@ -165,6 +165,26 @@ TEST_CASE("forms are filled in for the selected video, with its files in the wor
     auto cut_d = form_named(forms_for(in_progress.videos[1], in_progress), "cut");
     CHECK(cut_d.field("--rallies")->value ==
           in_library("day-1/ttrally-data/annotations/match-b.csv"));
+    // Refined detections come before the detections, after complete labels
+    auto refined = snapshot;
+    refined.videos[0].detected = true;
+    refined.videos[0].refinement = AnnotationProgress::InProgress;
+    auto cut_e = form_named(forms_for(refined.videos[0], refined), "cut");
+    CHECK(cut_e.field("--rallies")->suggestions ==
+          std::vector<std::string>{in_library("day-1/ttrally-data/refined/match-a.csv"),
+                                   in_library("day-1/ttrally-data/detections/match-a.csv")});
+}
+
+TEST_CASE("refine opens the annotation window on the detections") {
+    const auto snapshot = workspace();
+    auto refine = form_named(forms_for(snapshot.videos[0], snapshot), "refine");
+    CHECK(refine.arguments() ==
+          std::vector<std::string>{"annotate", "/lib/day-1/match-a_FHD.mp4", "--detections",
+                                   in_library("day-1/ttrally-data/detections/match-a.csv"),
+                                   "--video-id", "match-a", "--annotations-dir",
+                                   in_library("day-1/ttrally-data/refined"), "--cache-dir",
+                                   in_library("day-1/ttrally-data/cache")});
+    CHECK_FALSE(supports_batch("refine"));
 }
 
 TEST_CASE("the training gets the library and the selected videos by match day") {
@@ -185,7 +205,7 @@ TEST_CASE("the ticked training videos survive choosing another video and rescans
     FakeScanner scanner;
     FakeRunner runner;
     LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
-    auto train = [&]() -> CommandForm& { return session.forms()[5]; };
+    auto train = [&]() -> CommandForm& { return session.forms()[6]; };
     REQUIRE(train().name == "train");
     train().field("--videos")->value = "day-1/match-b\nday-2/match-c\n";
     session.select_video(1);
@@ -201,7 +221,7 @@ TEST_CASE("the session runs a command and reports its result") {
     LauncherSession session(scanner, runner, "/bin/ttrally", "/project", "/lib");
     CHECK(scanner.scanned == "/lib");
     REQUIRE(session.selected_video() == 0);
-    auto& cut = session.forms()[4];
+    auto& cut = session.forms()[5];
     REQUIRE(cut.name == "cut");
     cut.field("--before")->value = "3";
 
@@ -224,7 +244,7 @@ TEST_CASE("the session runs a command and reports its result") {
     CHECK_FALSE(session.running());
     CHECK(session.status() == "cut failed (exit code 1)");
     CHECK(scanner.scans == 2); // rescanned after the command
-    CHECK(session.forms()[4].field("--before")->value == "3"); // edits survive the rescan
+    CHECK(session.forms()[5].field("--before")->value == "3"); // edits survive the rescan
 }
 
 TEST_CASE("a pre-cut video chosen in the align form is kept for the video") {

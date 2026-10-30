@@ -323,8 +323,14 @@ class LauncherApp {
         ImGui::EndChild();
         if (const auto selected = session_.selected_video()) {
             ImGui::Separator();
+            // Its own scrolling area with a scrollbar always shown: otherwise long details make
+            // the sidebar scroll, which narrows the preview, which removes the scrollbar again
+            // (flickering every frame)
+            ImGui::BeginChild("##selected", {0, 0}, ImGuiChildFlags_None,
+                              ImGuiWindowFlags_AlwaysVerticalScrollbar);
             draw_preview(videos[*selected]);
             draw_details(videos[*selected]);
+            ImGui::EndChild();
         }
     }
 

@@ -10,6 +10,8 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <array>
+#include <cfloat>
 #include <condition_variable>
 #include <deque>
 #include <format>
@@ -35,7 +37,11 @@ using launcher::Field;
 using launcher::FieldKind;
 using launcher::VideoEntry;
 
-constexpr float kSidebarWidth = 380.0F;
+constexpr float kMinSidebarWidth = 380.0F; ///< initially wider if the status line needs it
+constexpr float kNarrowestSidebar = 240.0F; ///< the user cannot drag it narrower
+constexpr float kLibraryButtonsWidth = 140.0F;
+/// The steps of draw_status(), for measuring its line
+constexpr std::array kSteps{"align", "labels", "features", "detect", "refine", "cut"};
 constexpr float kLabelWidth = 230.0F;
 constexpr float kLogShare = 0.38F; ///< of the right side's height
 constexpr int kPreviewHeight = 360;  ///< decoded preview size (shown scaled to the sidebar)
@@ -249,7 +255,10 @@ class LauncherApp {
         ImGui::Begin("##launcher", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                          ImGuiWindowFlags_NoBringToFrontOnFocus);
-        ImGui::BeginChild("##videos", {kSidebarWidth, 0}, ImGuiChildFlags_Borders);
+        // Resizable at its right border; the given width is only the initial one
+        ImGui::SetNextWindowSizeConstraints({kNarrowestSidebar, 0}, {FLT_MAX, FLT_MAX});
+        ImGui::BeginChild("##videos", {initial_sidebar_width(), 0},
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
         draw_videos();
         ImGui::EndChild();
         ImGui::SameLine();
@@ -266,9 +275,19 @@ class LauncherApp {
   private:
     // ------------------------------------------------------------------ videos
 
+    /// Wide enough for a video's whole status line (every step), next to the list's scrollbar.
+    static float initial_sidebar_width() {
+        const ImGuiStyle& style = ImGui::GetStyle();
+        float width = style.IndentSpacing + 2 * style.WindowPadding.x + style.ScrollbarSize;
+        for (const char* name : kSteps) {
+            width += ImGui::CalcTextSize(std::format("+ {}", name).c_str()).x + style.ItemSpacing.x;
+        }
+        return std::max(kMinSidebarWidth, width);
+    }
+
     void draw_library() {
         ImGui::TextUnformatted("Library");
-        ImGui::SameLine(kSidebarWidth - 140);
+        ImGui::SameLine(ImGui::GetWindowWidth() - kLibraryButtonsWidth);
         ImGui::BeginDisabled(session_.running());
         if (ImGui::SmallButton("Choose...")) {
             pending_target_ = {kLibraryTarget, 0, {}};

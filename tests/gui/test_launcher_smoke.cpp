@@ -75,6 +75,8 @@ class MemoryHighlights final : public highlights::MatchDayHighlights {
         void save_match_day_layout(const highlights::TitleLayout&) override {}
         std::optional<highlights::Title> match_title() override { return std::nullopt; }
         void save_match_title(const highlights::Title&) override {}
+        std::filesystem::path title_font() override { return {}; }
+        void save_title_font(const std::filesystem::path&) override {}
         std::optional<highlights::StoredHighlights> saved;
     };
     class Rallies final : public highlights::RallySource {
@@ -95,6 +97,22 @@ class MemoryHighlights final : public highlights::MatchDayHighlights {
     }
     std::unique_ptr<highlights::RallySource> rallies(const std::filesystem::path&) override {
         return std::make_unique<Rallies>();
+    }
+};
+
+/// Titles as solid blocks, without reading any font.
+class BlockFonts final : public highlights::TitleFonts {
+  public:
+    std::vector<highlights::FontChoice> installed() override { return {{"/f/a.ttf", "Alpha"}}; }
+    highlights::FontChoice fallback() override { return {"/f/default.ttf", "Default Bold"}; }
+    highlights::TitleImage render(const std::filesystem::path&, const highlights::Title& title,
+                                  int line_height) override {
+        highlights::TitleImage image;
+        image.width = std::max(1, line_height * static_cast<int>(title.text.size()) / 2);
+        image.height = line_height;
+        image.text.assign(static_cast<std::size_t>(image.width * image.height), 255);
+        image.outline = image.text;
+        return image;
     }
 };
 
@@ -153,6 +171,8 @@ TEST_CASE("the launcher shows the highlights of the selected game") {
     options.first_tab = "highlights";
     options.highlights = &highlights;
     options.playback = &playback;
+    BlockFonts fonts;
+    options.fonts = &fonts;
     gui::run_launcher(session, preview, options);
     CHECK(std::filesystem::file_size(screenshot) > 0);
     if (keep == nullptr) {

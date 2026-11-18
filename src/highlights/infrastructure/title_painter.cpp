@@ -130,6 +130,75 @@ TitleFont::TitleFont(const std::filesystem::path& file) : impl_(std::make_unique
 
 TitleFont::~TitleFont() = default;
 
+namespace {
+
+constexpr int kPlatformMicrosoft = 3;
+constexpr int kEncodingUnicodeBmp = 1;
+constexpr int kLanguageEnglishUs = 0x409;
+constexpr int kPlatformMac = 1;
+constexpr int kEncodingRoman = 0;
+constexpr int kLanguageEnglish = 0;
+constexpr int kNameFamily = 1;
+constexpr int kNameStyle = 2;
+constexpr int kNameTypographicFamily = 16;
+constexpr int kNameTypographicStyle = 17;
+
+/// UTF-16 big endian (no surrogates in font names) as UTF-8.
+std::string utf8_of_utf16be(const char* data, int length) {
+    std::string text;
+    for (int i = 0; i + 1 < length; i += 2) {
+        const unsigned c = (static_cast<unsigned char>(data[i]) << 8U) |
+                           static_cast<unsigned char>(data[i + 1]);
+        if (c < 0x80) {
+            text += static_cast<char>(c);
+        } else if (c < 0x800) {
+            text += static_cast<char>(0xC0U | (c >> 6U));
+            text += static_cast<char>(0x80U | (c & 0x3FU));
+        } else {
+            text += static_cast<char>(0xE0U | (c >> 12U));
+            text += static_cast<char>(0x80U | ((c >> 6U) & 0x3FU));
+            text += static_cast<char>(0x80U | (c & 0x3FU));
+        }
+    }
+    return text;
+}
+
+std::string name_entry(const stbtt_fontinfo& font, int id) {
+    int length = 0;
+    if (const char* data = stbtt_GetFontNameString(&font, &length, kPlatformMicrosoft,
+                                                   kEncodingUnicodeBmp, kLanguageEnglishUs, id)) {
+        return utf8_of_utf16be(data, length);
+    }
+    if (const char* data = stbtt_GetFontNameString(&font, &length, kPlatformMac, kEncodingRoman,
+                                                   kLanguageEnglish, id)) {
+        return {data, static_cast<std::size_t>(length)};
+    }
+    return {};
+}
+
+} // namespace
+
+std::string TitleFont::name() const {
+    std::string family = name_entry(impl_->info, kNameTypographicFamily);
+    if (family.empty()) {
+        family = name_entry(impl_->info, kNameFamily);
+    }
+    std::string style = name_entry(impl_->info, kNameTypographicStyle);
+    if (style.empty()) {
+        style = name_entry(impl_->info, kNameStyle);
+    }
+    return style.empty() || style == "Regular" ? family : family + " " + style;
+}
+
+bool TitleFont::writes_latin() const {
+    for (const char32_t c : U"AZaz\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df") {
+        if (c != 0 && stbtt_FindGlyphIndex(&impl_->info, static_cast<int>(c)) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 TitleMask TitleFont::render(std::string_view text, int line_height, TextAlign align) const {
     const stbtt_fontinfo& font = impl_->info;
     const float scale = stbtt_ScaleForPixelHeight(&font, static_cast<float>(line_height));
@@ -306,7 +375,7 @@ void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& t
     for (int y = y_begin; y < y_end; ++y) {
         std::uint8_t* row = picture.y + static_cast<std::ptrdiff_t>(y) * picture.y_stride;
         for (int x = x_begin; x < x_end; ++x) {
-            const int dark = coverage(mask.outline, x, y);
+            const int dark = title.outlined ? coverage(mask.outline, x, y) : 0;
             const int light = coverage(mask.text, x, y);
             row[x] = mix(mix(row[x], edge.y, dark), fill.y, light);
         }
@@ -321,7 +390,7 @@ void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& t
             int light = 0;
             for (int dy = 0; dy < 2; ++dy) {
                 for (int dx = 0; dx < 2; ++dx) {
-                    dark += coverage(mask.outline, 2 * cx + dx, 2 * cy + dy);
+                    dark += title.outlined ? coverage(mask.outline, 2 * cx + dx, 2 * cy + dy) : 0;
                     light += coverage(mask.text, 2 * cx + dx, 2 * cy + dy);
                 }
             }

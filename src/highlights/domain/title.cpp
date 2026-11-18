@@ -103,6 +103,7 @@ Title TitleLayout::applied_to(Title title) const {
     title.size = size;
     title.position = position;
     title.color = color;
+    title.outlined = outlined;
     title.outline = outline;
     return title;
 }

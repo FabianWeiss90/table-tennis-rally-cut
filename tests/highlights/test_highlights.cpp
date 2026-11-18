@@ -45,6 +45,9 @@ class MemoryStore final : public HighlightStore {
     void save_match_day_layout(const TitleLayout& changed) override { layout = changed; }
     std::optional<Title> match_title() override { return match; }
     void save_match_title(const Title& changed) override { match = changed; }
+    std::filesystem::path title_font() override { return font; }
+    void save_title_font(const std::filesystem::path& changed) override { font = changed; }
+    std::filesystem::path font;
     std::map<std::string, StoredHighlights> saved;
     TitleLayout layout;
     std::optional<Title> match;

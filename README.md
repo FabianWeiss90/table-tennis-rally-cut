@@ -764,18 +764,24 @@ launcher's **Highlights** tab, for the game of the selected video:
 - **Players:** the players from the file name (`Weiss-Ohrstedt.MP4` → "Weiss - Ohrstedt"; nothing
   for camera names such as `2X6A4730.MP4`), editable and with several lines, "Swap players".
   Size, position (top or bottom; left, centre or right; by default bottom centre), the colour
-  of the letters and of their outline (white and black by default; the same for the match) are
-  set per game for its game video,
+  of the letters (white by default) and an optional border in a colour of its own (off by
+  default; the same for the match) are set per game for its game video,
   and once for the match day video, where every game's title looks the same. The game video
   shows the title all the time; the match day video only with "Players on each rally", then
   each clip shows its game's title. "Preview as" shows either layout in the player.
+- **Font:** one for all titles of the match day, chosen from the fonts installed on the
+  computer (TrueType and OpenType with the letters of German text, from the usual font folders);
+  pointing at a font in the list shows it in the player. The player shows the titles in the
+  chosen font as the video will; "Enlarge" shows it in a large window. Without a choice a bold
+  system font is used (DejaVu Sans, Liberation Sans or Noto Sans; Segoe UI or Arial on Windows);
+  `--font` overrides the choice.
 - **Make game video / Make match day video** run `ttrally highlights` with the settings below:
   margins, cross-fade, bit rate and codec.
 
 Every change is saved at once in `<match day>/ttrally-data/highlights/` (`<video id>.csv`
 with the marks, `<video id>.settings.csv` with the original, the coupling and the title,
-`match-day-title.csv` with the look of the players' titles in the match day video and the
-match title); the
+`match-day-title.csv` with the look of the players' titles in the match day video, the
+match title and the font); the
 videos are written there too.
 
 ```sh

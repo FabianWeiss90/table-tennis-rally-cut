@@ -182,6 +182,7 @@ ttrally_layer(ttrally_highlights_infrastructure
         highlights/infrastructure/cut_list_rally_source.cpp
         highlights/infrastructure/ffmpeg_highlight_renderer.cpp
         highlights/infrastructure/ffmpeg_playback_source.cpp
+        highlights/infrastructure/system_title_fonts.cpp
         highlights/infrastructure/title_painter.cpp
     DEPENDS
         ttrally_highlights_application ttrally_cutting_infrastructure

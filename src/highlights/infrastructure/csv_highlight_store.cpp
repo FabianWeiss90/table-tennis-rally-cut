@@ -70,6 +70,7 @@ Title read_title(const Settings& settings, const std::string& prefix, TitlePosit
     title.size = parse_size(value_of(settings, prefix + "_size"));
     title.position = parse_title_position(value_of(settings, prefix + "_position")).value_or(fallback);
     title.color = parse_color(settings, prefix + "_color", kWhite);
+    title.outlined = value_of(settings, prefix + "_outlined") == "1";
     title.outline = parse_color(settings, prefix + "_outline", kBlack);
     return title;
 }
@@ -80,6 +81,7 @@ void put_title(Settings& settings, const std::string& prefix, const Title& title
     settings[prefix + "_size"] = std::format("{:.3f}", title.size);
     settings[prefix + "_position"] = std::string(to_string(title.position));
     settings[prefix + "_color"] = to_hex(title.color);
+    settings[prefix + "_outlined"] = yes_no(title.outlined);
     settings[prefix + "_outline"] = to_hex(title.outline);
 }
 
@@ -172,6 +174,7 @@ TitleLayout CsvHighlightStore::match_day_layout() {
     return {.size = title.size,
             .position = title.position,
             .color = title.color,
+            .outlined = title.outlined,
             .outline = title.outline};
 }
 
@@ -198,6 +201,19 @@ std::optional<Title> CsvHighlightStore::match_title() {
         return std::nullopt;
     }
     return read_title(settings, std::string(kMatchPrefix), TitlePosition::TopCenter);
+}
+
+fs::path CsvHighlightStore::title_font() {
+    const fs::path file = directory_ / kMatchDayTitleFile;
+    return fs::exists(file) ? fs::path(value_of(read_settings(file), "font")) : fs::path();
+}
+
+void CsvHighlightStore::save_title_font(const fs::path& font) {
+    const fs::path file = directory_ / kMatchDayTitleFile;
+    fs::create_directories(directory_);
+    Settings settings = fs::exists(file) ? read_settings(file) : Settings{};
+    settings["font"] = font.empty() ? std::string() : fs::absolute(font).string();
+    write_settings(file, settings);
 }
 
 void CsvHighlightStore::save_match_title(const Title& title) {

@@ -5,6 +5,7 @@
 #include "gui/launcher_app.hpp"
 #include "highlights/infrastructure/cut_list_rally_source.hpp"
 #include "highlights/infrastructure/ffmpeg_playback_source.hpp"
+#include "highlights/infrastructure/system_title_fonts.hpp"
 #include "launcher/application/launcher_session.hpp"
 #include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
@@ -48,6 +49,8 @@ int GuiCommand::run() {
     options.highlights = &highlights;
     highlights::FfmpegPlaybackSource playback;
     options.playback = &playback;
+    highlights::SystemTitleFonts fonts;
+    options.fonts = &fonts;
     launcher::FfmpegVideoPreview preview;
     gui::run_launcher(session, preview, options);
     return 0;

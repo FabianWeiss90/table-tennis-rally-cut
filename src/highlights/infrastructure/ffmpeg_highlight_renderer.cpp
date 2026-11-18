@@ -118,7 +118,10 @@ void blend(AVFrame& into, const AVFrame& from, int weight) {
 /// Fonts are loaded and titles rendered once, when first needed.
 class TitleCache {
   public:
-    explicit TitleCache(std::filesystem::path font) : font_file_(std::move(font)) {}
+    /// A font that does not exist (e.g. uninstalled since it was chosen) is replaced by the
+    /// default one, with a note.
+    TitleCache(std::filesystem::path font, ProgressReporter& progress)
+        : font_file_(std::move(font)), progress_(progress) {}
 
     const TitleMask& mask(const Title& title, int picture_height) {
         const int line_height =
@@ -128,6 +131,13 @@ class TitleCache {
             return found->second;
         }
         if (!font_) {
+            std::error_code error;
+            if (!font_file_.empty() && !std::filesystem::is_regular_file(font_file_, error)) {
+                progress_.report(std::format("Note: the font {} does not exist, using the default "
+                                             "font",
+                                             font_file_.string()));
+                font_file_.clear();
+            }
             if (font_file_.empty()) {
                 font_file_ = default_title_font();
             }
@@ -144,6 +154,7 @@ class TitleCache {
 
   private:
     std::filesystem::path font_file_;
+    ProgressReporter& progress_;
     std::unique_ptr<TitleFont> font_;
     std::map<std::tuple<std::string, int, TitlePosition>, TitleMask> masks_;
 };
@@ -497,7 +508,7 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
     const std::vector<ClipTiming> timing =
         plan_timing(clips, format.frame_rate, std::max(0.0, options.crossfade_s));
     HighlightWriter writer(output, format, options, progress);
-    TitleCache titles(options.font);
+    TitleCache titles(options.font, progress);
     for (std::size_t i = 0; i < clips.size(); ++i) {
         const Clip& clip = clips[i];
         const ClipTiming& t = timing[i];

@@ -5,6 +5,7 @@
 #include "cutting/domain/cut_plan.hpp"
 #include "highlights/application/game_highlights.hpp"
 #include "highlights/application/playback_source.hpp"
+#include "highlights/application/title_fonts.hpp"
 #include "launcher/domain/workspace.hpp"
 
 #include <cstddef>
@@ -27,7 +28,7 @@ struct HighlightCounts {
 class HighlightsPanel {
   public:
     HighlightsPanel(const GuiContext& gui, highlights::MatchDayHighlights& days,
-                    highlights::PlaybackSource& playback);
+                    highlights::PlaybackSource& playback, highlights::TitleFonts& fonts);
     ~HighlightsPanel();
     HighlightsPanel(const HighlightsPanel&) = delete;
     HighlightsPanel& operator=(const HighlightsPanel&) = delete;

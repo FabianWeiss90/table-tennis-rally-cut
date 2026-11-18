@@ -7,6 +7,7 @@
 #include "highlights/application/make_highlight_video.hpp"
 #include "highlights/infrastructure/csv_highlight_store.hpp"
 #include "highlights/infrastructure/ffmpeg_highlight_renderer.hpp"
+#include "highlights/infrastructure/system_title_fonts.hpp"
 #include "highlights/infrastructure/title_painter.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "media/infrastructure/ffmpeg_media_probe.hpp"
@@ -113,9 +114,16 @@ TEST_CASE("highlight videos of a game and of a match day") {
                                                   .position = TitlePosition::BottomLeft,
                                                   .color = {1, 2, 3},
                                                   .outline = {4, 5, 6}});
+    CHECK(store.title_font().empty());
+    store.save_title_font("/fonts/Inter-SemiBold.ttf");
+    CHECK(store.title_font() == std::filesystem::path("/fonts/Inter-SemiBold.ttf"));
+    CHECK(store.match_title() == match); // untouched by the font
+    store.save_title_font({});
+    CHECK(store.title_font().empty());
     StoredHighlights coloured = *stored;
     coloured.title.color = {12, 34, 56};
     coloured.title.outline = {200, 100, 0};
+    coloured.title.outlined = true;
     store.save("weiss-ohrstedt", coloured);
     CHECK(store.load("weiss-ohrstedt")->title == coloured.title);
     store.save("weiss-ohrstedt", *stored);
@@ -188,7 +196,7 @@ TEST_CASE("titles are rendered with an outline") {
     std::vector<std::uint8_t> v(kWidth * kHeight / 4, 150);
     paint_title({.y = y.data(), .u = u.data(), .v = v.data(), .y_stride = kWidth,
                  .uv_stride = kWidth / 2, .width = kWidth, .height = kHeight, .full_range = true},
-                one, Title{.text = "", .position = TitlePosition::BottomRight});
+                one, Title{.text = "", .position = TitlePosition::BottomRight, .outlined = true});
     CHECK(std::ranges::max(y) == 255);
     CHECK(std::ranges::min(y) == 0);
     CHECK(y[0] == 128); // top left untouched
@@ -201,7 +209,7 @@ TEST_CASE("titles are rendered with an outline") {
     paint_title({.y = y.data(), .u = u.data(), .v = v.data(), .y_stride = kWidth,
                  .uv_stride = kWidth / 2, .width = kWidth, .height = kHeight, .full_range = true},
                 one, Title{.text = "", .position = TitlePosition::TopLeft,
-                           .color = {255, 0, 0}, .outline = {0, 0, 255}});
+                           .color = {255, 0, 0}, .outlined = true, .outline = {0, 0, 255}});
     const Yuv red = to_yuv({255, 0, 0}, true);
     const Yuv blue = to_yuv({0, 0, 255}, true);
     CHECK(red.v > 200);
@@ -211,4 +219,33 @@ TEST_CASE("titles are rendered with an outline") {
     CHECK(to_yuv(kWhite, false).y == 235);
     CHECK(to_yuv(kBlack, false).y == 16);
     CHECK(to_yuv(kWhite, true).u == 128);
+
+    // Without a border only the letters are painted
+    std::ranges::fill(y, 128);
+    paint_title({.y = y.data(), .u = u.data(), .v = v.data(), .y_stride = kWidth,
+                 .uv_stride = kWidth / 2, .width = kWidth, .height = kHeight, .full_range = true},
+                one, Title{.text = "", .position = TitlePosition::TopLeft});
+    CHECK(std::ranges::max(y) == 255);
+    CHECK(std::ranges::min(y) == 128);
+}
+
+TEST_CASE("installed fonts are listed by name and write titles") {
+    const auto font_file = default_title_font();
+    if (font_file.empty()) {
+        SKIP("no system font found");
+    }
+    SystemTitleFonts fonts({font_file.parent_path()});
+    const std::vector<FontChoice> installed = fonts.installed();
+    REQUIRE_FALSE(installed.empty());
+    CHECK(std::ranges::is_sorted(installed, {}, &FontChoice::name));
+    const auto found = std::ranges::find(installed, font_file, &FontChoice::file);
+    REQUIRE(found != installed.end());
+    CHECK_FALSE(found->name.empty());
+    CHECK(fonts.fallback().file == font_file);
+    const TitleImage image =
+        fonts.render({}, Title{.text = "Weiss - Ohrstedt", .shown = true}, 40);
+    CHECK(image.width > 200);
+    CHECK(image.height >= 40);
+    // A font that no longer exists falls back to the default, as in the video
+    CHECK(fonts.render("/no/such/font.ttf", Title{.text = "x", .shown = true}, 40).width > 0);
 }

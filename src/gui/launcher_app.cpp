@@ -247,9 +247,10 @@ class LauncherApp {
           project_(std::filesystem::absolute(options.project_directory)),
           settings_(options.settings), scenes_(options.scenes), first_tab_(options.first_tab),
           preview_worker_(preview), preview_texture_(gui.renderer()), thumbnail_worker_(preview) {
-        if (options.highlights != nullptr && options.playback != nullptr) {
+        if (options.highlights != nullptr && options.playback != nullptr &&
+            options.fonts != nullptr) {
             highlights_ = std::make_unique<HighlightsPanel>(gui, *options.highlights,
-                                                            *options.playback);
+                                                            *options.playback, *options.fonts);
         }
         restore_last_video();
     }

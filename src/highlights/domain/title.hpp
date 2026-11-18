@@ -56,8 +56,9 @@ struct Title {
     bool shown = true;
     double size = kDefaultSize; ///< height of a line as share of the picture height
     TitlePosition position = TitlePosition::BottomCenter;
-    Rgb color = kWhite;   ///< of the letters
-    Rgb outline = kBlack; ///< around the letters
+    Rgb color = kWhite;    ///< of the letters
+    bool outlined = false; ///< with a border around the letters
+    Rgb outline = kBlack;  ///< colour of the border
 
     /// Whether anything is drawn.
     [[nodiscard]] bool visible() const noexcept;
@@ -69,6 +70,7 @@ struct TitleLayout {
     double size = Title::kDefaultSize; ///< height of a line as share of the picture height
     TitlePosition position = TitlePosition::BottomCenter;
     Rgb color = kWhite;
+    bool outlined = false;
     Rgb outline = kBlack;
 
     /// The title with this size, position and colours.

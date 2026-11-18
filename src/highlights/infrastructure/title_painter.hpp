@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "highlights/application/title_fonts.hpp"
 #include "highlights/domain/title.hpp"
 
 #include <cstdint>
@@ -12,13 +13,8 @@
 
 namespace ttrally::highlights {
 
-/// A rendered title: coverage (0-255) of the letters and of their dark outline, row by row.
-struct TitleMask {
-    int width = 0;
-    int height = 0;
-    std::vector<std::uint8_t> text;
-    std::vector<std::uint8_t> outline;
-};
+/// A rendered title: coverage (0-255) of the letters and of the border around them.
+using TitleMask = TitleImage;
 
 /// Horizontal alignment of the lines of a title.
 enum class TextAlign { Left, Center, Right };
@@ -34,6 +30,10 @@ class TitleFont {
 
     /// The text with lines `line_height` pixels apart, with an outline around the letters.
     [[nodiscard]] TitleMask render(std::string_view text, int line_height, TextAlign align) const;
+    /// Family and style from the font's name table, e.g. "Inter Semi Bold"; empty if missing.
+    [[nodiscard]] std::string name() const;
+    /// Whether it has the letters of German text (A-Z, a-z, umlauts, ß).
+    [[nodiscard]] bool writes_latin() const;
 
   private:
     struct Impl;
@@ -68,8 +68,8 @@ struct Yuv {
 
 [[nodiscard]] Yuv to_yuv(Rgb color, bool full_range) noexcept;
 
-/// Paints a title (the mask of its text) in its colour with its outline colour at its position,
-/// a small margin away from the picture's edges.
+/// Paints a title (the mask of its text) in its colour at its position, a small margin away from
+/// the picture's edges; with its border if it is outlined.
 void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& title);
 
 } // namespace ttrally::highlights

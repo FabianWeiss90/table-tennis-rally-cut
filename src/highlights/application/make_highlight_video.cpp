@@ -47,7 +47,11 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
                                               : "no game highlights are marked for " + ids.front());
     }
     result.clips = clips.size();
-    result.render = renderer_.render(clips, request.output, request.render, progress_);
+    RenderOptions render = request.render;
+    if (render.font.empty()) {
+        render.font = store_.title_font();
+    }
+    result.render = renderer_.render(clips, request.output, render, progress_);
     result.seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     return result;

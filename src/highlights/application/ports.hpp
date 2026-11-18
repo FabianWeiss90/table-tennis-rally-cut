@@ -39,6 +39,9 @@ class HighlightStore {
     /// nullopt if none was saved (then default_match_title() of the folder applies).
     [[nodiscard]] virtual std::optional<Title> match_title() = 0;
     virtual void save_match_title(const Title& title) = 0;
+    /// The font of all titles of the match day; empty: the default font.
+    [[nodiscard]] virtual std::filesystem::path title_font() = 0;
+    virtual void save_title_font(const std::filesystem::path& font) = 0;
 };
 
 /// The rallies a game's highlights are chosen from.
@@ -68,7 +71,8 @@ struct Clip {
 struct RenderOptions {
     double crossfade_s = 0.5; ///< overlap of consecutive clips; 0: hard cuts
     cutting::CutOptions encoding; ///< codec, encoder and bit rate (the mode is ignored)
-    std::filesystem::path font;   ///< TrueType font for titles; empty: a system font
+    std::filesystem::path font;   ///< TrueType font for titles; empty: the match day's, else a
+                                  ///< system font
 };
 
 /// Port: writes clips (possibly from different videos) one after the other into a video, with

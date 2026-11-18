@@ -12,7 +12,7 @@ namespace ttrally::highlights {
 /// <video id>.csv with the rallies and their marks, <video id>.settings.csv with the original
 /// video (relative to the match day folder if it lies inside), the coupling and the players'
 /// title; match-day-title.csv with the size, position and colours of the players' titles in the
-/// match day video and with the match title.
+/// match day video, the match title and the font of all titles.
 class CsvHighlightStore final : public HighlightStore {
   public:
     explicit CsvHighlightStore(std::filesystem::path directory);
@@ -24,6 +24,8 @@ class CsvHighlightStore final : public HighlightStore {
     void save_match_day_layout(const TitleLayout& layout) override;
     [[nodiscard]] std::optional<Title> match_title() override;
     void save_match_title(const Title& title) override;
+    [[nodiscard]] std::filesystem::path title_font() override;
+    void save_title_font(const std::filesystem::path& font) override;
 
   private:
     [[nodiscard]] std::filesystem::path match_day() const;

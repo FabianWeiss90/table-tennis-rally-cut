@@ -4,16 +4,21 @@
 
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
+#include "highlights/application/title_fonts.hpp"
 #include "media/application/frame_prefetcher.hpp"
 #include "shared/io/formatting.hpp"
 
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <functional>
 #include <future>
 #include <imgui.h>
+#include <map>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -37,7 +42,8 @@ constexpr double kFallbackFps = 30.0;
 constexpr float kListShare = 0.45F;         ///< of the width, next to the player
 constexpr float kListHeight = 280.0F;
 constexpr float kTitleMarginShare = 0.03F;  ///< as the rendered title
-constexpr float kOutlineShare = 0.07F;
+constexpr float kEnlargedShare = 0.85F;     ///< of the window, for the enlarged preview
+constexpr float kControlsHeight = 40.0F;    ///< below the enlarged picture
 constexpr float kLayoutLabelWidth = 130.0F;
 constexpr int kPreviewGame = 0;
 constexpr int kPreviewMatchDay = 1;
@@ -77,64 +83,138 @@ bool input_multiline(const char* id, std::string& value, ImVec2 size) {
                                      ImGuiInputTextFlags_CallbackResize, resize, &value);
 }
 
-std::vector<std::string> lines_of(const std::string& text) {
-    std::vector<std::string> lines;
-    std::istringstream in(text);
-    for (std::string line; std::getline(in, line);) {
-        lines.push_back(line);
-    }
-    return lines;
-}
+/// Titles over the shown picture, written in the chosen font and placed, sized and coloured as
+/// the highlight video will show them.
+class TitleOverlay {
+  public:
+    TitleOverlay(SDL_Renderer* renderer, highlights::TitleFonts& fonts)
+        : renderer_(renderer), fonts_(fonts) {}
+    ~TitleOverlay() { clear(); }
+    TitleOverlay(const TitleOverlay&) = delete;
+    TitleOverlay& operator=(const TitleOverlay&) = delete;
 
-ImU32 to_imgui(highlights::Rgb color) { return IM_COL32(color.r, color.g, color.b, 255); }
+    void draw(const std::vector<Title>& titles, const std::filesystem::path& font, ImVec2 origin,
+              ImVec2 size) {
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        draw->PushClipRect(origin, {origin.x + size.x, origin.y + size.y}, true);
+        for (const Title& title : titles) {
+            if (title.visible()) {
+                draw_one(*draw, title, font, origin, size);
+            }
+        }
+        draw->PopClipRect();
+    }
 
-/// The title over the shown picture, placed, sized and coloured as the highlight video will show
-/// it (the launcher's font, so the letters differ slightly).
-void draw_title_preview(const Title& title, ImVec2 origin, ImVec2 size) {
-    if (!title.visible()) {
-        return;
-    }
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    ImFont* font = ImGui::GetFont();
-    const float line = static_cast<float>(title.size) * size.y;
-    const float margin = kTitleMarginShare * size.y;
-    const float outline = std::max(1.0F, line * kOutlineShare * 0.5F);
-    const std::vector<std::string> lines = lines_of(title.text);
-    float width = 0;
-    for (const std::string& text : lines) {
-        width = std::max(width, font->CalcTextSizeA(line, FLT_MAX, 0, text.c_str()).x);
-    }
-    const float height = line * static_cast<float>(lines.size());
-    const bool top = title.position == TitlePosition::TopLeft ||
-                     title.position == TitlePosition::TopCenter ||
-                     title.position == TitlePosition::TopRight;
-    const float y0 = top ? origin.y + margin : origin.y + size.y - margin - height;
-    draw->PushClipRect(origin, {origin.x + size.x, origin.y + size.y}, true);
-    for (std::size_t l = 0; l < lines.size(); ++l) {
-        const float w = font->CalcTextSizeA(line, FLT_MAX, 0, lines[l].c_str()).x;
+    /// Why the last title could not be drawn (e.g. an unreadable font); empty if it could.
+    [[nodiscard]] const std::string& error() const noexcept { return error_; }
+
+  private:
+    struct Image {
+        SDL_Texture* texture = nullptr;
+        int width = 0;
+        int height = 0;
+    };
+
+    void draw_one(ImDrawList& draw, const Title& title, const std::filesystem::path& font,
+                  ImVec2 origin, ImVec2 size) {
+        const int line_height =
+            std::max(1, static_cast<int>(std::lround(title.size * size.y)));
+        const Image* image = image_of(title, font, line_height);
+        if (image == nullptr) {
+            return;
+        }
+        const float margin = std::round(kTitleMarginShare * size.y);
+        const auto width = static_cast<float>(image->width);
+        const auto height = static_cast<float>(image->height);
         float x = origin.x + margin;
         if (title.position == TitlePosition::TopCenter ||
             title.position == TitlePosition::BottomCenter) {
-            x = origin.x + (size.x - w) / 2;
+            x = origin.x + std::floor((size.x - width) / 2);
         } else if (title.position == TitlePosition::TopRight ||
                    title.position == TitlePosition::BottomRight) {
-            x = origin.x + size.x - margin - w;
+            x = origin.x + size.x - margin - width;
         }
-        const ImVec2 at{x, y0 + line * static_cast<float>(l)};
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                if (dx != 0 || dy != 0) {
-                    draw->AddText(font, line,
-                                  {at.x + static_cast<float>(dx) * outline,
-                                   at.y + static_cast<float>(dy) * outline},
-                                  to_imgui(title.outline), lines[l].c_str());
-                }
-            }
-        }
-        draw->AddText(font, line, at, to_imgui(title.color), lines[l].c_str());
+        const bool top = title.position == TitlePosition::TopLeft ||
+                         title.position == TitlePosition::TopCenter ||
+                         title.position == TitlePosition::TopRight;
+        const float y = top ? origin.y + margin : origin.y + size.y - margin - height;
+        draw.AddImage(ImTextureRef(reinterpret_cast<ImTextureID>(image->texture)), {x, y},
+                      {x + width, y + height});
     }
-    draw->PopClipRect();
-}
+
+    const Image* image_of(const Title& title, const std::filesystem::path& font,
+                          int line_height) {
+        const std::string key =
+            std::format("{}|{}|{}|{}|{}|{}|{}", font.string(), title.text, line_height,
+                        highlights::to_hex(title.color), title.outlined,
+                        highlights::to_hex(title.outline), highlights::to_string(title.position));
+        if (const auto found = images_.find(key); found != images_.end()) {
+            return &found->second;
+        }
+        if (images_.size() >= kMaxImages) {
+            clear();
+        }
+        highlights::TitleImage mask;
+        try {
+            mask = fonts_.render(font, title, line_height);
+            error_.clear();
+        } catch (const std::exception& failure) {
+            error_ = failure.what();
+            return nullptr;
+        }
+        Image image{.texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                                 SDL_TEXTUREACCESS_STATIC, mask.width,
+                                                 mask.height),
+                    .width = mask.width,
+                    .height = mask.height};
+        if (image.texture == nullptr) {
+            error_ = SDL_GetError();
+            return nullptr;
+        }
+        SDL_SetTextureBlendMode(image.texture, SDL_BLENDMODE_BLEND);
+        const std::vector<std::uint8_t> pixels = rgba_of(mask, title);
+        SDL_UpdateTexture(image.texture, nullptr, pixels.data(), mask.width * 4);
+        return &images_.emplace(key, image).first->second;
+    }
+
+    /// Letters over their border, with straight (not premultiplied) alpha.
+    static std::vector<std::uint8_t> rgba_of(const highlights::TitleImage& mask,
+                                             const Title& title) {
+        constexpr float kFull = 255.0F;
+        std::vector<std::uint8_t> pixels(mask.text.size() * 4);
+        for (std::size_t i = 0; i < mask.text.size(); ++i) {
+            const float text = mask.text[i] / kFull;
+            const float border = title.outlined ? mask.outline[i] / kFull : 0.0F;
+            const float alpha = text + border * (1 - text);
+            const auto channel = [&](std::uint8_t letter, std::uint8_t edge) {
+                return alpha <= 0 ? std::uint8_t{0}
+                                  : static_cast<std::uint8_t>(std::lround(
+                                        (letter * text + edge * border * (1 - text)) / alpha));
+            };
+            pixels[4 * i] = channel(title.color.r, title.outline.r);
+            pixels[4 * i + 1] = channel(title.color.g, title.outline.g);
+            pixels[4 * i + 2] = channel(title.color.b, title.outline.b);
+            pixels[4 * i + 3] = static_cast<std::uint8_t>(std::lround(alpha * kFull));
+        }
+        return pixels;
+    }
+
+    void clear() {
+        for (auto& [key, image] : images_) {
+            SDL_DestroyTexture(image.texture);
+        }
+        images_.clear();
+    }
+
+    static constexpr std::size_t kMaxImages = 64;
+    SDL_Renderer* renderer_;
+    highlights::TitleFonts& fonts_;
+    std::map<std::string, Image> images_;
+    std::string error_;
+};
+
+/// Draws titles over a picture of the given position and size.
+using Overlay = std::function<void(ImVec2 origin, ImVec2 size)>;
 
 /// A game of the match day and its highlights (nullopt: no rallies yet).
 struct Game {
@@ -171,32 +251,44 @@ class Player {
         request();
     }
 
-    /// Advances the playback and draws the picture with the titles and the controls; with
-    /// `shown` false (another game's video is loaded), only a hint.
-    void draw(const std::vector<Title>& titles, bool shown) {
+    /// Advances the playback and draws the picture with the titles and the controls, and the
+    /// enlarged preview if it is open; with `shown` false (another game's video is loaded),
+    /// only the titles on a dark picture.
+    void draw(const Overlay& overlay, bool shown) {
         collect_opened();
         if (!shown) {
             playing_ = false;
-            ImGui::TextColored(kMuted, "Click a rally's > to watch it.");
-            return;
         }
         advance();
         const float width = ImGui::GetContentRegionAvail().x;
+        draw_picture(overlay, {width, width / aspect()}, shown);
+        draw_controls(shown);
+        if (enlarged_) {
+            draw_enlarged(overlay, shown);
+        }
+    }
+
+    [[nodiscard]] const std::string& video() const noexcept { return video_; }
+
+  private:
+    [[nodiscard]] float aspect() const {
         const auto size = frames_ ? frames_->frame_size() : media::FrameSize{16, 9};
-        const ImVec2 image{width, width * static_cast<float>(size.height) /
-                                      static_cast<float>(std::max(1, size.width))};
+        return static_cast<float>(size.width) / static_cast<float>(std::max(1, size.height));
+    }
+
+    void draw_picture(const Overlay& overlay, ImVec2 image, bool shown) {
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        if (frames_) {
+        if (shown && frames_) {
             if (auto frame = frames_->frame(current_)) {
                 texture_.show(*frame);
             }
-        }
-        if (frames_ && error_.empty()) {
-            if (const auto failed = frames_->error()) {
-                error_ = *failed;
+            if (error_.empty()) {
+                if (const auto failed = frames_->error()) {
+                    error_ = *failed;
+                }
             }
         }
-        if (frames_ && error_.empty() && texture_.texture() != nullptr &&
+        if (shown && frames_ && error_.empty() && texture_.texture() != nullptr &&
             texture_.frame_index() >= 0) {
             ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture_.texture())), image);
             if (ImGui::IsItemClicked()) {
@@ -208,22 +300,41 @@ class Player {
             ImDrawList* draw = ImGui::GetWindowDrawList();
             draw->AddRectFilled(origin, {origin.x + image.x, origin.y + image.y},
                                 IM_COL32(20, 20, 24, 255));
-            const char* text = !error_.empty()     ? error_.c_str()
-                               : opening_.valid()  ? "Opening the video..."
-                               : video_.empty()    ? "Click a rally's > to watch it"
-                                                   : "Loading...";
-            draw->AddText({origin.x + 10, origin.y + 10},
-                          ImGui::GetColorU32(error_.empty() ? kMuted : kError), text);
+            const char* text = !shown                ? "Click a rally's > to watch it"
+                               : !error_.empty()     ? error_.c_str()
+                               : opening_.valid()    ? "Opening the video..."
+                               : video_.empty()      ? "Click a rally's > to watch it"
+                                                     : "Loading...";
+            draw->AddText({origin.x + 10, origin.y + image.y / 2},
+                          ImGui::GetColorU32(error_.empty() || !shown ? kMuted : kError), text);
         }
-        for (const Title& title : titles) {
-            draw_title_preview(title, origin, image);
-        }
-        draw_controls();
+        overlay(origin, image);
     }
 
-    [[nodiscard]] const std::string& video() const noexcept { return video_; }
+    /// The picture as large as the window allows, in a window of its own.
+    void draw_enlarged(const Overlay& overlay, bool shown) {
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowSize(
+            {viewport->WorkSize.x * kEnlargedShare, viewport->WorkSize.y * kEnlargedShare},
+            ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos({viewport->WorkPos.x + viewport->WorkSize.x / 2,
+                                 viewport->WorkPos.y + viewport->WorkSize.y / 2},
+                                ImGuiCond_Appearing, {0.5F, 0.5F});
+        if (ImGui::Begin("Preview##enlarged", &enlarged_, ImGuiWindowFlags_NoCollapse)) {
+            const ImVec2 room = ImGui::GetContentRegionAvail();
+            const float height = std::max(1.0F, room.y - kControlsHeight);
+            ImVec2 image{room.x, room.x / aspect()};
+            if (image.y > height) {
+                image = {height * aspect(), height};
+            }
+            ImGui::PushID("enlarged");
+            draw_picture(overlay, image, shown);
+            draw_controls(shown);
+            ImGui::PopID();
+        }
+        ImGui::End();
+    }
 
-  private:
     void collect_opened() {
         if (!opening_.valid() ||
             opening_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
@@ -281,8 +392,8 @@ class Player {
         request();
     }
 
-    void draw_controls() {
-        const bool ready = frames_ != nullptr;
+    void draw_controls(bool shown) {
+        const bool ready = frames_ != nullptr && shown;
         ImGui::BeginDisabled(!ready);
         if (ImGui::Button(playing_ ? "Pause" : "Play", {70, 0})) {
             toggle();
@@ -295,7 +406,7 @@ class Player {
             request();
         }
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(std::max(80.0F, ImGui::GetContentRegionAvail().x - 90));
+        ImGui::SetNextItemWidth(std::max(80.0F, ImGui::GetContentRegionAvail().x - 190));
         auto frame = static_cast<int>(current_ - first_);
         const int length = static_cast<int>(last_ - first_);
         if (ImGui::SliderInt("##position", &frame, 0, std::max(1, length), "")) {
@@ -307,6 +418,11 @@ class Player {
         ImGui::TextColored(kMuted, "%s",
                            io::format_clock(static_cast<double>(current_) / fps_).c_str());
         ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button(enlarged_ ? "Shrink" : "Enlarge")) {
+            enlarged_ = !enlarged_;
+        }
+        ImGui::SetItemTooltip("The preview in a large window of its own");
     }
 
     highlights::PlaybackSource& source_;
@@ -321,14 +437,15 @@ class Player {
     std::int64_t current_ = 0;
     double clock_ = 0;
     bool playing_ = false;
+    bool enlarged_ = false;
 };
 
 } // namespace
 
 struct HighlightsPanel::Impl {
     Impl(const GuiContext& gui, highlights::MatchDayHighlights& days,
-         highlights::PlaybackSource& playback)
-        : days(days), player(gui, playback) {}
+         highlights::PlaybackSource& playback, highlights::TitleFonts& fonts)
+        : days(days), player(gui, playback), fonts(fonts), overlay(gui.renderer(), fonts) {}
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
     Impl(Impl&&) = delete;
@@ -337,6 +454,14 @@ struct HighlightsPanel::Impl {
 
     highlights::MatchDayHighlights& days;
     Player player;
+    highlights::TitleFonts& fonts;
+    TitleOverlay overlay;
+    std::filesystem::path font; ///< of all titles of the match day; empty: the fallback
+    highlights::FontChoice fallback;
+    std::future<std::vector<highlights::FontChoice>> font_scan;
+    std::optional<std::vector<highlights::FontChoice>> installed;
+    std::optional<std::filesystem::path> hovered_font; ///< previewed while choosing
+    ImGuiTextFilter font_filter;
     std::string day;  ///< match day shown
     std::string selected; ///< key of the selected video
     std::vector<Game> games;
@@ -370,6 +495,7 @@ struct HighlightsPanel::Impl {
         try {
             day_layout = store->match_day_layout();
             match = store->match_title().value_or(highlights::default_match_title(day));
+            font = store->title_font();
         } catch (const std::exception& failure) {
             error = std::format("Match day title: {}", failure.what());
         }
@@ -565,7 +691,7 @@ struct HighlightsPanel::Impl {
 
     /// Size, position and colours of a title; true if one changed.
     static bool draw_layout(const char* label, double& size, TitlePosition& position,
-                            highlights::Rgb& color, highlights::Rgb& outline) {
+                            highlights::Rgb& color, bool& outlined, highlights::Rgb& outline) {
         ImGui::PushID(label);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(label);
@@ -593,7 +719,12 @@ struct HighlightsPanel::Impl {
         ImGui::SameLine();
         changed |= draw_color("Text", color);
         ImGui::SameLine();
-        changed |= draw_color("Outline", outline);
+        changed |= ImGui::Checkbox("Border", &outlined);
+        ImGui::SetItemTooltip("A border around the letters (for busy backgrounds)");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!outlined);
+        changed |= draw_color("##border", outline);
+        ImGui::EndDisabled();
         ImGui::PopID();
         return changed;
     }
@@ -612,6 +743,102 @@ struct HighlightsPanel::Impl {
         return true;
     }
 
+    void start_font_scan() {
+        if (!installed && !font_scan.valid()) {
+            fallback = fonts.fallback();
+            font_scan = std::async(std::launch::async, [&fonts = fonts] {
+                return fonts.installed();
+            });
+        }
+    }
+
+    void collect_font_scan() {
+        if (font_scan.valid() &&
+            font_scan.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                installed = font_scan.get();
+            } catch (const std::exception& failure) {
+                installed.emplace();
+                error = std::format("Looking for fonts: {}", failure.what());
+            }
+        }
+    }
+
+    [[nodiscard]] std::string font_label(const std::filesystem::path& file) const {
+        if (file.empty()) {
+            return std::format("Default ({})", fallback.name.empty() ? "none found"
+                                                                     : fallback.name);
+        }
+        if (installed) {
+            const auto found = std::ranges::find(*installed, file, &highlights::FontChoice::file);
+            if (found != installed->end()) {
+                return found->name;
+            }
+        }
+        return file.filename().string();
+    }
+
+    /// The font of all titles of the match day; the hovered one is shown in the player.
+    void draw_font() {
+        start_font_scan();
+        collect_font_scan();
+        hovered_font.reset();
+        ImGui::SeparatorText("Font");
+        ImGui::SetNextItemWidth(360);
+        if (ImGui::BeginCombo("##font", font_label(font).c_str(),
+                              ImGuiComboFlags_HeightLarge)) {
+            if (!installed) {
+                ImGui::TextColored(kMuted, "Looking for the installed fonts...");
+            } else {
+                font_filter.Draw("Filter", 200);
+                if (ImGui::Selectable(font_label({}).c_str(), font.empty())) {
+                    choose_font({});
+                }
+                if (ImGui::IsItemHovered()) {
+                    hovered_font = std::filesystem::path();
+                }
+                for (const highlights::FontChoice& choice : *installed) {
+                    if (!font_filter.PassFilter(choice.name.c_str())) {
+                        continue;
+                    }
+                    ImGui::PushID(choice.file.string().c_str());
+                    if (ImGui::Selectable(choice.name.c_str(), choice.file == font)) {
+                        choose_font(choice.file);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        hovered_font = choice.file;
+                    }
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(kMuted, "all titles of the match day");
+        ImGui::SetItemTooltip("Point at a font in the list to see it in the player; "
+                              "\"Enlarge\" shows the player large");
+        if (!overlay.error().empty()) {
+            ImGui::TextColored(kError, "%s", overlay.error().c_str());
+        }
+    }
+
+    void choose_font(const std::filesystem::path& file) {
+        font = file;
+        try {
+            store->save_title_font(font);
+        } catch (const std::exception& failure) {
+            error = std::format("Saving the font: {}", failure.what());
+        }
+    }
+
+    /// The titles over the player's picture, in the hovered or the chosen font.
+    [[nodiscard]] Overlay overlay_for(const GameHighlights& game) {
+        return [this, titles = previewed(game),
+                shown_font = hovered_font.value_or(font)](ImVec2 origin, ImVec2 size) {
+            overlay.draw(titles, shown_font, origin, size);
+        };
+    }
+
     void draw_match() {
         ImGui::PushID("match");
         ImGui::SeparatorText("Match");
@@ -625,7 +852,8 @@ struct HighlightsPanel::Impl {
         }
         ImGui::SetItemTooltip("e.g. 2026-11-14-TeamA-TeamB becomes \"TeamA - TeamB\"");
         pending_match |=
-            draw_layout("Layout", match.size, match.position, match.color, match.outline);
+            draw_layout("Layout", match.size, match.position, match.color, match.outlined,
+                        match.outline);
         pending_match |= input_multiline("##text", match.text,
                                          {-FLT_MIN, ImGui::GetTextLineHeight() * 2.5F});
         ImGui::SetItemTooltip("Several lines are possible (Enter), e.g. the final score");
@@ -652,10 +880,10 @@ struct HighlightsPanel::Impl {
         ImGui::RadioButton("game video", &preview, kPreviewGame);
         ImGui::SameLine();
         ImGui::RadioButton("match day video", &preview, kPreviewMatchDay);
-        changed |=
-            draw_layout("Game video", title.size, title.position, title.color, title.outline);
+        changed |= draw_layout("Game video", title.size, title.position, title.color,
+                               title.outlined, title.outline);
         pending_layout |= draw_layout("Match day video", day_layout.size, day_layout.position,
-                                      day_layout.color, day_layout.outline);
+                                      day_layout.color, day_layout.outlined, day_layout.outline);
         ImGui::SameLine();
         ImGui::TextColored(kMuted, "(the same for every game)");
         changed |= input_multiline("##text", title.text,
@@ -709,8 +937,9 @@ struct HighlightsPanel::Impl {
 };
 
 HighlightsPanel::HighlightsPanel(const GuiContext& gui, highlights::MatchDayHighlights& days,
-                                 highlights::PlaybackSource& playback)
-    : impl_(std::make_unique<Impl>(gui, days, playback)) {}
+                                 highlights::PlaybackSource& playback,
+                                 highlights::TitleFonts& fonts)
+    : impl_(std::make_unique<Impl>(gui, days, playback, fonts)) {}
 
 HighlightsPanel::~HighlightsPanel() = default;
 
@@ -749,10 +978,11 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         ImGui::TableNextColumn();
         self.draw_rallies(*game, margins);
         ImGui::TableNextColumn();
-        self.player.draw(self.previewed(*game->highlights),
+        self.player.draw(self.overlay_for(*game->highlights),
                          self.player.video() == game->video.original);
         ImGui::EndTable();
     }
+    self.draw_font();
     self.draw_match();
     self.draw_title(*game->highlights);
     self.save_pending(false);

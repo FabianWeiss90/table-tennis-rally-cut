@@ -22,11 +22,19 @@ constexpr double kMinBitrateMbps = 1.0;
 constexpr double kMaxBitrateMbps = 200.0;
 constexpr double kMaxCrossfadeS = 5.0;
 
-/// "<match day>-highlights.mp4" next to the highlights (<match day>/ttrally-data/highlights).
+/// Name of the match day folder of the highlights (<match day>/ttrally-data/highlights).
+std::string match_day_name(const std::filesystem::path& highlights_dir) {
+    return std::filesystem::absolute(highlights_dir)
+        .lexically_normal()
+        .parent_path()
+        .parent_path()
+        .filename()
+        .string();
+}
+
+/// "<match day>-highlights.mp4" next to the highlights.
 std::filesystem::path match_day_video(const std::filesystem::path& highlights_dir) {
-    const std::filesystem::path day =
-        std::filesystem::absolute(highlights_dir).lexically_normal().parent_path().parent_path();
-    const std::string name = day.filename().string();
+    const std::string name = match_day_name(highlights_dir);
     return highlights_dir / ((name.empty() ? std::string("match-day") : name) + "-highlights.mp4");
 }
 
@@ -109,6 +117,7 @@ int HighlightsCommand::run() {
     const auto result = make.execute(
         {.video_id = match_day_ ? std::nullopt : std::optional<std::string>(video_id_),
          .output = out_,
+         .match_day_name = match_day_name(highlights_dir_),
          .margins = {before_s_, after_s_},
          .rally_titles = rally_titles_,
          .render = {.crossfade_s = crossfade_s_,

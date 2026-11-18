@@ -21,10 +21,16 @@ constexpr double kOutlineShare = 0.07; ///< outline width per line height
 constexpr double kMarginShare = 0.03;  ///< distance to the picture's edges per picture height
 constexpr int kOpaque = 255;
 constexpr int kChromaNeutral = 128;
-constexpr int kFullWhite = 255;
-constexpr int kFullBlack = 0;
-constexpr int kLimitedWhite = 235;
+// BT.709 luma weights and chroma scales
+constexpr double kRedWeight = 0.2126;
+constexpr double kGreenWeight = 0.7152;
+constexpr double kBlueWeight = 0.0722;
+constexpr double kBlueScale = 1.8556;
+constexpr double kRedScale = 1.5748;
+constexpr double kFullScale = 255.0;
 constexpr int kLimitedBlack = 16;
+constexpr double kLimitedLumaRange = 219.0;
+constexpr double kLimitedChromaRange = 224.0;
 
 /// Code points of UTF-8 text; invalid bytes become U+FFFD.
 std::vector<char32_t> decode_utf8(std::string_view text) {
@@ -254,7 +260,26 @@ TextAlign align_for(TitlePosition position) noexcept {
     }
 }
 
-void paint_title(const YuvPlanes& picture, const TitleMask& mask, TitlePosition position) {
+Yuv to_yuv(Rgb color, bool full_range) noexcept {
+    const double r = color.r / kFullScale;
+    const double g = color.g / kFullScale;
+    const double b = color.b / kFullScale;
+    const double luma = kRedWeight * r + kGreenWeight * g + kBlueWeight * b;
+    const double u = (b - luma) / kBlueScale; // -0.5 .. 0.5
+    const double v = (r - luma) / kRedScale;
+    const double luma_range = full_range ? kFullScale : kLimitedLumaRange;
+    const double chroma_range = full_range ? kFullScale : kLimitedChromaRange;
+    const int black = full_range ? 0 : kLimitedBlack;
+    const auto channel = [](double value) {
+        return std::clamp(static_cast<int>(std::lround(value)), 0, kOpaque);
+    };
+    return {.y = channel(black + luma * luma_range),
+            .u = channel(kChromaNeutral + u * chroma_range),
+            .v = channel(kChromaNeutral + v * chroma_range)};
+}
+
+void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& title) {
+    const TitlePosition position = title.position;
     const int margin = static_cast<int>(std::lround(picture.height * kMarginShare));
     const TextAlign align = align_for(position);
     const int left = align == TextAlign::Left     ? margin
@@ -263,8 +288,8 @@ void paint_title(const YuvPlanes& picture, const TitleMask& mask, TitlePosition 
     const bool top = position == TitlePosition::TopLeft || position == TitlePosition::TopCenter ||
                      position == TitlePosition::TopRight;
     const int top_row = top ? margin : picture.height - margin - mask.height;
-    const int white = picture.full_range ? kFullWhite : kLimitedWhite;
-    const int black = picture.full_range ? kFullBlack : kLimitedBlack;
+    const Yuv fill = to_yuv(title.color, picture.full_range);
+    const Yuv edge = to_yuv(title.outline, picture.full_range);
 
     auto coverage = [&](const std::vector<std::uint8_t>& plane, int x, int y) -> int {
         const int mx = x - left;
@@ -283,23 +308,26 @@ void paint_title(const YuvPlanes& picture, const TitleMask& mask, TitlePosition 
         for (int x = x_begin; x < x_end; ++x) {
             const int dark = coverage(mask.outline, x, y);
             const int light = coverage(mask.text, x, y);
-            row[x] = mix(mix(row[x], black, dark), white, light);
+            row[x] = mix(mix(row[x], edge.y, dark), fill.y, light);
         }
     }
-    // Chroma: towards grey wherever the title (letters or outline) covers the 2x2 block
+    // Chroma: towards the outline's colour where the outline covers the 2x2 block, then towards
+    // the letters' colour where they do
     for (int cy = y_begin / 2; cy < (y_end + 1) / 2; ++cy) {
         std::uint8_t* u_row = picture.u + static_cast<std::ptrdiff_t>(cy) * picture.uv_stride;
         std::uint8_t* v_row = picture.v + static_cast<std::ptrdiff_t>(cy) * picture.uv_stride;
         for (int cx = x_begin / 2; cx < (x_end + 1) / 2; ++cx) {
-            int sum = 0;
+            int dark = 0;
+            int light = 0;
             for (int dy = 0; dy < 2; ++dy) {
                 for (int dx = 0; dx < 2; ++dx) {
-                    sum += coverage(mask.outline, 2 * cx + dx, 2 * cy + dy);
+                    dark += coverage(mask.outline, 2 * cx + dx, 2 * cy + dy);
+                    light += coverage(mask.text, 2 * cx + dx, 2 * cy + dy);
                 }
             }
-            const int alpha = sum / 4;
-            u_row[cx] = mix(u_row[cx], kChromaNeutral, alpha);
-            v_row[cx] = mix(v_row[cx], kChromaNeutral, alpha);
+            constexpr int kBlock = 4;
+            u_row[cx] = mix(mix(u_row[cx], edge.u, dark / kBlock), fill.u, light / kBlock);
+            v_row[cx] = mix(mix(v_row[cx], edge.v, dark / kBlock), fill.v, light / kBlock);
         }
     }
 }

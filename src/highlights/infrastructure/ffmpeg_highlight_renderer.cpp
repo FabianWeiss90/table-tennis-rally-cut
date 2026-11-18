@@ -19,6 +19,8 @@ extern "C" {
 #include <stdexcept>
 #include <system_error>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 namespace ttrally::highlights {
 
@@ -502,9 +504,12 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
         const bool last_clip = i + 1 == clips.size();
         progress.report(std::format("  clip {} of {}: {} {:.1f}-{:.1f} s", i + 1, clips.size(),
                                     clip.video.filename().string(), clip.start_s, clip.end_s));
-        const TitleMask* mask = clip.title && clip.title->visible()
-                                    ? &titles.mask(*clip.title, format.height)
-                                    : nullptr;
+        std::vector<std::pair<const TitleMask*, const Title*>> painted;
+        for (const Title& title : clip.titles) {
+            if (title.visible()) {
+                painted.emplace_back(&titles.mask(title, format.height), &title);
+            }
+        }
         const std::int64_t first_sample = sample_at_frame(t.first, format.frame_rate);
         const std::int64_t end_sample = sample_at_frame(t.end(), format.frame_rate);
         AudioPlanes sound;
@@ -513,12 +518,12 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
         }
         ClipReader reader(clip, format, t.frames);
         const ClipReader::PictureConsumer consume = [&](std::int64_t j, AVFrame& picture) {
-            if (mask != nullptr) {
+            for (const auto& [mask, title] : painted) {
                 paint_title({.y = picture.data[0], .u = picture.data[1], .v = picture.data[2],
                              .y_stride = picture.linesize[0], .uv_stride = picture.linesize[1],
                              .width = picture.width, .height = picture.height,
                              .full_range = format.full_range},
-                            *mask, clip.title->position);
+                            *mask, *title);
             }
             writer.add_picture(t, j, picture, last_clip);
         };

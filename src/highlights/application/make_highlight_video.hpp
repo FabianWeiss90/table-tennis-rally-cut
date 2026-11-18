@@ -18,6 +18,8 @@ struct MakeHighlightsRequest {
     /// the order of their video ids.
     std::optional<std::string> video_id;
     std::filesystem::path output;
+    /// Name of the match day folder, for the match title if none was saved.
+    std::string match_day_name;
     cutting::Margins margins;
     /// Match day video: each clip shows the title of its game (a game video always shows it).
     bool rally_titles = false;
@@ -34,8 +36,8 @@ struct MakeHighlightsResult {
 
 /// Use case behind `ttrally highlights`: the marked rallies of one game (game highlights) or of
 /// all games of a match day (match day highlights), each with the margins, as one video with
-/// cross-fades and titles. In the match day video every title has the match day's size and
-/// position.
+/// cross-fades and titles: the match over every clip, and the players (always in a game video,
+/// on request in the match day video, there with the match day's size, position and colours).
 class MakeHighlightVideo {
   public:
     MakeHighlightVideo(media::MediaProbe& probe, media::MediaReader& reader, HighlightStore& store,
@@ -46,9 +48,11 @@ class MakeHighlightVideo {
     [[nodiscard]] MakeHighlightsResult execute(const MakeHighlightsRequest& request);
 
   private:
-    /// Clips of a game's marked rallies; `match_day`: the match day video's title layout.
+    /// Clips of a game's marked rallies; `match_day`: the match day video's title layout;
+    /// `match`: the match title.
     [[nodiscard]] std::vector<Clip> clips_of(const StoredHighlights& game,
                                              const std::optional<TitleLayout>& match_day,
+                                             const Title& match,
                                              const MakeHighlightsRequest& request,
                                              std::size_t& rallies);
 

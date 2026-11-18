@@ -23,6 +23,8 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
         match_day ? store_.games() : std::vector<std::string>{*request.video_id};
     const std::optional<TitleLayout> layout =
         match_day ? std::optional(store_.match_day_layout()) : std::nullopt;
+    const Title match =
+        store_.match_title().value_or(default_match_title(request.match_day_name));
     MakeHighlightsResult result;
     std::vector<Clip> clips;
     for (const std::string& id : ids) {
@@ -31,7 +33,7 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
             throw std::invalid_argument("no highlights are marked for " + id);
         }
         std::size_t rallies = 0;
-        std::vector<Clip> game_clips = clips_of(*game, layout, request, rallies);
+        std::vector<Clip> game_clips = clips_of(*game, layout, match, request, rallies);
         if (game_clips.empty()) {
             continue;
         }
@@ -53,6 +55,7 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
 
 std::vector<Clip> MakeHighlightVideo::clips_of(const StoredHighlights& game,
                                                const std::optional<TitleLayout>& match_day,
+                                               const Title& match,
                                                const MakeHighlightsRequest& request,
                                                std::size_t& rallies) {
     std::vector<cutting::FrameSpan> marked;
@@ -75,15 +78,20 @@ std::vector<Clip> MakeHighlightVideo::clips_of(const StoredHighlights& game,
                    {.audio_sample_rate = std::nullopt, .video_stream_index = info.video->index})
              .video_timestamps;
     const FrameTimeline timeline = timestamps.timeline(info.video->nominal_frame_rate());
-    const bool titled = game.title.visible() && (!match_day || request.rally_titles);
-    const Title title = match_day ? match_day->applied_to(game.title) : game.title;
+    std::vector<Title> titles;
+    if (match.visible()) {
+        titles.push_back(match);
+    }
+    if (game.title.visible() && (!match_day || request.rally_titles)) {
+        titles.push_back(match_day ? match_day->applied_to(game.title) : game.title);
+    }
     std::vector<Clip> clips;
     for (const cutting::CutSection& section :
          cutting::plan_sections(marked, request.margins, timeline, timestamps.frame_count())) {
         clips.push_back({.video = game.video,
                          .start_s = section.start_s,
                          .end_s = section.end_s,
-                         .title = titled ? std::optional<Title>(title) : std::nullopt});
+                         .titles = titles});
     }
     return clips;
 }

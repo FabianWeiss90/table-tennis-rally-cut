@@ -73,6 +73,8 @@ class MemoryHighlights final : public highlights::MatchDayHighlights {
         }
         highlights::TitleLayout match_day_layout() override { return {}; }
         void save_match_day_layout(const highlights::TitleLayout&) override {}
+        std::optional<highlights::Title> match_title() override { return std::nullopt; }
+        void save_match_title(const highlights::Title&) override {}
         std::optional<highlights::StoredHighlights> saved;
     };
     class Rallies final : public highlights::RallySource {

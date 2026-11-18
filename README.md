@@ -746,10 +746,15 @@ launcher's **Highlights** tab, for the game of the selected video:
   first), a second click reverses the order; the number stays the rally's number in the game.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to
   the list, with the title as it will appear.
-- **Title:** the players from the file name (`Weiss-Ohrstedt.MP4` → "Weiss - Ohrstedt"; nothing
+- **Match:** a second title over every clip of the game videos and the match day video, the
+  same for all games of the match day: the teams from the folder name
+  (`2026-11-14-WolmirstedtII-Bismark` → "WolmirstedtII - Bismark"; "From the folder name" fills
+  it in again), editable and with several lines (e.g. the final score), by default top centre.
+- **Players:** the players from the file name (`Weiss-Ohrstedt.MP4` → "Weiss - Ohrstedt"; nothing
   for camera names such as `2X6A4730.MP4`), editable and with several lines, "Swap players".
-  Size and position (top or bottom; left, centre or right; by default bottom centre) are set per
-  game for its game video,
+  Size, position (top or bottom; left, centre or right; by default bottom centre), the colour
+  of the letters and of their outline (white and black by default; the same for the match) are
+  set per game for its game video,
   and once for the match day video, where every game's title looks the same. The game video
   shows the title all the time; the match day video only with "Players on each rally", then
   each clip shows its game's title. "Preview as" shows either layout in the player.
@@ -758,7 +763,8 @@ launcher's **Highlights** tab, for the game of the selected video:
 
 Every change is saved at once in `<match day>/ttrally-data/highlights/` (`<video id>.csv`
 with the marks, `<video id>.settings.csv` with the original, the coupling and the title,
-`match-day-title.csv` with the size and position of the titles in the match day video); the
+`match-day-title.csv` with the look of the players' titles in the match day video and the
+match title); the
 videos are written there too.
 
 ```sh

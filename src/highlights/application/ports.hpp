@@ -35,6 +35,10 @@ class HighlightStore {
     /// game's own ones apply to its game video); the defaults if none were saved.
     [[nodiscard]] virtual TitleLayout match_day_layout() = 0;
     virtual void save_match_day_layout(const TitleLayout& layout) = 0;
+    /// The match (e.g. "Team A - Team B"), shown in every highlight video of the match day;
+    /// nullopt if none was saved (then default_match_title() of the folder applies).
+    [[nodiscard]] virtual std::optional<Title> match_title() = 0;
+    virtual void save_match_title(const Title& title) = 0;
 };
 
 /// The rallies a game's highlights are chosen from.
@@ -58,7 +62,7 @@ struct Clip {
     std::filesystem::path video;
     double start_s = 0.0;
     double end_s = 0.0;
-    std::optional<Title> title; ///< drawn over the whole clip if set and visible
+    std::vector<Title> titles; ///< drawn over the whole clip (those visible), in this order
 };
 
 struct RenderOptions {

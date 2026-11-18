@@ -8,6 +8,7 @@
 #include "shared/io/formatting.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -85,8 +86,10 @@ std::vector<std::string> lines_of(const std::string& text) {
     return lines;
 }
 
-/// The title over the shown picture, placed and sized as the highlight video will show it (the
-/// launcher's font, so the letters differ slightly).
+ImU32 to_imgui(highlights::Rgb color) { return IM_COL32(color.r, color.g, color.b, 255); }
+
+/// The title over the shown picture, placed, sized and coloured as the highlight video will show
+/// it (the launcher's font, so the letters differ slightly).
 void draw_title_preview(const Title& title, ImVec2 origin, ImVec2 size) {
     if (!title.visible()) {
         return;
@@ -124,11 +127,11 @@ void draw_title_preview(const Title& title, ImVec2 origin, ImVec2 size) {
                     draw->AddText(font, line,
                                   {at.x + static_cast<float>(dx) * outline,
                                    at.y + static_cast<float>(dy) * outline},
-                                  IM_COL32(0, 0, 0, 255), lines[l].c_str());
+                                  to_imgui(title.outline), lines[l].c_str());
                 }
             }
         }
-        draw->AddText(font, line, at, IM_COL32(255, 255, 255, 255), lines[l].c_str());
+        draw->AddText(font, line, at, to_imgui(title.color), lines[l].c_str());
     }
     draw->PopClipRect();
 }
@@ -168,9 +171,9 @@ class Player {
         request();
     }
 
-    /// Advances the playback and draws the picture with the title and the controls; with
+    /// Advances the playback and draws the picture with the titles and the controls; with
     /// `shown` false (another game's video is loaded), only a hint.
-    void draw(const Title& title, bool shown) {
+    void draw(const std::vector<Title>& titles, bool shown) {
         collect_opened();
         if (!shown) {
             playing_ = false;
@@ -212,7 +215,9 @@ class Player {
             draw->AddText({origin.x + 10, origin.y + 10},
                           ImGui::GetColorU32(error_.empty() ? kMuted : kError), text);
         }
-        draw_title_preview(title, origin, image);
+        for (const Title& title : titles) {
+            draw_title_preview(title, origin, image);
+        }
         draw_controls();
     }
 
@@ -324,6 +329,11 @@ struct HighlightsPanel::Impl {
     Impl(const GuiContext& gui, highlights::MatchDayHighlights& days,
          highlights::PlaybackSource& playback)
         : days(days), player(gui, playback) {}
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(Impl&&) = delete;
+    ~Impl() { save_pending(true); }
 
     highlights::MatchDayHighlights& days;
     Player player;
@@ -333,7 +343,12 @@ struct HighlightsPanel::Impl {
     std::unique_ptr<highlights::HighlightStore> store;
     std::unique_ptr<highlights::RallySource> rallies;
     int preselect = kDefaultPreselect;
-    highlights::TitleLayout day_layout; ///< of the titles in the match day video
+    highlights::TitleLayout day_layout; ///< of the players' titles in the match day video
+    Title match;                        ///< the match, over every clip
+    // Changes saved once no control is in use any more (a colour picker changes all the time)
+    std::string pending_game; ///< video id of a game whose title changed
+    bool pending_layout = false;
+    bool pending_match = false;
     int preview = kPreviewGame;
     std::optional<std::size_t> playing; ///< rally played, in the selected game
     std::string error;
@@ -345,6 +360,7 @@ struct HighlightsPanel::Impl {
     }
 
     void load(const launcher::WorkspaceSnapshot& workspace, const launcher::VideoEntry& video) {
+        save_pending(true);
         day = video.match_day;
         games.clear();
         playing.reset();
@@ -353,6 +369,7 @@ struct HighlightsPanel::Impl {
         rallies = days.rallies(video.work_dir);
         try {
             day_layout = store->match_day_layout();
+            match = store->match_title().value_or(highlights::default_match_title(day));
         } catch (const std::exception& failure) {
             error = std::format("Match day title: {}", failure.what());
         }
@@ -546,19 +563,21 @@ struct HighlightsPanel::Impl {
         ImGui::EndTable();
     }
 
-    /// Size and position; true when a change is to be saved (the size when released).
-    static bool draw_layout(const char* label, double& size, TitlePosition& position) {
+    /// Size, position and colours of a title; true if one changed.
+    static bool draw_layout(const char* label, double& size, TitlePosition& position,
+                            highlights::Rgb& color, highlights::Rgb& outline) {
         ImGui::PushID(label);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(label);
         ImGui::SameLine(kLayoutLabelWidth);
         ImGui::SetNextItemWidth(140);
         auto percent = static_cast<float>(size * 100);
+        bool changed = false;
         if (ImGui::SliderFloat("Size", &percent, static_cast<float>(Title::kMinSize * 100),
                                static_cast<float>(Title::kMaxSize * 100), "%.1f %%")) {
             size = percent / 100.0;
+            changed = true;
         }
-        bool save = ImGui::IsItemDeactivatedAfterEdit();
         ImGui::SetItemTooltip("Height of a line, as share of the picture height");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140);
@@ -566,27 +585,65 @@ struct HighlightsPanel::Impl {
             for (const TitlePosition choice : highlights::kTitlePositions) {
                 if (ImGui::Selectable(position_label(choice), choice == position)) {
                     position = choice;
-                    save = true;
+                    changed = true;
                 }
             }
             ImGui::EndCombo();
         }
+        ImGui::SameLine();
+        changed |= draw_color("Text", color);
+        ImGui::SameLine();
+        changed |= draw_color("Outline", outline);
         ImGui::PopID();
-        return save;
+        return changed;
+    }
+
+    /// A colour swatch that opens a picker; true if the colour changed.
+    static bool draw_color(const char* label, highlights::Rgb& color) {
+        constexpr float kScale = 255.0F;
+        std::array<float, 3> rgb{color.r / kScale, color.g / kScale, color.b / kScale};
+        if (!ImGui::ColorEdit3(label, rgb.data(), ImGuiColorEditFlags_NoInputs)) {
+            return false;
+        }
+        const auto channel = [](float value) {
+            return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0F, 1.0F) * kScale));
+        };
+        color = {channel(rgb[0]), channel(rgb[1]), channel(rgb[2])};
+        return true;
+    }
+
+    void draw_match() {
+        ImGui::PushID("match");
+        ImGui::SeparatorText("Match");
+        pending_match |= ImGui::Checkbox("Show", &match.shown);
+        ImGui::SetItemTooltip("Shown over every clip of the game videos and of the match day "
+                              "video (the same for all games of the match day)");
+        ImGui::SameLine();
+        if (ImGui::Button("From the folder name")) {
+            match.text = highlights::match_from_folder_name(day);
+            pending_match = true;
+        }
+        ImGui::SetItemTooltip("e.g. 2026-11-14-TeamA-TeamB becomes \"TeamA - TeamB\"");
+        pending_match |=
+            draw_layout("Layout", match.size, match.position, match.color, match.outline);
+        pending_match |= input_multiline("##text", match.text,
+                                         {-FLT_MIN, ImGui::GetTextLineHeight() * 2.5F});
+        ImGui::SetItemTooltip("Several lines are possible (Enter), e.g. the final score");
+        ImGui::PopID();
     }
 
     void draw_title(GameHighlights& game) {
         Title& title = game.title;
-        ImGui::SeparatorText("Title");
-        if (ImGui::Checkbox("Show", &title.shown)) {
-            save(game);
-        }
+        bool changed = false;
+        ImGui::PushID("players");
+        ImGui::SeparatorText("Players");
+        changed |= ImGui::Checkbox("Show", &title.shown);
         ImGui::SetItemTooltip("Shown over the whole game video; in the match day video if "
                               "\"Players on each rally\" is ticked");
         ImGui::SameLine();
         if (ImGui::Button("Swap players")) {
             title.text = highlights::swap_players(title.text);
-            save(game);
+            changed = true;
         }
         ImGui::SetItemTooltip("\"A - B\" in the first line becomes \"B - A\"");
         ImGui::SameLine();
@@ -595,32 +652,59 @@ struct HighlightsPanel::Impl {
         ImGui::RadioButton("game video", &preview, kPreviewGame);
         ImGui::SameLine();
         ImGui::RadioButton("match day video", &preview, kPreviewMatchDay);
-        if (draw_layout("Game video", title.size, title.position)) {
-            save(game);
-        }
-        if (draw_layout("Match day video", day_layout.size, day_layout.position)) {
-            save_day_layout();
-        }
+        changed |=
+            draw_layout("Game video", title.size, title.position, title.color, title.outline);
+        pending_layout |= draw_layout("Match day video", day_layout.size, day_layout.position,
+                                      day_layout.color, day_layout.outline);
         ImGui::SameLine();
         ImGui::TextColored(kMuted, "(the same for every game)");
-        input_multiline("##text", title.text, {-FLT_MIN, ImGui::GetTextLineHeight() * 3.5F});
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            save(game);
-        }
+        changed |= input_multiline("##text", title.text,
+                                   {-FLT_MIN, ImGui::GetTextLineHeight() * 3.5F});
         ImGui::SetItemTooltip("Several lines are possible (Enter)");
-    }
-
-    void save_day_layout() {
-        try {
-            store->save_match_day_layout(day_layout);
-        } catch (const std::exception& failure) {
-            error = std::format("Saving the match day title: {}", failure.what());
+        ImGui::PopID();
+        if (changed) {
+            pending_game = game.video_id;
         }
     }
 
-    /// The title as the player shows it: in the game's or the match day's layout.
-    [[nodiscard]] Title previewed(const GameHighlights& game) const {
-        return preview == kPreviewMatchDay ? day_layout.applied_to(game.title) : game.title;
+    /// Saves what changed, once no control is in use (or at once with `now`).
+    void save_pending(bool now) {
+        if (!now && (ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
+                     ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup))) {
+            return;
+        }
+        if (!pending_game.empty()) {
+            const auto game = std::ranges::find_if(games, [&](const Game& g) {
+                return g.highlights && g.highlights->video_id == pending_game;
+            });
+            if (game != games.end()) {
+                save(*game->highlights);
+            }
+            pending_game.clear();
+        }
+        if (pending_layout && store) {
+            try {
+                store->save_match_day_layout(day_layout);
+            } catch (const std::exception& failure) {
+                error = std::format("Saving the match day title: {}", failure.what());
+            }
+        }
+        if (pending_match && store) {
+            try {
+                store->save_match_title(match);
+            } catch (const std::exception& failure) {
+                error = std::format("Saving the match: {}", failure.what());
+            }
+        }
+        pending_layout = false;
+        pending_match = false;
+    }
+
+    /// The titles as the player shows them: the match, and the players in the game's or the
+    /// match day's layout.
+    [[nodiscard]] std::vector<Title> previewed(const GameHighlights& game) const {
+        return {match,
+                preview == kPreviewMatchDay ? day_layout.applied_to(game.title) : game.title};
     }
 };
 
@@ -669,7 +753,9 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
                          self.player.video() == game->video.original);
         ImGui::EndTable();
     }
+    self.draw_match();
     self.draw_title(*game->highlights);
+    self.save_pending(false);
 }
 
 HighlightCounts HighlightsPanel::counts() const {

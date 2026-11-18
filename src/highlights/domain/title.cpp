@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <format>
 #include <vector>
 
 namespace ttrally::highlights {
@@ -100,6 +102,55 @@ bool Title::visible() const noexcept {
 Title TitleLayout::applied_to(Title title) const {
     title.size = size;
     title.position = position;
+    title.color = color;
+    title.outline = outline;
+    return title;
+}
+
+std::string to_hex(Rgb color) {
+    return std::format("#{:02x}{:02x}{:02x}", color.r, color.g, color.b);
+}
+
+std::optional<Rgb> parse_hex(std::string_view text) noexcept {
+    if (text.starts_with('#')) {
+        text.remove_prefix(1);
+    }
+    constexpr std::size_t kDigits = 6;
+    if (text.size() != kDigits) {
+        return std::nullopt;
+    }
+    std::array<std::uint8_t, 3> channels{};
+    for (std::size_t c = 0; c < channels.size(); ++c) {
+        const std::string_view digits = text.substr(2 * c, 2);
+        constexpr int kHex = 16;
+        const auto [end, error] =
+            std::from_chars(digits.data(), digits.data() + digits.size(), channels[c], kHex);
+        if (error != std::errc() || end != digits.data() + digits.size()) {
+            return std::nullopt;
+        }
+    }
+    return Rgb{channels[0], channels[1], channels[2]};
+}
+
+std::string match_from_folder_name(std::string_view folder) {
+    std::vector<std::string> parts = split(folder, '-');
+    const auto is_number = [](const std::string& part) {
+        return std::ranges::all_of(part, [](char c) {
+            return std::isdigit(static_cast<unsigned char>(c)) != 0;
+        });
+    };
+    const auto teams = std::ranges::find_if_not(parts, is_number);
+    std::string rest;
+    for (auto it = teams; it != parts.end(); ++it) {
+        rest += (rest.empty() ? "" : "-") + *it;
+    }
+    return title_from_file_name(rest);
+}
+
+Title default_match_title(std::string_view folder) {
+    Title title;
+    title.text = match_from_folder_name(folder);
+    title.position = TitlePosition::TopCenter;
     return title;
 }
 

@@ -59,8 +59,17 @@ struct YuvPlanes {
     bool full_range = false; ///< 0-255 instead of 16-235
 };
 
-/// Paints a title in white with a black outline at its position, a small margin away from the
-/// picture's edges.
-void paint_title(const YuvPlanes& picture, const TitleMask& mask, TitlePosition position);
+/// A colour in the picture's YUV values (BT.709).
+struct Yuv {
+    int y = 0;
+    int u = 0;
+    int v = 0;
+};
+
+[[nodiscard]] Yuv to_yuv(Rgb color, bool full_range) noexcept;
+
+/// Paints a title (the mask of its text) in its colour with its outline colour at its position,
+/// a small margin away from the picture's edges.
+void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& title);
 
 } // namespace ttrally::highlights

@@ -43,8 +43,11 @@ class MemoryStore final : public HighlightStore {
     }
     TitleLayout match_day_layout() override { return layout; }
     void save_match_day_layout(const TitleLayout& changed) override { layout = changed; }
+    std::optional<Title> match_title() override { return match; }
+    void save_match_title(const Title& changed) override { match = changed; }
     std::map<std::string, StoredHighlights> saved;
     TitleLayout layout;
+    std::optional<Title> match;
 };
 
 class MemoryRallies final : public RallySource {
@@ -81,6 +84,7 @@ MakeHighlightsRequest request(std::optional<std::string> video_id, cutting::Marg
                               bool rally_titles = false) {
     return {.video_id = std::move(video_id),
             .output = "out.mp4",
+            .match_day_name = "",
             .margins = margins,
             .rally_titles = rally_titles,
             .render = {}};
@@ -172,6 +176,24 @@ TEST_CASE("swapping the players of a title") {
     CHECK(swap_players("Finale") == "Finale");
 }
 
+TEST_CASE("the match from the match day folder") {
+    CHECK(match_from_folder_name("2026-11-14-WolmirstedtII-Bismark") == "WolmirstedtII - Bismark");
+    CHECK(match_from_folder_name("2026-10-31-bismark-groeningen") == "Bismark - Groeningen");
+    CHECK(match_from_folder_name("Bismark-Groeningen") == "Bismark - Groeningen");
+    CHECK(match_from_folder_name("2026-10-03-Club").empty());
+    const Title title = default_match_title("2026-11-14-A-B");
+    CHECK(title.text == "A - B");
+    CHECK(title.position == TitlePosition::TopCenter);
+}
+
+TEST_CASE("title colours as hex") {
+    CHECK(to_hex({255, 128, 0}) == "#ff8000");
+    CHECK(parse_hex("#ff8000") == Rgb{255, 128, 0});
+    CHECK(parse_hex("00FF7f") == Rgb{0, 255, 127});
+    CHECK_FALSE(parse_hex("#ff80"));
+    CHECK_FALSE(parse_hex("#gg0000"));
+}
+
 TEST_CASE("title positions have stable names") {
     for (const TitlePosition position : kTitlePositions) {
         CHECK(parse_title_position(to_string(position)) == position);
@@ -246,8 +268,8 @@ TEST_CASE("MakeHighlightVideo builds the clips of the marked rallies") {
         CHECK(renderer.clips[0].end_s == Approx(6.0));
         CHECK(renderer.clips[1].start_s == Approx(9.0));
         CHECK(renderer.clips[1].end_s == Approx(12.0));
-        REQUIRE(renderer.clips[0].title);
-        CHECK(renderer.clips[0].title->text == "A vs B");
+        REQUIRE(renderer.clips[0].titles.size() == 1);
+        CHECK(renderer.clips[0].titles[0].text == "A vs B");
     }
     SECTION("the match day: the match day highlights of every game") {
         const auto result = make.execute(request(std::nullopt, margins));
@@ -255,24 +277,56 @@ TEST_CASE("MakeHighlightVideo builds the clips of the marked rallies") {
         REQUIRE(renderer.clips.size() == 2);
         CHECK(renderer.clips[0].video == "a.mp4");
         CHECK(renderer.clips[1].video == "b.mp4");
-        CHECK_FALSE(renderer.clips[0].title); // titles only on request
+        CHECK(renderer.clips[0].titles.empty()); // players only on request
     }
     SECTION("the match day with each game's title over its clips, all in the same layout") {
         store.saved["b"].title.size = 0.1;
         store.layout = {.size = 0.04, .position = TitlePosition::BottomRight};
         (void)make.execute(request(std::nullopt, margins, true));
-        REQUIRE(renderer.clips[0].title);
-        REQUIRE(renderer.clips[1].title);
-        CHECK(renderer.clips[1].title->text == "C vs D");
+        REQUIRE(renderer.clips[0].titles.size() == 1);
+        REQUIRE(renderer.clips[1].titles.size() == 1);
+        CHECK(renderer.clips[1].titles[0].text == "C vs D");
         for (const Clip& clip : renderer.clips) {
-            CHECK(clip.title->size == 0.04);
-            CHECK(clip.title->position == TitlePosition::BottomRight);
+            CHECK(clip.titles[0].size == 0.04);
+            CHECK(clip.titles[0].position == TitlePosition::BottomRight);
         }
     }
     SECTION("a game video keeps the game's own layout") {
         store.layout = {.size = 0.04, .position = TitlePosition::TopRight};
         (void)make.execute(request("a", margins));
-        CHECK(renderer.clips[0].title->position == TitlePosition::BottomCenter); // the default
+        CHECK(renderer.clips[0].titles[0].position == TitlePosition::BottomCenter); // default
+    }
+    SECTION("the match over every clip of both videos, first") {
+        store.match = Title{.text = "Club - Guests", .shown = true, .size = 0.06,
+                            .position = TitlePosition::TopCenter, .color = {255, 200, 0},
+                            .outline = {0, 0, 80}};
+        (void)make.execute(request("a", margins));
+        REQUIRE(renderer.clips[0].titles.size() == 2);
+        CHECK(renderer.clips[0].titles[0] == *store.match);
+        CHECK(renderer.clips[0].titles[1].text == "A vs B");
+        (void)make.execute(request(std::nullopt, margins));
+        for (const Clip& clip : renderer.clips) {
+            REQUIRE(clip.titles.size() == 1);
+            CHECK(clip.titles[0] == *store.match);
+        }
+    }
+    SECTION("the match from the folder name if none was saved, or none if hidden") {
+        MakeHighlightsRequest named = request("a", margins);
+        named.match_day_name = "2026-11-14-Club-Guests";
+        (void)make.execute(named);
+        REQUIRE(renderer.clips[0].titles.size() == 2);
+        CHECK(renderer.clips[0].titles[0].text == "Club - Guests");
+        CHECK(renderer.clips[0].titles[0].position == TitlePosition::TopCenter);
+        store.match = Title{.text = "Club - Guests", .shown = false};
+        (void)make.execute(named);
+        CHECK(renderer.clips[0].titles.size() == 1);
+    }
+    SECTION("the match day layout carries the colours") {
+        store.layout = {.size = 0.05, .position = TitlePosition::BottomCenter,
+                        .color = {10, 20, 30}, .outline = {200, 210, 220}};
+        (void)make.execute(request(std::nullopt, margins, true));
+        CHECK(renderer.clips[0].titles[0].color == Rgb{10, 20, 30});
+        CHECK(renderer.clips[0].titles[0].outline == Rgb{200, 210, 220});
     }
     SECTION("nothing marked") {
         store.saved["b"].rallies = {rally(60, 119)};

@@ -191,18 +191,22 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     const auto snapshot = workspace();
     auto highlights = form_named(forms_for(snapshot.videos[0], snapshot), "highlights");
     CHECK(highlights.arguments() ==
-          std::vector<std::string>{"highlights", "--video-id", "match-a", "--highlights-dir",
+          std::vector<std::string>{"highlights", "--video-id", "match-a", "--rally-titles",
+                                   "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // The match day video: no video id, the flag instead
     highlights.field("--video-id")->value.clear();
     highlights.field("--match-day")->value = "1";
-    highlights.field("--rally-titles")->value = "1";
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--match-day", "--rally-titles",
                                    "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
+    // Players on each rally is on by default and can be switched off
+    highlights.field("--rally-titles")->value.clear();
+    const std::vector<std::string> without = highlights.arguments();
+    CHECK(std::ranges::find(without, "--rally-titles") == without.end());
     CHECK_FALSE(supports_batch("highlights"));
 }
 

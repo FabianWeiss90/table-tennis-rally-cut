@@ -293,9 +293,9 @@ CommandForm highlights_form(const VideoEntry& video) {
              option("--after", "Seconds after each rally", FieldKind::Text, "1.5", "1.5", ""),
              option("--crossfade", "Cross-fade (s)", FieldKind::Text, "0.5", "0.5",
                     "Seconds two clips fade into each other; 0: hard cuts"),
-             flag("--rally-titles", "Players on each rally",
-                  "Match day video: each clip shows its game's title (the game video always "
-                  "shows it)"),
+             option("--rally-titles", "Players on each rally", FieldKind::Flag, "1", "",
+                    "Match day video: each clip shows its game's title (the game video always "
+                    "shows it)"),
              with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
                                      "From 1; empty: 4 with H.265, 8 with H.264 (Full HD, "
                                      "60 fps)"),

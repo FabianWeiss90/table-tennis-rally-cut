@@ -474,7 +474,7 @@ struct HighlightsPanel::Impl {
     std::string pending_game; ///< video id of a game whose title changed
     bool pending_layout = false;
     bool pending_match = false;
-    int preview = kPreviewGame;
+    int preview = kPreviewMatchDay;
     std::optional<std::size_t> playing; ///< rally played, in the selected game
     std::string error;
 

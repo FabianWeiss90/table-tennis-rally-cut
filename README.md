@@ -536,7 +536,8 @@ The progress is saved next to the labels in `data/annotations/<video_id>.review.
 segment and gap with its frame range and status); progress kept by earlier versions in `data/annotate/` is taken over on the next start. Closing the window ends the
 session; starting it again continues at the first open segment or gap. When you close the window
 while segments have no rally or gaps were not checked, a dialog lists them; you can close anyway
-or go back to the first of them.
+or go back to the first of them. When refining detected rallies, not every item needs a look, so
+this dialog only appears if incomplete marks would be lost.
 
 Keyboard shortcuts (always shown below the video, together with a legend of the timeline colours):
 

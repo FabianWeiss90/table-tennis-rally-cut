@@ -120,11 +120,12 @@ class AnnotatorApp {
         ImGui::End();
     }
 
-    /// Closing: saves complete marks, then asks for confirmation if segments have no rally,
-    /// gaps were not checked or incomplete marks would be lost.
+    /// Closing: saves complete marks, then asks for confirmation if incomplete marks would be
+    /// lost or (when labelling, not when refining) segments have no rally or gaps were not checked.
     void request_close() {
         const bool saved = save_pending_marks();
-        if (saved && session_.draft().empty() && session_.plan().progress().complete()) {
+        const bool reviewed = refining_ || session_.plan().progress().complete();
+        if (saved && session_.draft().empty() && reviewed) {
             close_confirmed_ = true;
         } else {
             close_dialog_requested_ = true;
@@ -844,19 +845,21 @@ class AnnotatorApp {
         } else if (!session_.draft().empty()) {
             ImGui::TextColored(kErrorColor, "The current marks are incomplete and will be lost.");
         }
-        const auto segments = session_.segments_without_rally();
+        // Refining need not review every item; only lost marks are worth a warning there.
+        const auto segments =
+            refining_ ? std::vector<std::size_t>{} : session_.segments_without_rally();
         if (!segments.empty()) {
             ImGui::Text("%zu segment(s) have no rally:", segments.size());
             ImGui::TextWrapped("%s", segment_list(segments).c_str());
             ImGui::TextColored(kMutedColor, "Press X on a segment that really has no rally.");
         }
-        const auto gaps = session_.unchecked_gaps();
+        const auto gaps = refining_ ? std::vector<std::size_t>{} : session_.unchecked_gaps();
         if (!gaps.empty()) {
             ImGui::Text("%zu gap(s) were not checked:", gaps.size());
             ImGui::TextWrapped("%s", segment_list(gaps).c_str());
             ImGui::TextColored(kMutedColor, "Watch each gap and press R if it has no rally.");
         }
-        if ((!segments.empty() || !gaps.empty()) && !refining_) {
+        if (!segments.empty() || !gaps.empty()) {
             ImGui::TextColored(kErrorColor,
                                "Training skips this video until every item is done.");
         }

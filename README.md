@@ -718,6 +718,17 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   extension) and YouTube play it. The files use the tag `hev1`; Apple's own players prefer
   `hvc1`, which the VAAPI encoder cannot produce correctly. For maximum compatibility use
   `--codec h264` (with VAAPI limited to 15 Mbit/s, because the driver hangs above).
+- **Bit rates the driver gets wrong:** `h264_vaapi` on Mesa misreads its stream headers at
+  some bit rates and then hangs or writes broken pictures (blocks in fast motion) without
+  reporting an error; for Full HD at 59.94 fps for example 2, 3, 4 and 6 Mbit/s hang, 7 and
+  7.5 give broken pictures, 5 and 8 to 15 work. Which ones fail cannot be predicted, so every
+  VAAPI encoder first encodes a short test pattern at the chosen bit rate and decodes it again;
+  if that fails, the nearest bit rate that works is used (0.5 Mbit/s steps, the higher one
+  first) and the output says which were skipped. Failures are remembered in
+  `~/.cache/ttrally/encoder-failures.csv` (on Windows `%LOCALAPPDATA%\ttrally\`) and not tried
+  again; delete the file after a driver update. A probe that hangs keeps one CPU core busy until
+  the command ends. If an encoder still stops answering while encoding, the command ends after
+  20 s with a message and removes the unfinished video.
 - **`--fast`:** copies the compressed video without re-encoding (under a second), but each
   section is widened to the keyframes around it. Cameras often write a keyframe only every few
   seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every

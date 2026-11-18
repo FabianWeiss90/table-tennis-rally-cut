@@ -2,6 +2,7 @@
 
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 
+#include "cutting/infrastructure/encoder_probe.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
 #include "media/application/media_error.hpp"
 
@@ -17,6 +18,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -34,7 +36,8 @@ constexpr int kHardwareFramePool = 16;
 /// loss visible to the eye; 8 Mbit/s 43.3 dB, 20 Mbit/s 46.5 dB. On another clip (2026-10-25)
 /// 3 Mbit/s gave 39.9 dB.
 constexpr double kH265BitsPerPixel = 0.032;
-/// H.264 needs about twice the bit rate for the same quality (8 Mbit/s for Full HD at 60 fps).
+/// H.264 needs about twice the bit rate for the same quality (8 Mbit/s for Full HD at 60 fps,
+/// after rounding to whole Mbit/s).
 constexpr double kH264BitsPerPixel = 0.064;
 /// h264_vaapi hangs in the driver (Mesa, RX 7800 XT) at 20 Mbit/s and above or with constant
 /// quality; 15 Mbit/s was measured to work.
@@ -67,16 +70,17 @@ std::vector<std::string> platform_video_encoders(VideoCodec codec) {
     return h265;
 }
 
-/// Bit rate for re-encoding: as asked, else by resolution and frame rate; limited where a
-/// driver is known to hang.
+/// Bit rate for re-encoding: as asked, else by resolution and frame rate, rounded to whole
+/// Mbit/s; limited where a driver is known to hang.
 std::int64_t video_bitrate(const std::string& encoder, const VideoFormat& format,
                            double requested_mbps, ProgressReporter& progress) {
     const double bits_per_pixel =
         encoder.starts_with("hevc") ? kH265BitsPerPixel : kH264BitsPerPixel;
-    auto bitrate = requested_mbps > 0
-                       ? static_cast<std::int64_t>(requested_mbps * 1e6)
-                       : static_cast<std::int64_t>(bits_per_pixel * format.width * format.height *
-                                                   av_q2d(format.frame_rate));
+    constexpr double kMbit = 1e6;
+    const double by_format = bits_per_pixel * format.width * format.height *
+                             av_q2d(format.frame_rate) / kMbit;
+    auto bitrate = static_cast<std::int64_t>(
+        (requested_mbps > 0 ? requested_mbps : std::max(1.0, std::round(by_format))) * kMbit);
     if (encoder == "h264_vaapi" && bitrate > kMaxH264VaapiBitrate) {
         progress.report(std::format("Note: h264_vaapi is limited to {} Mbit/s (the driver hangs "
                                     "above); use H.265 for higher quality.",
@@ -396,8 +400,25 @@ VideoEncoder open_video_encoder(const CutOptions& options, const VideoFormat& fo
                                     "order: {}",
                                     list.empty() ? "none" : list));
     }
+    EncoderFailures failures(default_encoder_failures_file());
     for (const std::string& name : candidates) {
-        const std::int64_t bitrate = video_bitrate(name, format, options.bitrate_mbps, progress);
+        std::int64_t bitrate = video_bitrate(name, format, options.bitrate_mbps, progress);
+        if (is_vaapi(name)) {
+            // The Mesa driver fails silently at some bit rates: try first, take a neighbour
+            const std::int64_t max = name == "h264_vaapi"
+                                         ? kMaxH264VaapiBitrate
+                                         : std::numeric_limits<std::int64_t>::max();
+            const std::optional<std::int64_t> working =
+                working_bitrate(name, format, bitrate, max, failures, progress);
+            if (!working) {
+                if (automatic) {
+                    progress.report(std::format("  {} works at no bit rate near {:.1f} Mbit/s",
+                                                name, static_cast<double>(bitrate) / 1e6));
+                }
+                continue;
+            }
+            bitrate = *working;
+        }
         if (auto encoder = VideoEncoder::open(name, format, bitrate)) {
             const double mbps = static_cast<double>(bitrate) / 1e6;
             progress.report(std::format("Encoding with {} at {:.1f} Mbit/s", name, mbps));

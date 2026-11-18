@@ -158,6 +158,7 @@ ttrally_layer(ttrally_cutting_application
 ttrally_layer(ttrally_cutting_infrastructure
     SOURCES
         cutting/infrastructure/cut_list_choice.cpp
+        cutting/infrastructure/encoder_probe.cpp
         cutting/infrastructure/ffmpeg_encoding.cpp
         cutting/infrastructure/ffmpeg_video_cutter.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure

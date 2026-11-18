@@ -66,6 +66,7 @@ ttrally_test(alignment_tests
 ttrally_test(integration_tests
     SOURCES
         integration/test_align_media.cpp
+        integration/test_encoder_probe.cpp
         integration/test_frame_decoder.cpp
         integration/test_highlights_media.cpp
         integration/test_video_cutter.cpp

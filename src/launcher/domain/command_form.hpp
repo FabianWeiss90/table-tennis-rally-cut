@@ -29,6 +29,7 @@ struct Field {
     bool advanced = false; ///< shown folded away under "Advanced"
     bool project_path = false; ///< a path relative to the project, also when run elsewhere
     std::string help;
+    std::vector<std::string> choice_help; ///< per choice (same order), shown when hovering it
 };
 
 /// What the launcher starts for a form.

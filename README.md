@@ -698,7 +698,11 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 - **Frame-accurate (default):** every section starts and ends exactly at a frame; the video is
   re-encoded as **H.265 (HEVC)** with the GPU (VAAPI on AMD/Intel under Linux, NVENC, Quick Sync,
   AMF or Media Foundation). Without an H.265 encoder, H.264 is used (GPU, else OpenH264, else
-  FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). Colours and value range of
+  FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). With `--codec h264` on Linux,
+  **OpenH264 on the CPU** comes first (about 3x real time for Full HD at 60 fps on a 24-thread
+  CPU), because `h264_vaapi` on AMD gives artifacts (see below); the GPU encoders follow. Its
+  simple H.264 profile gives lower quality than H.265 on the GPU: on a fast rally, SSIM 0.973
+  at 8 Mbit/s against 0.983 for H.265 at 4 Mbit/s. Colours and value range of
   the source are kept, the audio is encoded as AAC. A 10-minute match takes about 40 s on an
   RX 7800 XT. Before encoding, the output lists the video encoders this FFmpeg supports (in the
   order they are tried), those that cannot be opened on this machine, and the one used with its
@@ -718,7 +722,7 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 - **H.265 playback:** VLC, mpv, current browsers, smartphones, Windows (with the HEVC
   extension) and YouTube play it. The files use the tag `hev1`; Apple's own players prefer
   `hvc1`, which the VAAPI encoder cannot produce correctly. For maximum compatibility use
-  `--codec h264` (with VAAPI limited to 15 Mbit/s, because the driver hangs above).
+  `--codec h264` (with `h264_vaapi` limited to 15 Mbit/s, because the driver hangs above).
 - **Bit rates the driver gets wrong:** `h264_vaapi` on Mesa misreads its stream headers at
   some bit rates and then hangs or writes broken pictures (blocks in fast motion) without
   reporting an error; for Full HD at 59.94 fps for example 2, 3, 4 and 6 Mbit/s hang, 7 and
@@ -729,7 +733,8 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   `~/.cache/ttrally/encoder-failures.csv` (on Windows `%LOCALAPPDATA%\ttrally\`) and not tried
   again; delete the file after a driver update. A probe that hangs keeps one CPU core busy until
   the command ends. If an encoder still stops answering while encoding, the command ends after
-  20 s with a message and removes the unfinished video.
+  20 s with a message and removes the unfinished video. Even at bit rates that pass the test,
+  videos from `h264_vaapi` showed blocky artifacts, so `auto` no longer picks it first.
 - **`--fast`:** copies the compressed video without re-encoding (under a second), but each
   section is widened to the keyframes around it. Cameras often write a keyframe only every few
   seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every
@@ -738,7 +743,9 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the default looks,
 `data/annotations` and `data/detections`), `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
 `--fast`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
-`libopenh264`; default: the first of the codec that works), `--cache-dir`.
+`libopenh264`; default: the first of the codec that works), `--cache-dir`. In the launcher the
+encoder is a drop-down list under "Advanced"; hovering an entry says what it runs on and what it
+needs.
 
 ### `highlights`
 

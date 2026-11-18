@@ -8,6 +8,7 @@
 #include "launcher/domain/scenes.hpp"
 #include "launcher/domain/video_id.hpp"
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
@@ -120,11 +121,11 @@ TEST_CASE("video ids are suggested from file names like the existing ones") {
 TEST_CASE("command lines leave out defaults and quote where needed") {
     CommandForm form{"cut", "Cut", "", Program::Ttrally, "", "", {"cut"}, {}};
     form.fields = {
-        {"", "Video", FieldKind::File, "data/a b.mp4", "", {}, {}, true, false, false, ""},
-        {"--before", "Before", FieldKind::Text, "2", "2", {}, {}, false, false, false, ""},
-        {"--after", "After", FieldKind::Text, "3", "2", {}, {}, false, false, false, ""},
-        {"--fast", "Fast", FieldKind::Flag, "1", "", {}, {}, false, false, false, ""},
-        {"--bitrate", "Bit rate", FieldKind::Text, "", "", {}, {}, false, false, false, ""}};
+        {"", "Video", FieldKind::File, "data/a b.mp4", "", {}, {}, true, false, false, "", {}},
+        {"--before", "Before", FieldKind::Text, "2", "2", {}, {}, false, false, false, "", {}},
+        {"--after", "After", FieldKind::Text, "3", "2", {}, {}, false, false, false, "", {}},
+        {"--fast", "Fast", FieldKind::Flag, "1", "", {}, {}, false, false, false, "", {}},
+        {"--bitrate", "Bit rate", FieldKind::Text, "", "", {}, {}, false, false, false, "", {}}};
     CHECK(form.arguments() ==
           std::vector<std::string>{"cut", "data/a b.mp4", "--after", "3", "--fast"});
     CHECK(command_line("ttrally", form.arguments()) ==
@@ -208,6 +209,27 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     const std::vector<std::string> without = highlights.arguments();
     CHECK(std::ranges::find(without, "--rally-titles") == without.end());
     CHECK_FALSE(supports_batch("highlights"));
+}
+
+TEST_CASE("the encoder is chosen from a list that explains each entry") {
+    const auto snapshot = workspace();
+    for (const char* name : {"cut", "highlights"}) {
+        auto form = form_named(forms_for(snapshot.videos[0], snapshot), name);
+        const Field& encoder = *form.field("--encoder");
+        CHECK(encoder.kind == FieldKind::Choice);
+        CHECK(encoder.value == "auto");
+        CHECK(encoder.choices.front() == "auto");
+        CHECK(std::ranges::find(encoder.choices, "libopenh264") != encoder.choices.end());
+        REQUIRE(encoder.choice_help.size() == encoder.choices.size());
+        CHECK(std::ranges::none_of(encoder.choice_help,
+                                   [](const std::string& help) { return help.empty(); }));
+        // Only a chosen encoder is passed
+        const std::vector<std::string> automatic = form.arguments();
+        CHECK(std::ranges::find(automatic, "--encoder") == automatic.end());
+        form.field("--encoder")->value = "libopenh264";
+        const std::vector<std::string> chosen = form.arguments();
+        CHECK(std::ranges::find(chosen, "libopenh264") != chosen.end());
+    }
 }
 
 TEST_CASE("the training gets the library and the selected videos by match day") {

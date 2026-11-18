@@ -54,15 +54,18 @@ constexpr double kSuggestedBitrateMbps = 8.0;
 constexpr double kSuggestedBitrateAlternativeMbps = 10.0;
 
 std::vector<std::string> platform_video_encoders(VideoCodec codec) {
+    // Software encoders without GPL code (no x264/x265); H.265 falls back to H.264
 #ifdef _WIN32
     std::vector<std::string> h265{"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf"};
-    std::vector<std::string> h264{"h264_amf", "h264_nvenc", "h264_qsv", "h264_mf"};
+    std::vector<std::string> h264{"h264_amf", "h264_nvenc", "h264_qsv",
+                                  "h264_mf",  "libopenh264", "mpeg4"};
 #else
     std::vector<std::string> h265{"hevc_vaapi", "hevc_nvenc", "hevc_qsv"};
-    std::vector<std::string> h264{"h264_vaapi", "h264_nvenc", "h264_qsv"};
+    // H.264 on the CPU first: h264_vaapi on Mesa (AMD) hangs or writes artifacts at some bit
+    // rates without reporting an error
+    std::vector<std::string> h264{"libopenh264", "h264_nvenc", "h264_qsv", "h264_vaapi",
+                                  "mpeg4"};
 #endif
-    // Software fallbacks without GPL code (no x264/x265); H.265 falls back to H.264
-    h264.insert(h264.end(), {"libopenh264", "mpeg4"});
     if (codec == VideoCodec::H264) {
         return h264;
     }

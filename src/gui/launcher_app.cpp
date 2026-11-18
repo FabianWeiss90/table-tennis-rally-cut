@@ -727,14 +727,42 @@ class LauncherApp {
     }
 
     static void draw_choice(Field& field) {
+        const auto help_of = [&](std::size_t i) -> const std::string* {
+            return i < field.choice_help.size() && !field.choice_help[i].empty()
+                       ? &field.choice_help[i]
+                       : nullptr;
+        };
         ImGui::SetNextItemWidth(200);
-        if (ImGui::BeginCombo("##value", field.value.c_str())) {
-            for (const std::string& choice : field.choices) {
-                if (ImGui::Selectable(choice.c_str(), choice == field.value)) {
-                    field.value = choice;
-                }
+        const bool open = ImGui::BeginCombo("##value", field.value.c_str());
+        if (!open) {
+            const auto chosen = std::ranges::find(field.choices, field.value);
+            const std::string* help =
+                help_of(static_cast<std::size_t>(chosen - field.choices.begin()));
+            if (help != nullptr) {
+                wrapped_tooltip(*help);
             }
-            ImGui::EndCombo();
+            return;
+        }
+        for (std::size_t i = 0; i < field.choices.size(); ++i) {
+            const std::string& choice = field.choices[i];
+            if (ImGui::Selectable(choice.c_str(), choice == field.value)) {
+                field.value = choice;
+            }
+            if (const std::string* help = help_of(i)) {
+                wrapped_tooltip(*help);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    /// Tooltip of the last item, wrapped to a readable width.
+    static void wrapped_tooltip(const std::string& text) {
+        constexpr float kWidthInFontSizes = 30.0F;
+        if (ImGui::BeginItemTooltip()) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * kWidthInFontSizes);
+            ImGui::TextUnformatted(text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
         }
     }
 

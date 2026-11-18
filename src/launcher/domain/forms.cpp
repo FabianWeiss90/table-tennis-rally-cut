@@ -20,7 +20,7 @@ constexpr std::string_view kPreferredBackbone = "fp16"; ///< the variant the det
 Field positional(std::string label, FieldKind kind, std::string value, std::string help) {
     return {.flag = {}, .label = std::move(label), .kind = kind, .value = std::move(value),
             .default_value = {}, .suggestions = {}, .choices = {}, .required = true,
-            .advanced = false, .project_path = false, .help = std::move(help)};
+            .advanced = false, .project_path = false, .help = std::move(help), .choice_help = {}};
 }
 
 Field option(std::string flag, std::string label, FieldKind kind, std::string value,
@@ -28,7 +28,7 @@ Field option(std::string flag, std::string label, FieldKind kind, std::string va
     return {.flag = std::move(flag), .label = std::move(label), .kind = kind,
             .value = std::move(value), .default_value = std::move(default_value),
             .suggestions = {}, .choices = {}, .required = false, .advanced = false,
-            .project_path = false, .help = std::move(help)};
+            .project_path = false, .help = std::move(help), .choice_help = {}};
 }
 
 Field advanced(Field field) {
@@ -81,6 +81,76 @@ std::string in_work_dir(const VideoEntry& video, std::initializer_list<std::stri
         path /= part;
     }
     return path.string();
+}
+
+/// Video encoders to choose from (in the order "auto" tries them, see the cutting
+/// infrastructure), each with what it runs on and what it needs.
+Field encoder_field() {
+    struct Encoder {
+        std::string name;
+        std::string runs_on;
+        std::string needs;
+    };
+    const std::string ignores_codec = " Ignores the codec choice.";
+    const std::string nvenc = "Needs an NVIDIA graphics card and its driver.";
+    const std::string qsv = "Needs Intel graphics with the Intel media driver and the oneVPL "
+                            "runtime.";
+    const Encoder openh264{"libopenh264",
+                           "H.264 on the CPU (Cisco OpenH264), about 3x real time on a modern "
+                           "CPU; a simple H.264 profile, so lower quality at the same bit rate.",
+                           "Needs no graphics card, only FFmpeg built with OpenH264."};
+    const Encoder mpeg4{"mpeg4",
+                        "MPEG-4 Part 2 on the CPU. Last resort: clearly lower quality at the "
+                        "same bit rate.",
+                        "Built into every FFmpeg."};
+#ifdef _WIN32
+    const std::string amf = "Needs an AMD graphics card and its driver.";
+    const std::string mf = "Uses whichever hardware encoder Windows offers.";
+    const std::vector<Encoder> encoders{
+        {"auto",
+         "The first that works: for H.265 hevc_amf, hevc_nvenc, hevc_qsv, hevc_mf; for H.264 "
+         "h264_amf, h264_nvenc, h264_qsv, h264_mf, then libopenh264 and mpeg4 on the CPU.",
+         ""},
+        {"hevc_amf", "H.265 on the graphics card (AMD AMF)." + ignores_codec, amf},
+        {"hevc_nvenc", "H.265 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
+        {"hevc_qsv", "H.265 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
+        {"hevc_mf", "H.265 via Windows Media Foundation." + ignores_codec, mf},
+        {"h264_amf", "H.264 on the graphics card (AMD AMF)." + ignores_codec, amf},
+        {"h264_nvenc", "H.264 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
+        {"h264_qsv", "H.264 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
+        {"h264_mf", "H.264 via Windows Media Foundation." + ignores_codec, mf},
+        openh264,
+        mpeg4};
+#else
+    const std::string vaapi = "Needs a VA-API driver that can encode (Fedora: "
+                              "mesa-va-drivers-freeworld from RPM Fusion).";
+    const std::vector<Encoder> encoders{
+        {"auto",
+         "The first that works: for H.265 hevc_vaapi, hevc_nvenc, hevc_qsv on the graphics "
+         "card; for H.264 libopenh264 on the CPU first (h264_vaapi has a driver bug on AMD), "
+         "then h264_nvenc, h264_qsv, h264_vaapi and mpeg4.",
+         ""},
+        {"hevc_vaapi", "H.265 on the graphics card via VA-API (AMD or Intel)." + ignores_codec,
+         vaapi},
+        {"hevc_nvenc", "H.265 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
+        {"hevc_qsv", "H.265 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
+        openh264,
+        {"h264_nvenc", "H.264 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
+        {"h264_qsv", "H.264 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
+        {"h264_vaapi",
+         "H.264 on the graphics card via VA-API (AMD or Intel); on AMD with Mesa it hangs or "
+         "writes artifacts at some bit rates." + ignores_codec,
+         vaapi},
+        mpeg4};
+#endif
+    Field field = choice("--encoder", "Encoder", {}, "auto",
+                         "Which encoder makes the video; hover an entry for details");
+    for (const Encoder& encoder : encoders) {
+        field.choices.push_back(encoder.name);
+        field.choice_help.push_back(encoder.needs.empty() ? encoder.runs_on
+                                                          : encoder.runs_on + " " + encoder.needs);
+    }
+    return advanced(std::move(field));
 }
 
 Field cache_dir(const VideoEntry& video) {
@@ -274,8 +344,7 @@ CommandForm cut_form(const VideoEntry& video) {
              flag("--fast", "Fast (no re-encoding)",
                   "Seconds instead of minutes, but cuts snap to keyframes (often several s)"),
              advanced(option("--video-id", "Video id", FieldKind::Text, id, "", "")),
-             advanced(option("--encoder", "Encoder", FieldKind::Text, "auto", "auto",
-                             "e.g. hevc_vaapi, h264_nvenc, libopenh264")),
+             encoder_field(),
              cache_dir(video)}};
 }
 
@@ -311,8 +380,7 @@ CommandForm highlights_form(const VideoEntry& video) {
                              "\".mp4\" is added if missing")),
              advanced(option("--font", "Title font", FieldKind::File, "", "",
                              "TrueType font; empty: a bold system font")),
-             advanced(option("--encoder", "Encoder", FieldKind::Text, "auto", "auto",
-                             "e.g. hevc_vaapi, h264_nvenc, libopenh264")),
+             encoder_field(),
              cache_dir(video)}};
 }
 

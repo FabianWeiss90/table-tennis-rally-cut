@@ -9,6 +9,7 @@
 #include "media/infrastructure/ffmpeg_media_probe.hpp"
 #include "media/infrastructure/ffmpeg_media_reader.hpp"
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
@@ -77,6 +78,19 @@ TEST_CASE("the video cutter writes exactly the frames of the sections") {
         const auto cut = inspect(dir / "exact.mp4");
         CHECK(cut.frames == 135); // 60 + 75
         CHECK(cut.audio_s == Catch::Approx(2.25).margin(0.05));
+    }
+    SECTION("exact with H.264") {
+        const auto result = cutter.cut(
+            clip, sections, dir / "h264.mp4",
+            {.mode = CutMode::Exact, .codec = VideoCodec::H264, .encoder = "auto"}, progress);
+#ifndef _WIN32
+        // On the CPU first: h264_vaapi on Mesa writes broken pictures at some bit rates
+        const std::vector<std::string> h264 = automatic_video_encoders(VideoCodec::H264);
+        if (std::ranges::find(h264, "libopenh264") != h264.end()) {
+            CHECK(result.video_encoder == "libopenh264");
+        }
+#endif
+        CHECK(inspect(dir / "h264.mp4").frames == 135);
     }
     SECTION("fast") {
         const auto result =

@@ -25,8 +25,9 @@ enum class VideoCodec {
 struct CutOptions {
     CutMode mode = CutMode::Exact;
     VideoCodec codec = VideoCodec::H265;
-    std::string encoder = "auto";   ///< Video encoder for Exact; "auto" tries GPU encoders first
-    /// Video bit rate for Exact; 0 = by codec, resolution and frame rate (H.265: 5 Mbit/s for
+    std::string encoder = "auto"; ///< Video encoder for Exact; "auto": the first that works
+                                  ///< (H.265 on the GPU first, H.264 on the CPU first)
+    /// Video bit rate for Exact; 0 = by codec, resolution and frame rate (H.265: 4 Mbit/s for
     /// Full HD at 60 fps, H.264: twice that)
     double bitrate_mbps = 0.0;
 };

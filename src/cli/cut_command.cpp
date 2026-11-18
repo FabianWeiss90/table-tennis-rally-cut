@@ -62,7 +62,7 @@ CutCommand::CutCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_option("--encoder", encoder_,
                          "Video encoder, e.g. hevc_vaapi, h264_nvenc, libopenh264 (default: the "
-                         "first of the codec that works, GPU first)")
+                         "first of the codec that works: H.265 on the GPU, H.264 with OpenH264 first)")
         ->capture_default_str();
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: by resolution and frame rate; for "

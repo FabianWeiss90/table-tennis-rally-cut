@@ -88,7 +88,8 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
         ->check(CLI::IsMember({"h265", "h264"}))
         ->capture_default_str();
     command_->add_option("--encoder", encoder_,
-                         "Video encoder (default: the first of the codec that works, GPU first)")
+                         "Video encoder (default: the first of the codec that works: H.265 on the GPU, "
+                         "H.264 with OpenH264 first)")
         ->capture_default_str();
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: as cut)")

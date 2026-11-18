@@ -40,7 +40,7 @@ constexpr std::size_t kPlayerFrames = 240;  ///< frames kept (about 0.8 MB each)
 constexpr double kBufferAheadSeconds = 2.0;
 constexpr double kFallbackFps = 30.0;
 constexpr float kListShare = 0.45F;         ///< of the width, next to the player
-constexpr float kListHeight = 280.0F;
+constexpr float kMinListHeight = 280.0F; ///< also when the player is lower
 constexpr float kTitleMarginShare = 0.03F;  ///< as the rendered title
 constexpr float kEnlargedShare = 0.85F;     ///< of the window, for the enlarged preview
 constexpr float kControlsHeight = 40.0F;    ///< below the enlarged picture
@@ -619,7 +619,8 @@ struct HighlightsPanel::Impl {
         return order;
     }
 
-    void draw_rallies(Game& game, cutting::Margins margins) {
+    /// `bottom`: screen y down to which the list may reach (the player's bottom edge).
+    void draw_rallies(Game& game, cutting::Margins margins, float bottom) {
         GameHighlights& marks = *game.highlights;
         const double fps = marks.fps > 0 ? marks.fps : kFallbackFps;
         ImGui::TextColored(kMuted, "%zu rallies from the %s; %zu game highlights, %zu match day",
@@ -629,7 +630,8 @@ struct HighlightsPanel::Impl {
                                           ImGuiTableFlags_BordersInnerV |
                                           ImGuiTableFlags_SizingFixedFit |
                                           ImGuiTableFlags_Sortable;
-        if (!ImGui::BeginTable("##rallies", kRallyColumns, flags, {0, kListHeight})) {
+        const float height = std::max(kMinListHeight, bottom - ImGui::GetCursorScreenPos().y);
+        if (!ImGui::BeginTable("##rallies", kRallyColumns, flags, {0, height})) {
             return;
         }
         ImGui::TableSetupScrollFreeze(0, 1);
@@ -975,11 +977,14 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         ImGui::TableSetupColumn("list", ImGuiTableColumnFlags_WidthStretch, kListShare);
         ImGui::TableSetupColumn("player", ImGuiTableColumnFlags_WidthStretch, 1.0F - kListShare);
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        self.draw_rallies(*game, margins);
-        ImGui::TableNextColumn();
+        // The player first: its height decides how far down the list reaches.
+        ImGui::TableSetColumnIndex(1);
         self.player.draw(self.overlay_for(*game->highlights),
                          self.player.video() == game->video.original);
+        const float player_bottom =
+            ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+        ImGui::TableSetColumnIndex(0);
+        self.draw_rallies(*game, margins, player_bottom);
         ImGui::EndTable();
     }
     self.draw_font();

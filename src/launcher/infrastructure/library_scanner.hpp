@@ -5,6 +5,8 @@
 #include "launcher/application/ports.hpp"
 
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace ttrally::launcher {
 
@@ -26,15 +28,21 @@ class LibraryScanner final : public WorkspaceScanner {
     std::filesystem::path project_;
 };
 
-/// Settings in a small text file (one line: the library folder).
+/// Settings in a small text file: the library folder, then the video chosen last (one line each).
 class FileLauncherSettings final : public LauncherSettings {
   public:
     explicit FileLauncherSettings(std::filesystem::path file) : file_(std::move(file)) {}
 
     [[nodiscard]] std::optional<std::filesystem::path> library() override;
     void save_library(const std::filesystem::path& library) override;
+    [[nodiscard]] std::optional<std::filesystem::path> last_video() override;
+    void save_last_video(const std::filesystem::path& original) override;
 
   private:
+    /// Line `index` of the file (0: library, 1: last video); nullopt if missing or empty.
+    [[nodiscard]] std::optional<std::filesystem::path> line(std::size_t index) const;
+    void write(const std::vector<std::string>& lines) const;
+
     std::filesystem::path file_;
 };
 

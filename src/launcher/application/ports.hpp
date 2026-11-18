@@ -25,7 +25,11 @@ class LauncherSettings {
     virtual ~LauncherSettings() = default;
     /// The library chosen last, if any.
     [[nodiscard]] virtual std::optional<std::filesystem::path> library() = 0;
+    /// Also forgets the last video (it belongs to the previous library).
     virtual void save_library(const std::filesystem::path& library) = 0;
+    /// The original video chosen last, if any; its match day is shown opened.
+    [[nodiscard]] virtual std::optional<std::filesystem::path> last_video() = 0;
+    virtual void save_last_video(const std::filesystem::path& original) = 0;
 };
 
 /// Port: the pre-cut video chosen for each original of a match day, kept so that it need not be

@@ -251,6 +251,7 @@ class LauncherApp {
             highlights_ = std::make_unique<HighlightsPanel>(gui, *options.highlights,
                                                             *options.playback);
         }
+        restore_last_video();
     }
 
     void draw() {
@@ -294,6 +295,55 @@ class LauncherApp {
         return std::max(kMinSidebarWidth, width);
     }
 
+    /// A match day's collapsible header (closed at first; `open`: opened now); true if open.
+    bool draw_match_day_folder(const std::string& match_day, bool open) {
+        const auto& videos = session_.workspace().videos;
+        const auto count = std::ranges::count(videos, match_day, &VideoEntry::match_day);
+        ImGui::SetNextItemOpen(open, open ? ImGuiCond_Always : ImGuiCond_Once);
+        const bool is_open = ImGui::CollapsingHeader(
+            std::format("{}   ({} video{})###day:{}", match_day, count, count == 1 ? "" : "s",
+                        match_day)
+                .c_str());
+        if (is_open) {
+            draw_scene_detection(match_day);
+        }
+        return is_open;
+    }
+
+    /// Selects the video chosen in the last session, so that its match day is the open one.
+    void restore_last_video() {
+        const auto last = settings_ != nullptr ? settings_->last_video() : std::nullopt;
+        if (!last) {
+            return;
+        }
+        const auto& videos = session_.workspace().videos;
+        for (std::size_t i = 0; i < videos.size(); ++i) {
+            if (std::filesystem::path(videos[i].original).lexically_normal() ==
+                last->lexically_normal()) {
+                session_.select_video(i);
+                return;
+            }
+        }
+    }
+
+    /// Saves a newly selected video as the last one; returns its match day if the selection
+    /// changed (that folder is opened), else an empty string.
+    std::string remember_selection() {
+        const auto selected = session_.selected_video();
+        if (selected == remembered_) {
+            return {};
+        }
+        remembered_ = selected;
+        if (!selected) {
+            return {};
+        }
+        const VideoEntry& video = session_.workspace().videos[*selected];
+        if (settings_ != nullptr) {
+            settings_->save_last_video(video.original);
+        }
+        return video.match_day;
+    }
+
     void draw_library() {
         ImGui::TextUnformatted("Library");
         ImGui::SameLine(ImGui::GetWindowWidth() - kLibraryButtonsWidth);
@@ -329,12 +379,16 @@ class LauncherApp {
                 "tool's files go into a folder ttrally-data in every match day.");
         }
         const bool selected_any = session_.selected_video().has_value();
+        const std::string open_day = remember_selection();
         ImGui::BeginChild("##list", {0, selected_any ? -kSelectedVideoHeight : 0});
+        bool day_open = true;
         for (std::size_t i = 0; i < videos.size(); ++i) {
             const VideoEntry& video = videos[i];
             if (i == 0 || video.match_day != videos[i - 1].match_day) {
-                ImGui::SeparatorText(video.match_day.c_str());
-                draw_scene_detection(video.match_day);
+                day_open = draw_match_day_folder(video.match_day, video.match_day == open_day);
+            }
+            if (!day_open) {
+                continue;
             }
             ImGui::PushID(static_cast<int>(i));
             const std::string label =
@@ -1097,6 +1151,8 @@ class LauncherApp {
     std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
     bool highlights_shown_ = false; ///< the tab was shown in the last frame
     std::string first_tab_;         ///< selected in the first frame, then empty
+    /// The selection last saved as the last video; a change opens its match day.
+    std::optional<std::size_t> remembered_;
     std::future<std::vector<std::string>> scene_job_; ///< closing waits for a running detection
     std::string scene_job_day_;
     std::vector<std::string> scene_job_ids_;

@@ -368,11 +368,14 @@ build\windows-release\src\ttrally.exe gui     # Windows
 ```
 
 On the first start, choose the [video library](#video-library) with "Choose..." at the top left;
-the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttrally\`).
+the window remembers it and the video selected last (in `~/.config/ttrally/`, on Windows in
+`%APPDATA%\ttrally\`).
 
 - **Left:** the videos of the library by match day, with their progress: aligned, labels
-  (complete or in progress), features, detected, cut. Below, a preview frame of the selected
-  video; the slider picks another position (the frame is decoded in the background).
+  (complete or in progress), features, detected, cut. Each match day folds open and closed with
+  a click on its name; at the start only the match day of the video selected last is open.
+  Below, a preview frame of the selected video; the slider picks another position (the frame is
+  decoded in the background).
 - **Right:** a tab per command (align, annotate, features, detect, refine, cut, highlights,
   train), filled in for
   the selected video: its pre-cut version, its id (suggested from the file name, e.g.

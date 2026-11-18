@@ -210,19 +210,36 @@ WorkspaceSnapshot LibraryScanner::scan(const fs::path& library) {
     return workspace;
 }
 
-std::optional<fs::path> FileLauncherSettings::library() {
+std::optional<fs::path> FileLauncherSettings::line(std::size_t index) const {
     std::ifstream in(file_);
-    std::string line;
-    if (!in || !std::getline(in, line) || line.empty()) {
-        return std::nullopt;
+    std::string text;
+    for (std::size_t i = 0; i <= index; ++i) {
+        if (!std::getline(in, text)) {
+            return std::nullopt;
+        }
     }
-    return fs::path(line);
+    return text.empty() ? std::nullopt : std::optional<fs::path>(text);
 }
 
-void FileLauncherSettings::save_library(const fs::path& library) {
+void FileLauncherSettings::write(const std::vector<std::string>& lines) const {
     std::error_code error;
     fs::create_directories(file_.parent_path(), error);
-    std::ofstream(file_) << fs::absolute(library).string() << '\n';
+    std::ofstream out(file_);
+    for (const std::string& text : lines) {
+        out << text << '\n';
+    }
+}
+
+std::optional<fs::path> FileLauncherSettings::library() { return line(0); }
+
+void FileLauncherSettings::save_library(const fs::path& library) {
+    write({fs::absolute(library).string()});
+}
+
+std::optional<fs::path> FileLauncherSettings::last_video() { return line(1); }
+
+void FileLauncherSettings::save_last_video(const fs::path& original) {
+    write({library().value_or(fs::path()).string(), fs::absolute(original).string()});
 }
 
 fs::path default_settings_file() {

@@ -170,6 +170,15 @@ TEST_CASE("the launcher remembers the library") {
     CHECK_FALSE(settings.library());
     settings.save_library(root / "My Videos");
     CHECK(settings.library() == root / "My Videos");
+    CHECK_FALSE(settings.last_video());
+
+    settings.save_last_video(root / "My Videos" / "day" / "game.mp4");
+    CHECK(settings.library() == root / "My Videos");
+    CHECK(settings.last_video() == root / "My Videos" / "day" / "game.mp4");
+
+    settings.save_library(root / "Other"); // the last video belonged to the old library
+    CHECK(settings.library() == root / "Other");
+    CHECK_FALSE(settings.last_video());
     fs::remove_all(root);
 }
 

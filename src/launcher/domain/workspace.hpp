@@ -45,7 +45,7 @@ struct WorkspaceSnapshot {
     std::string library;                ///< the library folder (absolute)
     std::vector<VideoEntry> videos;     ///< sorted by match day, then name
     std::vector<std::string> backbones; ///< Image models for features
-    std::vector<std::string> detectors; ///< Trained rally detectors
+    std::vector<std::string> detectors; ///< Trained rally detectors, the newest first
     std::vector<std::string> trainable; ///< Keys of videos with complete labels and features
     std::string uv = "uv";              ///< Program that runs the Python training
 

@@ -41,6 +41,10 @@ ttrally_test(cutting_tests
     SOURCES cutting/test_cutting.cpp
     DEPENDS ttrally_cutting_application)
 
+ttrally_test(highlights_tests
+    SOURCES highlights/test_highlights.cpp
+    DEPENDS ttrally_highlights_application)
+
 ttrally_test(launcher_tests
     SOURCES launcher/test_launcher.cpp
     DEPENDS ttrally_launcher_application)
@@ -63,10 +67,11 @@ ttrally_test(integration_tests
     SOURCES
         integration/test_align_media.cpp
         integration/test_frame_decoder.cpp
+        integration/test_highlights_media.cpp
         integration/test_video_cutter.cpp
     DEPENDS
         ttrally_alignment_infrastructure ttrally_cutting_infrastructure
-        ttrally_media_infrastructure)
+        ttrally_highlights_infrastructure ttrally_media_infrastructure)
 
 # Architecture: layer rules, plus a self-test proving that violations are detected
 add_test(NAME "architecture: layer dependencies"

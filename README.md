@@ -27,6 +27,7 @@ without notice.
 | 6 | `detect` | done |
 | 7 | refine (`annotate --detections`) | done |
 | 8 | `cut` | done |
+| 9 | `highlights` (highlight videos of a game or match day) | done |
 | later | `benchmark` | planned |
 
 ## Pipeline overview
@@ -47,6 +48,8 @@ without notice.
    (`annotate --detections`): edges dragged, split rallies merged, missed rallies added.
 8. **`cut`:** cuts the original video according to the resulting cut list, with a chosen margin
    before and after each rally.
+9. **`highlights` (optional):** the best rallies of a game or of a whole match day, chosen in the
+   launcher, as one video with cross-fades and the players' names.
 
 Everything that touches video runs in C++. Python is only needed to **train** models, never to
 **use** the tool. Because the C++ tool also produces the training features, preprocessing is
@@ -340,7 +343,7 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       4808_Weiss-Heinemeier_FHD.MP4  pre-cut versions (a number prefix or a suffix such as
                                      _cut_33_rallies is recognised)
     ttrally-data/                    created by the tool: everything it computes for this day
-      align/  annotations/  features/  detections/  refined/  cuts/  cache/
+      align/  annotations/  features/  detections/  refined/  cuts/  highlights/  cache/
       scenes.csv  pre-cuts.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
@@ -370,7 +373,8 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
 - **Left:** the videos of the library by match day, with their progress: aligned, labels
   (complete or in progress), features, detected, cut. Below, a preview frame of the selected
   video; the slider picks another position (the frame is decoded in the background).
-- **Right:** a tab per command (align, annotate, features, detect, refine, cut, train), filled in for
+- **Right:** a tab per command (align, annotate, features, detect, refine, cut, highlights,
+  train), filled in for
   the selected video: its pre-cut version, its id (suggested from the file name, e.g.
   `Weiss-Heinemeier_FHD.MP4` → `weiss-heinemeier`), the paths in the match day's
   `ttrally-data/`, and suggestions such as the image models and detectors in the library's
@@ -397,6 +401,8 @@ the window remembers it (in `~/.config/ttrally/`, on Windows in `%APPDATA%\ttral
   the Train tab corrects them. They are stored in
   `<match day>/ttrally-data/scenes.csv`. A scene with videos in both training and validation is
   pointed out, since such a validation flatters the model (see [the training](training/README.md#training-the-rally-detector)).
+
+- **Highlights:** see [below](#highlights).
 
 Options: `--library` (the library to open, remembered for the next start), `--project`
 (project directory with `weights/` and `training/`, default the current one).
@@ -718,6 +724,62 @@ Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the defa
 `data/annotations` and `data/detections`), `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
 `--fast`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
 `libopenh264`; default: the first of the codec that works), `--cache-dir`.
+
+### `highlights`
+
+The best rallies of a game or of a whole match day as one video. They are chosen in the
+launcher's **Highlights** tab, for the game of the selected video:
+
+- **The rallies** of the game, numbered, with start and length: those `cut` would use (complete
+  labels, else the refined detections, else the detections).
+- **Two marks per rally:** *Game* (in the game's highlight video) and *Day* (in the match day's
+  highlight video). A match day highlight is also a game highlight; ticking *Day* ticks *Game*,
+  not the other way round. "Match day marks the game too" switches this coupling off for a game.
+- **Preselection:** the first time a match day is opened, the longest rallies of every game
+  (5 by default) are ticked as game and match day highlights. "This game" and "All games"
+  preselect again with the chosen number, "Clear" removes every mark of the game. Marks survive
+  new detections or refining: they move to the rally that overlaps the marked one.
+- **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest
+  first), a second click reverses the order; the number stays the rally's number in the game.
+- **Watching:** ">" plays the rally with the margins before and after (without sound) next to
+  the list, with the title as it will appear.
+- **Title:** the players from the file name (`Weiss-Ohrstedt.MP4` → "Weiss - Ohrstedt"; nothing
+  for camera names such as `2X6A4730.MP4`), editable and with several lines, "Swap players".
+  Size and position (top or bottom; left, centre or right; by default bottom centre) are set per
+  game for its game video,
+  and once for the match day video, where every game's title looks the same. The game video
+  shows the title all the time; the match day video only with "Players on each rally", then
+  each clip shows its game's title. "Preview as" shows either layout in the player.
+- **Make game video / Make match day video** run `ttrally highlights` with the settings below:
+  margins, cross-fade, bit rate and codec.
+
+Every change is saved at once in `<match day>/ttrally-data/highlights/` (`<video id>.csv`
+with the marks, `<video id>.settings.csv` with the original, the coupling and the title,
+`match-day-title.csv` with the size and position of the titles in the match day video); the
+videos are written there too.
+
+```sh
+ttrally highlights --highlights-dir <day>/ttrally-data/highlights --video-id weiss-ohrstedt
+ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --rally-titles
+```
+
+- **Clips:** each marked rally with `--before` and `--after` (default 1 and 1.5 s); rallies whose
+  margins overlap become one clip, as in `cut`. The match day video has the games in the order
+  of their video ids.
+- **Cross-fade:** `--crossfade` seconds (default 0.5, 0 for hard cuts) in which picture and sound
+  of one clip fade into the next.
+- **Format:** size and frame rate of the first clip's video; clips of other videos are scaled
+  and fitted to its frame grid. Sound is AAC stereo at 48 kHz. The video is encoded like `cut`
+  (H.265 on the GPU by default, `--codec`, `--bitrate`, `--encoder`).
+- **Titles** are drawn in white with a black outline, in a bold system font (DejaVu Sans,
+  Liberation Sans or Noto Sans on Linux, Segoe UI or Arial on Windows) or the TrueType file given
+  with `--font`.
+
+Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highlights`), `--out`
+(default `<video id>.mp4` or `<match day>-highlights.mp4` in the highlights directory; a bare
+name also goes there, and `.mp4` is added if it has no extension),
+`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--codec`, `--bitrate`,
+`--encoder`, `--cache-dir`.
 
 ## Annotation definitions and label format
 

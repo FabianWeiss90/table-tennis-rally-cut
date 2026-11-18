@@ -3,16 +3,15 @@
 #include "cli/cut_command.hpp"
 
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
-#include "annotation/infrastructure/csv_review_state_store.hpp"
 #include "cli/stream_progress_reporter.hpp"
 #include "cutting/application/cut_video.hpp"
+#include "cutting/infrastructure/cut_list_choice.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
 #include "media/infrastructure/caching_media_reader.hpp"
 #include "media/infrastructure/ffmpeg_media_probe.hpp"
 #include "media/infrastructure/ffmpeg_media_reader.hpp"
 #include "shared/io/formatting.hpp"
 
-#include <algorithm>
 #include <format>
 #include <iostream>
 #include <stdexcept>
@@ -23,17 +22,6 @@ namespace {
 
 constexpr double kMinBitrateMbps = 1.0;
 constexpr double kMaxBitrateMbps = 200.0;
-
-/// The labels of a video are complete once every segment and gap of its review is done.
-bool labels_complete(const std::filesystem::path& annotations_dir, const std::string& video_id) {
-    if (!std::filesystem::exists(annotations_dir / (video_id + ".csv"))) {
-        return false;
-    }
-    const auto statuses = annotation::CsvReviewStateStore(annotations_dir).load(video_id);
-    return !statuses.empty() && std::ranges::none_of(statuses, [](const auto& entry) {
-        return entry.second == annotation::ReviewStatus::Open;
-    });
-}
 
 } // namespace
 
@@ -89,14 +77,10 @@ int CutCommand::run() {
         video_id_ = video_.stem().string();
     }
     if (rallies_.empty()) {
-        const std::string file = video_id_ + ".csv";
-        const bool annotated = labels_complete(annotations_dir_, video_id_);
-        const bool refined = !annotated && std::filesystem::exists(refined_dir_ / file);
-        rallies_ = (annotated ? annotations_dir_ : refined ? refined_dir_ : detections_dir_) / file;
-        std::cout << std::format("Rallies: {} ({})\n", rallies_.string(),
-                                 annotated ? "complete annotations"
-                                 : refined ? "refined detections"
-                                           : "detections");
+        const cutting::CutListChoice choice =
+            cutting::choose_cut_list(annotations_dir_, refined_dir_, detections_dir_, video_id_);
+        rallies_ = choice.file;
+        std::cout << std::format("Rallies: {} ({})\n", rallies_.string(), choice.kind);
         if (!std::filesystem::exists(rallies_)) {
             throw std::runtime_error(std::format(
                 "{} does not exist: run detect first, or give the rallies with --rallies",

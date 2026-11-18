@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+#pragma once
+
+#include "cutting/application/video_cutter.hpp"
+#include "highlights/domain/highlight_selection.hpp"
+#include "highlights/domain/title.hpp"
+#include "shared/application/progress_reporter.hpp"
+
+#include <filesystem>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace ttrally::highlights {
+
+/// What is kept for the highlights of a game.
+struct StoredHighlights {
+    std::filesystem::path video; ///< the original (absolute)
+    std::vector<HighlightRally> rallies;
+    bool coupled = true;
+    Title title;
+};
+
+/// Port: the highlight marks of the games of a match day.
+class HighlightStore {
+  public:
+    virtual ~HighlightStore() = default;
+    /// Video ids of the games with stored highlights, sorted.
+    [[nodiscard]] virtual std::vector<std::string> games() = 0;
+    [[nodiscard]] virtual std::optional<StoredHighlights> load(const std::string& video_id) = 0;
+    virtual void save(const std::string& video_id, const StoredHighlights& highlights) = 0;
+    /// Size and position of the titles in the match day video, the same for every game (each
+    /// game's own ones apply to its game video); the defaults if none were saved.
+    [[nodiscard]] virtual TitleLayout match_day_layout() = 0;
+    virtual void save_match_day_layout(const TitleLayout& layout) = 0;
+};
+
+/// The rallies a game's highlights are chosen from.
+struct RallyList {
+    std::vector<HighlightRally> rallies; ///< without marks
+    double fps = 0.0;                    ///< frame rate of the original
+    std::string source;                  ///< e.g. "complete labels", "refined detections"
+};
+
+/// Port: the rallies of a game, from the same cut list `cut` uses (complete labels, else the
+/// refined detections, else the detections).
+class RallySource {
+  public:
+    virtual ~RallySource() = default;
+    /// nullopt if the game has neither labels nor detections.
+    [[nodiscard]] virtual std::optional<RallyList> rallies(const std::string& video_id) = 0;
+};
+
+/// A part of a video that goes into a highlight video.
+struct Clip {
+    std::filesystem::path video;
+    double start_s = 0.0;
+    double end_s = 0.0;
+    std::optional<Title> title; ///< drawn over the whole clip if set and visible
+};
+
+struct RenderOptions {
+    double crossfade_s = 0.5; ///< overlap of consecutive clips; 0: hard cuts
+    cutting::CutOptions encoding; ///< codec, encoder and bit rate (the mode is ignored)
+    std::filesystem::path font;   ///< TrueType font for titles; empty: a system font
+};
+
+/// Port: writes clips (possibly from different videos) one after the other into a video, with
+/// cross-fades and titles. The output has the size and frame rate of the first clip's video.
+class HighlightRenderer {
+  public:
+    virtual ~HighlightRenderer() = default;
+    /// Throws media::MediaError or std::runtime_error (e.g. no font for a title).
+    [[nodiscard]] virtual cutting::CutResult render(std::span<const Clip> clips,
+                                                    const std::filesystem::path& output,
+                                                    const RenderOptions& options,
+                                                    ProgressReporter& progress) = 0;
+};
+
+} // namespace ttrally::highlights

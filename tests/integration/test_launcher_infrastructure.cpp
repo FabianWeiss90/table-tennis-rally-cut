@@ -69,8 +69,15 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     touch(library / "Exclude" / "Match-F.mp4");
     touch(library / "ttrally-data" / "models" / "dinov2-vitb14-fp16.onnx");
     touch(library / "ttrally-data" / "models" / "rally-detector-test.onnx");
+    touch(library / "ttrally-data" / "models" / "rally-detector.onnx");
     const fs::path project = temp_dir();
     touch(project / "weights" / "rally-detector.onnx");
+    // Detectors are offered newest first, not by name
+    const auto now = fs::file_time_type::clock::now();
+    fs::last_write_time(library / "ttrally-data" / "models" / "rally-detector-test.onnx",
+                        now - std::chrono::hours(48));
+    fs::last_write_time(library / "ttrally-data" / "models" / "rally-detector.onnx", now);
+    fs::last_write_time(project / "weights" / "rally-detector.onnx", now - std::chrono::hours(24));
 
     const WorkspaceSnapshot workspace = LibraryScanner(project).scan(library);
     CHECK(fs::path(workspace.library) == fs::absolute(library).lexically_normal());
@@ -98,9 +105,11 @@ TEST_CASE("the scanner finds the match days, their videos, pre-cuts and progress
     CHECK(workspace.trainable == std::vector<std::string>{"2026-10-03 Club/match-a"});
     REQUIRE(workspace.backbones.size() == 1);
     CHECK(fs::path(workspace.backbones[0]).filename() == "dinov2-vitb14-fp16.onnx");
-    REQUIRE(workspace.detectors.size() == 2);
-    CHECK(fs::path(workspace.detectors[0]).filename() == "rally-detector-test.onnx");
+    REQUIRE(workspace.detectors.size() == 3);
+    CHECK(fs::path(workspace.detectors[0]) ==
+          library / "ttrally-data" / "models" / "rally-detector.onnx");
     CHECK(fs::path(workspace.detectors[1]) == project / "weights" / "rally-detector.onnx");
+    CHECK(fs::path(workspace.detectors[2]).filename() == "rally-detector-test.onnx");
     fs::remove_all(library);
     fs::remove_all(project);
 }

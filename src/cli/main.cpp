@@ -11,6 +11,7 @@
 #endif
 #include "cli/cut_command.hpp"
 #include "cli/devices_command.hpp"
+#include "cli/highlights_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "shared/kernel/version.hpp"
 
@@ -36,6 +37,7 @@ int main(int argc, char** argv) {
     ttrally::cli::DetectCommand detect(app);
 #endif
     ttrally::cli::CutCommand cut(app);
+    ttrally::cli::HighlightsCommand highlights(app);
     ttrally::cli::DevicesCommand devices(app);
 
     CLI11_PARSE(app, argc, argv);
@@ -63,6 +65,9 @@ int main(int argc, char** argv) {
 #endif
         if (cut.selected()) {
             return cut.run();
+        }
+        if (highlights.selected()) {
+            return highlights.run();
         }
         if (devices.selected()) {
             return devices.run();

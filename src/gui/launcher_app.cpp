@@ -4,6 +4,7 @@
 
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
+#include "gui/highlights_panel.hpp"
 #include "launcher/domain/batch.hpp"
 #include "launcher/domain/scenes.hpp"
 #include "shared/io/formatting.hpp"
@@ -55,6 +56,9 @@ const ImVec4 kDone{0.5F, 0.85F, 0.5F, 1.0F};
 const ImVec4 kPartly{0.95F, 0.75F, 0.35F, 1.0F};
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
 const ImVec4 kError{1.0F, 0.45F, 0.4F, 1.0F};
+constexpr const char* kHighlightsForm = "highlights";
+constexpr const char* kVideoIdFlag = "--video-id";
+constexpr const char* kMatchDayFlag = "--match-day";
 
 /// Text input on a std::string (Dear ImGui works on char buffers); the hint shows while empty.
 bool input_text(const char* id, std::string& value, ImGuiInputTextFlags flags = 0,
@@ -238,11 +242,16 @@ struct DialogResult {
 class LauncherApp {
   public:
     LauncherApp(launcher::LauncherSession& session, launcher::VideoPreview& preview,
-                const GuiContext& gui, std::filesystem::path project,
-                launcher::LauncherSettings* settings, launcher::SceneStore* scenes)
+                const GuiContext& gui, const LauncherOptions& options)
         : session_(session), preview_(preview), gui_(gui),
-          project_(std::filesystem::absolute(project)), settings_(settings), scenes_(scenes),
-          preview_worker_(preview), preview_texture_(gui.renderer()), thumbnail_worker_(preview) {}
+          project_(std::filesystem::absolute(options.project_directory)),
+          settings_(options.settings), scenes_(options.scenes), first_tab_(options.first_tab),
+          preview_worker_(preview), preview_texture_(gui.renderer()), thumbnail_worker_(preview) {
+        if (options.highlights != nullptr && options.playback != nullptr) {
+            highlights_ = std::make_unique<HighlightsPanel>(gui, *options.highlights,
+                                                            *options.playback);
+        }
+    }
 
     void draw() {
         session_.poll();
@@ -453,13 +462,119 @@ class LauncherApp {
         if (!ImGui::BeginTabBar("##tabs")) {
             return;
         }
+        bool highlights_shown = false;
         for (std::size_t f = 0; f < forms.size(); ++f) {
-            if (ImGui::BeginTabItem(forms[f].title.c_str())) {
-                draw_form(forms[f], f);
+            const bool select = !first_tab_.empty() && forms[f].name == first_tab_;
+            if (ImGui::BeginTabItem(forms[f].title.c_str(), nullptr,
+                                    select ? ImGuiTabItemFlags_SetSelected : 0)) {
+                if (forms[f].name == kHighlightsForm) {
+                    draw_highlights(forms[f], f, !highlights_shown_);
+                    highlights_shown = true;
+                } else {
+                    draw_form(forms[f], f);
+                }
                 ImGui::EndTabItem();
             }
         }
+        highlights_shown_ = highlights_shown;
+        first_tab_.clear();
         ImGui::EndTabBar();
+    }
+
+    // ------------------------------------------------------------------ highlights
+
+    /// The highlight choice of the selected video's game, then the settings of the videos and
+    /// the buttons that make them. `opened`: the tab was not shown before (read the rallies).
+    void draw_highlights(CommandForm& form, std::size_t form_index, bool opened) {
+        ImGui::TextWrapped("%s", form.description.c_str());
+        const auto selected = session_.selected_video();
+        if (!selected) {
+            ImGui::TextColored(kMuted, "Select a video on the left.");
+            return;
+        }
+        if (!highlights_) {
+            ImGui::TextColored(kError, "Highlights are not available in this window.");
+            return;
+        }
+        const VideoEntry& video = session_.workspace().videos[*selected];
+        highlights_->draw(session_.workspace(), video, opened, margins_of(form));
+        ImGui::SeparatorText("Highlight videos");
+        auto set_by_buttons = [](const Field& field) {
+            return field.flag == kVideoIdFlag || field.flag == kMatchDayFlag;
+        };
+        for (std::size_t i = 0; i < form.fields.size(); ++i) {
+            if (!form.fields[i].advanced && !set_by_buttons(form.fields[i])) {
+                draw_field(form.fields[i], form_index, i);
+            }
+        }
+        if (ImGui::CollapsingHeader("Advanced")) {
+            for (std::size_t i = 0; i < form.fields.size(); ++i) {
+                if (form.fields[i].advanced && !set_by_buttons(form.fields[i])) {
+                    draw_field(form.fields[i], form_index, i);
+                }
+            }
+        }
+        ImGui::Separator();
+        draw_highlight_buttons(form, video);
+    }
+
+    /// The margins played around a rally: those of the form, else the command's defaults.
+    static cutting::Margins margins_of(CommandForm& form) {
+        cutting::Margins margins;
+        auto read = [&](const char* flag, double& value) {
+            if (const Field* field = form.field(flag); field != nullptr && !field->value.empty()) {
+                try {
+                    value = std::max(0.0, std::stod(field->value));
+                } catch (const std::exception&) {
+                    // keep the default while the field is being edited
+                }
+            }
+        };
+        read("--before", margins.before_s);
+        read("--after", margins.after_s);
+        return margins;
+    }
+
+    void draw_highlight_buttons(const CommandForm& form, const VideoEntry& video) {
+        const HighlightCounts counts = highlights_->counts();
+        auto run = [&](bool match_day) {
+            CommandForm call = form;
+            call.field(kVideoIdFlag)->value = match_day ? "" : video.video_id;
+            call.field(kMatchDayFlag)->value = match_day ? "1" : "";
+            try {
+                session_.run(call);
+                error_.clear();
+            } catch (const std::exception& error) {
+                error_ = error.what();
+            }
+        };
+        ImGui::BeginDisabled(session_.running() || counts.game == 0);
+        if (ImGui::Button(std::format("Make game video ({} rallies)", counts.game).c_str())) {
+            run(false);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("The game highlights of %s, with its title", video.video_id.c_str());
+        ImGui::SameLine();
+        ImGui::BeginDisabled(session_.running() || counts.match_day == 0);
+        if (ImGui::Button(
+                std::format("Make match day video ({} rallies)", counts.match_day).c_str())) {
+            run(true);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("The match day highlights of all games of %s",
+                              video.match_day.c_str());
+        if (session_.running()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", {100, 0})) {
+                session_.cancel();
+            }
+        }
+        if (!error_.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(kError, "%s", error_.c_str());
+        }
+        ImGui::TextColored(kMuted, "Written to %s",
+                           (std::filesystem::path(video.work_dir) / "highlights").string().c_str());
     }
 
     void draw_form(CommandForm& form, std::size_t form_index) {
@@ -979,6 +1094,9 @@ class LauncherApp {
     std::filesystem::path project_;
     launcher::LauncherSettings* settings_;
     launcher::SceneStore* scenes_;
+    std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
+    bool highlights_shown_ = false; ///< the tab was shown in the last frame
+    std::string first_tab_;         ///< selected in the first frame, then empty
     std::future<std::vector<std::string>> scene_job_; ///< closing waits for a running detection
     std::string scene_job_day_;
     std::vector<std::string> scene_job_ids_;
@@ -1006,8 +1124,7 @@ class LauncherApp {
 void run_launcher(launcher::LauncherSession& session, launcher::VideoPreview& preview,
                   const LauncherOptions& options) {
     const GuiContext gui(options.title, 1500, 950);
-    LauncherApp app(session, preview, gui, options.project_directory, options.settings,
-                    options.scenes);
+    LauncherApp app(session, preview, gui, options);
     for (int rendered = 0; options.max_frames == 0 || rendered < options.max_frames; ++rendered) {
         if (gui.poll_events()) {
             break;

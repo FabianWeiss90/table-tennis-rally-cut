@@ -148,16 +148,44 @@ ttrally_layer(ttrally_detection_infrastructure
 
 # Cutting context (phase 8: the video cut down to its rallies)
 ttrally_layer(ttrally_cutting_domain
-    SOURCES cutting/domain/cut_plan.cpp)
+    SOURCES cutting/domain/cut_plan.cpp
+    DEPENDS ttrally_shared_kernel)
 
 ttrally_layer(ttrally_cutting_application
-    SOURCES cutting/application/cut_video.cpp
+    SOURCES cutting/application/cut_video.cpp cutting/application/section_planning.cpp
     DEPENDS ttrally_cutting_domain ttrally_media_application ttrally_annotation_application)
 
 ttrally_layer(ttrally_cutting_infrastructure
-    SOURCES cutting/infrastructure/ffmpeg_video_cutter.cpp
+    SOURCES
+        cutting/infrastructure/cut_list_choice.cpp
+        cutting/infrastructure/ffmpeg_encoding.cpp
+        cutting/infrastructure/ffmpeg_video_cutter.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure
-    PRIVATE_DEPENDS ttrally_ffmpeg)
+        ttrally_annotation_infrastructure ttrally_ffmpeg)
+
+# Highlights context (highlight videos of a game or a match day)
+find_package(Stb REQUIRED)
+
+ttrally_layer(ttrally_highlights_domain
+    SOURCES highlights/domain/highlight_selection.cpp highlights/domain/title.cpp)
+
+ttrally_layer(ttrally_highlights_application
+    SOURCES
+        highlights/application/game_highlights.cpp
+        highlights/application/make_highlight_video.cpp
+    DEPENDS ttrally_highlights_domain ttrally_cutting_application ttrally_media_application)
+
+ttrally_layer(ttrally_highlights_infrastructure
+    SOURCES
+        highlights/infrastructure/csv_highlight_store.cpp
+        highlights/infrastructure/cut_list_rally_source.cpp
+        highlights/infrastructure/ffmpeg_highlight_renderer.cpp
+        highlights/infrastructure/ffmpeg_playback_source.cpp
+        highlights/infrastructure/title_painter.cpp
+    DEPENDS
+        ttrally_highlights_application ttrally_cutting_infrastructure
+        ttrally_annotation_infrastructure ttrally_shared_io)
+target_include_directories(ttrally_highlights_infrastructure SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 
 # Launcher context (the window that runs the commands)
 ttrally_layer(ttrally_launcher_domain
@@ -233,12 +261,13 @@ if(TTRALLY_BUILD_GUI)
         gui/annotator_app.cpp
         gui/frame_texture.cpp
         gui/gui_context.cpp
+        gui/highlights_panel.cpp
         gui/launcher_app.cpp
         gui/timeline_view.cpp)
     target_include_directories(ttrally_gui PUBLIC ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(ttrally_gui
         PUBLIC ttrally_annotation_application ttrally_media_application
-               ttrally_launcher_application
+               ttrally_launcher_application ttrally_highlights_application
         PRIVATE ttrally_options SDL3::SDL3 imgui::imgui)
 endif()
 
@@ -248,12 +277,14 @@ add_executable(ttrally
     cli/align_command.cpp
     cli/cut_command.cpp
     cli/devices_command.cpp
+    cli/highlights_command.cpp
     cli/main.cpp)
 target_link_libraries(ttrally PRIVATE
     ttrally_options
     ttrally_alignment_infrastructure
     ttrally_annotation_infrastructure
     ttrally_cutting_infrastructure
+    ttrally_highlights_infrastructure
     ttrally_media_infrastructure
     CLI11::CLI11)
 if(TTRALLY_HAS_ORT)

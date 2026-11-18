@@ -3,6 +3,8 @@
 #include "cli/gui_command.hpp"
 
 #include "gui/launcher_app.hpp"
+#include "highlights/infrastructure/cut_list_rally_source.hpp"
+#include "highlights/infrastructure/ffmpeg_playback_source.hpp"
 #include "launcher/application/launcher_session.hpp"
 #include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
@@ -42,6 +44,10 @@ int GuiCommand::run() {
     options.settings = &settings;
     launcher::CsvSceneStore scenes;
     options.scenes = &scenes;
+    highlights::FileMatchDayHighlights highlights;
+    options.highlights = &highlights;
+    highlights::FfmpegPlaybackSource playback;
+    options.playback = &playback;
     launcher::FfmpegVideoPreview preview;
     gui::run_launcher(session, preview, options);
     return 0;

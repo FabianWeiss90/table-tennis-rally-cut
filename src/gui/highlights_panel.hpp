@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+#pragma once
+
+#include "cutting/domain/cut_plan.hpp"
+#include "highlights/application/game_highlights.hpp"
+#include "highlights/application/playback_source.hpp"
+#include "launcher/domain/workspace.hpp"
+
+#include <cstddef>
+#include <memory>
+
+namespace ttrally::gui {
+
+class GuiContext;
+
+/// What the panel offers to make.
+struct HighlightCounts {
+    bool game_loaded = false;      ///< the selected video has rallies to choose from
+    std::size_t game = 0;          ///< game highlights of the selected video
+    std::size_t match_day = 0;     ///< match day highlights of all games of its match day
+};
+
+/// The highlights part of the launcher: the rallies of the selected video's game, numbered, with
+/// a mark for the game and one for the match day, the preselection by length, a player to watch
+/// a rally and the title. Every change is saved at once in the match day's highlights folder.
+class HighlightsPanel {
+  public:
+    HighlightsPanel(const GuiContext& gui, highlights::MatchDayHighlights& days,
+                    highlights::PlaybackSource& playback);
+    ~HighlightsPanel();
+    HighlightsPanel(const HighlightsPanel&) = delete;
+    HighlightsPanel& operator=(const HighlightsPanel&) = delete;
+
+    /// Draws the panel for the video; `reload` reads the rallies and marks again (e.g. when the
+    /// tab is opened). `margins` are played around a rally.
+    void draw(const launcher::WorkspaceSnapshot& workspace, const launcher::VideoEntry& video,
+              bool reload, cutting::Margins margins);
+
+    [[nodiscard]] HighlightCounts counts() const;
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace ttrally::gui

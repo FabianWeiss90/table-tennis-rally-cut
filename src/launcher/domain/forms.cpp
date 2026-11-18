@@ -268,12 +268,49 @@ CommandForm cut_form(const VideoEntry& video) {
              with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
                                      "From 1; empty: 4 with H.265, 8 with H.264 (Full HD, "
                                      "60 fps). Size per minute: about 7.5 MB per Mbit/s"),
-                              {"1", "2", "3", "4", "5", "6", "8", "12"}),
+                              {"1", "2", "3", "4", "5", "8", "12"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
              flag("--fast", "Fast (no re-encoding)",
                   "Seconds instead of minutes, but cuts snap to keyframes (often several s)"),
              advanced(option("--video-id", "Video id", FieldKind::Text, id, "", "")),
+             advanced(option("--encoder", "Encoder", FieldKind::Text, "auto", "auto",
+                             "e.g. hevc_vaapi, h264_nvenc, libopenh264")),
+             cache_dir(video)}};
+}
+
+CommandForm highlights_form(const VideoEntry& video) {
+    return {"highlights", "Highlights",
+            "Choose the highlights of each game: the longest rallies are preselected, tick or "
+            "untick them after watching. A match day highlight is also a game highlight (unless "
+            "uncoupled for the game). Then make the video of the game or of the whole match "
+            "day.",
+            Program::Ttrally, "", "", {"highlights"},
+            {advanced(option("--video-id", "Video id", FieldKind::Text, video.video_id, "",
+                             "Set by the buttons below")),
+             advanced(flag("--match-day", "Match day video", "Set by the buttons below")),
+             option("--before", "Seconds before each rally", FieldKind::Text, "1", "1", ""),
+             option("--after", "Seconds after each rally", FieldKind::Text, "1.5", "1.5", ""),
+             option("--crossfade", "Cross-fade (s)", FieldKind::Text, "0.5", "0.5",
+                    "Seconds two clips fade into each other; 0: hard cuts"),
+             flag("--rally-titles", "Players on each rally",
+                  "Match day video: each clip shows its game's title (the game video always "
+                  "shows it)"),
+             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
+                                     "From 1; empty: 4 with H.265, 8 with H.264 (Full HD, "
+                                     "60 fps)"),
+                              {"2", "4", "8", "12"}),
+             choice("--codec", "Codec", {"h265", "h264"}, "h265",
+                    "H.265: smaller at the same quality; H.264: plays everywhere"),
+             advanced(option("--highlights-dir", "Highlights directory", FieldKind::Directory,
+                             in_work_dir(video, {"highlights"}), "data/highlights",
+                             "The marks of every game; the videos are written here")),
+             advanced(option("--out", "Output video", FieldKind::File, "", "",
+                             "Empty: <video id>.mp4 or <match day>-highlights.mp4 in the "
+                             "highlights directory; a bare name also goes there, "
+                             "\".mp4\" is added if missing")),
+             advanced(option("--font", "Title font", FieldKind::File, "", "",
+                             "TrueType font; empty: a bold system font")),
              advanced(option("--encoder", "Encoder", FieldKind::Text, "auto", "auto",
                              "e.g. hevc_vaapi, h264_nvenc, libopenh264")),
              cache_dir(video)}};
@@ -312,7 +349,7 @@ std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnaps
     return {align_form(video),           annotate_form(video),
             features_form(video, workspace), detect_form(video, workspace),
             refine_form(video),          cut_form(video),
-            train_form(workspace)};
+            highlights_form(video),      train_form(workspace)};
 }
 
 } // namespace ttrally::launcher

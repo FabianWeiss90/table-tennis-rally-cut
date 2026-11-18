@@ -187,6 +187,25 @@ TEST_CASE("refine opens the annotation window on the detections") {
     CHECK_FALSE(supports_batch("refine"));
 }
 
+TEST_CASE("highlights are made from the match day's highlights folder") {
+    const auto snapshot = workspace();
+    auto highlights = form_named(forms_for(snapshot.videos[0], snapshot), "highlights");
+    CHECK(highlights.arguments() ==
+          std::vector<std::string>{"highlights", "--video-id", "match-a", "--highlights-dir",
+                                   in_library("day-1/ttrally-data/highlights"), "--cache-dir",
+                                   in_library("day-1/ttrally-data/cache")});
+    // The match day video: no video id, the flag instead
+    highlights.field("--video-id")->value.clear();
+    highlights.field("--match-day")->value = "1";
+    highlights.field("--rally-titles")->value = "1";
+    CHECK(highlights.arguments() ==
+          std::vector<std::string>{"highlights", "--match-day", "--rally-titles",
+                                   "--highlights-dir",
+                                   in_library("day-1/ttrally-data/highlights"), "--cache-dir",
+                                   in_library("day-1/ttrally-data/cache")});
+    CHECK_FALSE(supports_batch("highlights"));
+}
+
 TEST_CASE("the training gets the library and the selected videos by match day") {
     const auto snapshot = workspace();
     auto train = form_named(forms_for(snapshot.videos[0], snapshot), "train");
@@ -205,7 +224,7 @@ TEST_CASE("the ticked training videos survive choosing another video and rescans
     FakeScanner scanner;
     FakeRunner runner;
     LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
-    auto train = [&]() -> CommandForm& { return session.forms()[6]; };
+    auto train = [&]() -> CommandForm& { return session.forms()[7]; };
     REQUIRE(train().name == "train");
     train().field("--videos")->value = "day-1/match-b\nday-2/match-c\n";
     session.select_video(1);

@@ -196,6 +196,12 @@ WorkspaceSnapshot LibraryScanner::scan(const fs::path& library) {
     for (const fs::path& detector : files_with(project_ / "weights", ".onnx")) {
         workspace.detectors.push_back(fs::absolute(detector).lexically_normal().string());
     }
+    // The newest first: the form preselects it (by name, "rally-detector-test.onnx" would come
+    // before "rally-detector.onnx")
+    std::ranges::stable_sort(workspace.detectors, std::greater{}, [](const std::string& path) {
+        std::error_code error;
+        return fs::last_write_time(path, error);
+    });
     for (const char* uv : {"external/uv/uv", "external/uv/uv.exe"}) {
         if (fs::exists(project_ / uv)) {
             workspace.uv = fs::absolute(project_ / uv).lexically_normal().string();

@@ -7,6 +7,7 @@
   "dependencies": [
     "cli11",
     "pocketfft",
+    "stb",
     {
       "name": "ffmpeg",
       "default-features": false,

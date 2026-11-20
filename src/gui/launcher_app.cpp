@@ -44,6 +44,7 @@ constexpr float kLibraryButtonsWidth = 140.0F;
 /// The steps of draw_status(), for measuring its line
 constexpr std::array kSteps{"align", "labels", "features", "detect", "refine", "cut"};
 constexpr float kLabelWidth = 230.0F;
+constexpr std::size_t kNumberFieldDigits = 8; ///< width of a number field, e.g. "3072" or "1.5"
 constexpr float kLogShare = 0.38F; ///< of the right side's height
 constexpr int kPreviewHeight = 360;  ///< decoded preview size (shown scaled to the sidebar)
 constexpr int kDefaultPreviewPercent = 20; ///< far enough in to be past the warm-up
@@ -522,12 +523,15 @@ class LauncherApp {
             const bool select = !first_tab_.empty() && forms[f].name == first_tab_;
             if (ImGui::BeginTabItem(forms[f].title.c_str(), nullptr,
                                     select ? ImGuiTabItemFlags_SetSelected : 0)) {
+                // The tab's content scrolls below the tabs, which stay in place
+                ImGui::BeginChild("##tab", {0, 0});
                 if (forms[f].name == kHighlightsForm) {
                     draw_highlights(forms[f], f, !highlights_shown_);
                     highlights_shown = true;
                 } else {
                     draw_form(forms[f], f);
                 }
+                ImGui::EndChild();
                 ImGui::EndTabItem();
             }
         }
@@ -594,7 +598,10 @@ class LauncherApp {
         const HighlightCounts counts = highlights_->counts();
         auto run = [&](bool match_day) {
             CommandForm call = form;
-            call.field(kVideoIdFlag)->value = match_day ? "" : video.video_id;
+            // No video id makes the match day video: not a fallback to the game's id
+            Field& video_id = *call.field(kVideoIdFlag);
+            video_id.value = match_day ? "" : video.video_id;
+            video_id.initial_value = video_id.value;
             call.field(kMatchDayFlag)->value = match_day ? "1" : "";
             try {
                 session_.run(call);
@@ -678,7 +685,9 @@ class LauncherApp {
             break;
         }
         case FieldKind::Choice:
-            draw_choice(field);
+            if (draw_choice(field)) {
+                session_.field_edited(session_.forms()[form_index], field);
+            }
             break;
         case FieldKind::MultiChoice:
             draw_multi_choice(field);
@@ -691,10 +700,14 @@ class LauncherApp {
 
     void draw_text(Field& field, std::size_t form_index, std::size_t field_index) {
         const bool browse = field.kind == FieldKind::File || field.kind == FieldKind::Directory;
+        const bool number = field.kind == FieldKind::Number;
         const float buttons = (browse ? 32.0F : 0.0F) + (field.suggestions.empty() ? 0.0F : 32.0F);
-        ImGui::SetNextItemWidth(std::max(120.0F, ImGui::GetContentRegionAvail().x - buttons));
-        const std::string hint = field.default_value.empty() ? std::string()
-                                                             : "default: " + field.default_value;
+        ImGui::SetNextItemWidth(number ? number_width(field.value)
+                                       : std::max(120.0F, ImGui::GetContentRegionAvail().x -
+                                                              buttons));
+        // An emptied field stands for the proposed value: shown as the hint
+        const std::string& used = field.effective_value();
+        const std::string hint = used.empty() || number ? used : "default: " + used;
         input_text("##value", field.value, ImGuiInputTextFlags_None, hint.c_str());
         bool edited = ImGui::IsItemDeactivatedAfterEdit();
         if (!field.help.empty()) {
@@ -726,7 +739,14 @@ class LauncherApp {
         }
     }
 
-    static void draw_choice(Field& field) {
+    /// Wide enough for a number of kNumberFieldDigits digits, or the value if longer.
+    static float number_width(const std::string& value) {
+        const std::string widest(std::max(kNumberFieldDigits, value.size()), '0');
+        return ImGui::CalcTextSize(widest.c_str()).x + 2.0F * ImGui::GetStyle().FramePadding.x;
+    }
+
+    /// Returns whether another choice was made.
+    static bool draw_choice(Field& field) {
         const auto help_of = [&](std::size_t i) -> const std::string* {
             return i < field.choice_help.size() && !field.choice_help[i].empty()
                        ? &field.choice_help[i]
@@ -741,18 +761,22 @@ class LauncherApp {
             if (help != nullptr) {
                 wrapped_tooltip(*help);
             }
-            return;
+            return false;
         }
+        bool changed = false;
         for (std::size_t i = 0; i < field.choices.size(); ++i) {
             const std::string& choice = field.choices[i];
-            if (ImGui::Selectable(choice.c_str(), choice == field.value)) {
+            if (ImGui::Selectable(choice.c_str(), choice == field.value) &&
+                choice != field.value) {
                 field.value = choice;
+                changed = true;
             }
             if (const std::string* help = help_of(i)) {
                 wrapped_tooltip(*help);
             }
         }
         ImGui::EndCombo();
+        return changed;
     }
 
     /// Tooltip of the last item, wrapped to a readable width.

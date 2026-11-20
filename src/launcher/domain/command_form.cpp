@@ -23,28 +23,35 @@ std::vector<std::string> lines_of(const std::string& value) {
 }
 
 std::string as_argument(const Field& field, const std::string& working_directory) {
+    const std::string& value = field.effective_value();
     if (!field.project_path || working_directory.empty() ||
-        std::filesystem::path(field.value).is_absolute()) {
-        return field.value;
+        std::filesystem::path(value).is_absolute()) {
+        return value;
     }
     // e.g. "data/features" seen from "training" is "../data/features"
-    return std::filesystem::path(field.value)
+    return std::filesystem::path(value)
         .lexically_relative(working_directory)
         .generic_string();
 }
 
 } // namespace
 
+const std::string& Field::effective_value() const {
+    const bool empty_means_off = kind == FieldKind::Flag || kind == FieldKind::MultiChoice;
+    return value.empty() && !empty_means_off ? initial_value : value;
+}
+
 std::vector<std::string> CommandForm::arguments() const {
     std::vector<std::string> args = fixed_arguments;
     for (const Field& field : fields) {
-        if (field.flag.empty() && !field.value.empty()) {
+        if (field.flag.empty() && !field.effective_value().empty()) {
             args.push_back(as_argument(field, working_directory));
         }
     }
     for (const Field& field : fields) {
-        if (field.flag.empty() || field.value.empty() ||
-            (!field.required && field.value == field.default_value)) {
+        const std::string& value = field.effective_value();
+        if (field.flag.empty() || value.empty() ||
+            (!field.required && value == field.default_value)) {
             continue;
         }
         switch (field.kind) {
@@ -68,7 +75,7 @@ std::vector<std::string> CommandForm::arguments() const {
 std::vector<std::string> CommandForm::missing() const {
     std::vector<std::string> labels;
     for (const Field& field : fields) {
-        if (field.required && field.value.empty()) {
+        if (field.required && field.effective_value().empty()) {
             labels.push_back(field.label);
         }
     }

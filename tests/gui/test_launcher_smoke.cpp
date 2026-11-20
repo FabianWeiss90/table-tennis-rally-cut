@@ -151,6 +151,29 @@ TEST_CASE("the launcher window opens and renders the forms") {
     std::filesystem::remove(screenshot);
 }
 
+TEST_CASE("the launcher shows the cut form of the selected video") {
+    use_offscreen_video_driver();
+    OneVideo scanner;
+    IdleRunner runner;
+    launcher::LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    session.select_video(0);
+    // TTRALLY_SCREENSHOT_DIR keeps a screenshot of the window for looking at the layout.
+    const char* keep = std::getenv("TTRALLY_SCREENSHOT_DIR");
+    const auto screenshot = (keep != nullptr ? std::filesystem::path(keep)
+                                             : std::filesystem::temp_directory_path()) /
+                            "launcher_cut.bmp";
+    GreyPreview preview;
+    gui::LauncherOptions options;
+    options.max_frames = 10;
+    options.screenshot = screenshot;
+    options.first_tab = "cut";
+    gui::run_launcher(session, preview, options);
+    CHECK(std::filesystem::file_size(screenshot) > 0);
+    if (keep == nullptr) {
+        std::filesystem::remove(screenshot);
+    }
+}
+
 TEST_CASE("the launcher shows the highlights of the selected game") {
     use_offscreen_video_driver();
     OneVideo scanner;

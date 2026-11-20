@@ -10,7 +10,8 @@ namespace ttrally::launcher {
 enum class FieldKind {
     File,        ///< a path, with a browse button
     Directory,   ///< a directory
-    Text,        ///< free text or a number
+    Text,        ///< free text
+    Number,      ///< a number (shown in a narrow field)
     Choice,      ///< one of `choices`
     MultiChoice, ///< several of `choices` (passed after one flag)
     Flag,        ///< an option without value, on or off
@@ -30,6 +31,12 @@ struct Field {
     bool project_path = false; ///< a path relative to the project, also when run elsewhere
     std::string help;
     std::vector<std::string> choice_help; ///< per choice (same order), shown when hovering it
+    /// What the form proposed. An emptied field (not a flag or multiple choice, where empty
+    /// means off or none) silently stands for it again.
+    std::string initial_value;
+
+    /// The value the command gets: the entered one, else the proposed one.
+    [[nodiscard]] const std::string& effective_value() const;
 };
 
 /// What the launcher starts for a form.

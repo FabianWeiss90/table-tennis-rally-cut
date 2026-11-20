@@ -16,19 +16,26 @@ const std::vector<std::string> kDecodeBackends{"auto",    "vaapi",  "cuda", "d3d
 const std::vector<std::string> kExecutionProviders{"auto",    "cuda",   "tensorrt",
                                                    "migraphx", "webgpu", "cpu"};
 constexpr std::string_view kPreferredBackbone = "fp16"; ///< the variant the detector is trained on
+/// Bit rates proposed per codec: what the encoder would pick for Full HD at 60 fps.
+constexpr const char* kH265Bitrate = "4";
+constexpr const char* kH264Bitrate = "8";
+constexpr const char* kBitrateHelp =
+    "Mbit/s, from 1. Proposed for Full HD at 60 fps: 4 with H.265, 8 with H.264 (follows the "
+    "codec until you enter your own)";
 
 Field positional(std::string label, FieldKind kind, std::string value, std::string help) {
-    return {.flag = {}, .label = std::move(label), .kind = kind, .value = std::move(value),
+    return {.flag = {}, .label = std::move(label), .kind = kind, .value = value,
             .default_value = {}, .suggestions = {}, .choices = {}, .required = true,
-            .advanced = false, .project_path = false, .help = std::move(help), .choice_help = {}};
+            .advanced = false, .project_path = false, .help = std::move(help), .choice_help = {},
+            .initial_value = value};
 }
 
 Field option(std::string flag, std::string label, FieldKind kind, std::string value,
              std::string default_value, std::string help) {
-    return {.flag = std::move(flag), .label = std::move(label), .kind = kind,
-            .value = std::move(value), .default_value = std::move(default_value),
-            .suggestions = {}, .choices = {}, .required = false, .advanced = false,
-            .project_path = false, .help = std::move(help), .choice_help = {}};
+    return {.flag = std::move(flag), .label = std::move(label), .kind = kind, .value = value,
+            .default_value = std::move(default_value), .suggestions = {}, .choices = {},
+            .required = false, .advanced = false, .project_path = false,
+            .help = std::move(help), .choice_help = {}, .initial_value = value};
 }
 
 Field advanced(Field field) {
@@ -186,11 +193,11 @@ CommandForm align_form(const VideoEntry& video) {
              decode_backend(),
              advanced(flag("--no-visual-check", "Skip the visual check",
                            "Do not compare one frame per segment")),
-             advanced(option("--min-confidence", "Minimum confidence", FieldKind::Text, "2", "2",
+             advanced(option("--min-confidence", "Minimum confidence", FieldKind::Number, "2", "2",
                              "Peak ratio below which a window counts as uncertain")),
-             advanced(option("--local-search", "Local search (s)", FieldKind::Text, "120",
+             advanced(option("--local-search", "Local search (s)", FieldKind::Number, "120",
                              "120", "Seconds searched after the previous match")),
-             advanced(option("--threads", "Threads", FieldKind::Text, "0", "0",
+             advanced(option("--threads", "Threads", FieldKind::Number, "0", "0",
                              "0 = all cores"))}};
 }
 
@@ -217,9 +224,9 @@ CommandForm annotate_form(const VideoEntry& video) {
              cache_dir(video),
              decode_backend("cpu", "cpu is fastest for stepping (every frame is needed in "
                                    "main memory); auto tries the GPU first"),
-             advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
+             advanced(option("--display-height", "Display height", FieldKind::Number, "1080",
                              "1080", "Pixels of the shown video")),
-             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "3072",
+             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Number, "3072",
                              "3072", "About 16 s of Full HD frames: a gap of up to 10 s "
                                      "as a whole plus buffers"))}};
 }
@@ -242,8 +249,8 @@ CommandForm features_form(const VideoEntry& video, const WorkspaceSnapshot& work
              advanced(choice("--ep", "Model runs on", kExecutionProviders, "auto",
                              "auto picks the GPU if possible")),
              decode_backend(),
-             advanced(option("--rate", "Samples per second", FieldKind::Text, "10", "10", "")),
-             advanced(option("--batch", "Batch size", FieldKind::Text, "16", "16",
+             advanced(option("--rate", "Samples per second", FieldKind::Number, "10", "10", "")),
+             advanced(option("--batch", "Batch size", FieldKind::Number, "16", "16",
                              "Images per model run")),
              advanced(flag("--force", "Recompute", "Even if the stored features are current"))}};
 }
@@ -275,7 +282,7 @@ CommandForm detect_form(const VideoEntry& video, const WorkspaceSnapshot& worksp
              advanced(flag("--no-evaluation", "Do not compare with labels", "")),
              advanced(choice("--ep", "Image model runs on", kExecutionProviders, "auto", "")),
              decode_backend(),
-             advanced(option("--batch", "Batch size", FieldKind::Text, "16", "16", ""))}};
+             advanced(option("--batch", "Batch size", FieldKind::Number, "16", "16", ""))}};
 }
 
 CommandForm refine_form(const VideoEntry& video) {
@@ -297,9 +304,9 @@ CommandForm refine_form(const VideoEntry& video) {
              cache_dir(video),
              decode_backend("cpu", "cpu is fastest for stepping (every frame is needed in "
                                    "main memory); auto tries the GPU first"),
-             advanced(option("--display-height", "Display height", FieldKind::Text, "1080",
+             advanced(option("--display-height", "Display height", FieldKind::Number, "1080",
                              "1080", "Pixels of the shown video")),
-             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Text, "3072",
+             advanced(option("--frame-memory", "Frame memory (MB)", FieldKind::Number, "3072",
                              "3072", ""))}};
 }
 
@@ -333,11 +340,12 @@ CommandForm cut_form(const VideoEntry& video) {
                               cut_lists),
              option("--out", "Output video", FieldKind::File,
                     in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
-             option("--before", "Seconds before each rally", FieldKind::Text, "1", "1", ""),
-             option("--after", "Seconds after each rally", FieldKind::Text, "1.5", "1.5", ""),
-             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
-                                     "From 1; empty: 4 with H.265, 8 with H.264 (Full HD, "
-                                     "60 fps). Size per minute: about 7.5 MB per Mbit/s"),
+             option("--before", "Seconds before each rally", FieldKind::Number, "1", "1", ""),
+             option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
+             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number,
+                                     kH265Bitrate, "",
+                                     std::string(kBitrateHelp) +
+                                         ". Size per minute: about 7.5 MB per Mbit/s"),
                               {"1", "2", "3", "4", "5", "8", "12"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
@@ -358,16 +366,15 @@ CommandForm highlights_form(const VideoEntry& video) {
             {advanced(option("--video-id", "Video id", FieldKind::Text, video.video_id, "",
                              "Set by the buttons below")),
              advanced(flag("--match-day", "Match day video", "Set by the buttons below")),
-             option("--before", "Seconds before each rally", FieldKind::Text, "1", "1", ""),
-             option("--after", "Seconds after each rally", FieldKind::Text, "1.5", "1.5", ""),
-             option("--crossfade", "Cross-fade (s)", FieldKind::Text, "0.5", "0.5",
+             option("--before", "Seconds before each rally", FieldKind::Number, "1", "1", ""),
+             option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
+             option("--crossfade", "Cross-fade (s)", FieldKind::Number, "0.5", "0.5",
                     "Seconds two clips fade into each other; 0: hard cuts"),
              option("--rally-titles", "Players on each rally", FieldKind::Flag, "1", "",
                     "Match day video: each clip shows its game's title (the game video always "
                     "shows it)"),
-             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Text, "", "",
-                                     "From 1; empty: 4 with H.265, 8 with H.264 (Full HD, "
-                                     "60 fps)"),
+             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number,
+                                     kH265Bitrate, "", kBitrateHelp),
                               {"2", "4", "8", "12"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
@@ -403,15 +410,28 @@ CommandForm train_form(const WorkspaceSnapshot& workspace) {
              option("--out", "Detector file", FieldKind::File,
                     (shared / "models" / "rally-detector.onnx").string(), "",
                     "A report is written next to it"),
-             option("--epochs", "Epochs", FieldKind::Text, "120", "120", ""),
-             advanced(option("--hidden", "Hidden channels", FieldKind::Text, "128", "128", "")),
-             advanced(option("--levels", "Levels", FieldKind::Text, "8", "8", "")),
-             advanced(option("--stages", "Stages", FieldKind::Text, "4", "4", "")),
-             advanced(option("--seed", "Seed", FieldKind::Text, "42", "42", "")),
+             option("--epochs", "Epochs", FieldKind::Number, "120", "120", ""),
+             advanced(option("--hidden", "Hidden channels", FieldKind::Number, "128", "128", "")),
+             advanced(option("--levels", "Levels", FieldKind::Number, "8", "8", "")),
+             advanced(option("--stages", "Stages", FieldKind::Number, "4", "4", "")),
+             advanced(option("--seed", "Seed", FieldKind::Number, "42", "42", "")),
              advanced(choice("--device", "Device", {"auto", "cpu", "cuda"}, "auto", ""))}};
 }
 
 } // namespace
+
+void propose_bitrate_for_codec(CommandForm& form) {
+    const Field* codec = form.field("--codec");
+    Field* bitrate = form.field("--bitrate");
+    if (codec == nullptr || bitrate == nullptr) {
+        return;
+    }
+    const std::string proposed = codec->value == "h264" ? kH264Bitrate : kH265Bitrate;
+    if (bitrate->value.empty() || bitrate->value == bitrate->initial_value) {
+        bitrate->value = proposed;
+    }
+    bitrate->initial_value = proposed;
+}
 
 std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnapshot& workspace) {
     return {align_form(video),           annotate_form(video),

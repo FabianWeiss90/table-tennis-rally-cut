@@ -383,7 +383,10 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
   `ttrally-data/`, and suggestions such as the image models and detectors in the library's
   `ttrally-data/models` and the detectors in `weights/`. Rarely needed options are folded away
   under "Advanced" with the commands' defaults. Fields for files have a "..." button for the file
-  dialog.
+  dialog. Every field starts with the value that would be used; an emptied field silently
+  stands for that value again (shown greyed). The bit rate follows the codec (4 Mbit/s with
+  H.265, 8 with H.264) until you enter your own. The tabs stay at the top while their content
+  scrolls.
 - **Run:** the command runs as its own process; its output appears below, and it can be
   cancelled. The exact command line is shown above the button and can be copied. The list of
   videos is updated when a command has finished.

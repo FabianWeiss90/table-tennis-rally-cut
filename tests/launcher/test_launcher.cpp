@@ -121,11 +121,11 @@ TEST_CASE("video ids are suggested from file names like the existing ones") {
 TEST_CASE("command lines leave out defaults and quote where needed") {
     CommandForm form{"cut", "Cut", "", Program::Ttrally, "", "", {"cut"}, {}};
     form.fields = {
-        {"", "Video", FieldKind::File, "data/a b.mp4", "", {}, {}, true, false, false, "", {}},
-        {"--before", "Before", FieldKind::Text, "2", "2", {}, {}, false, false, false, "", {}},
-        {"--after", "After", FieldKind::Text, "3", "2", {}, {}, false, false, false, "", {}},
-        {"--fast", "Fast", FieldKind::Flag, "1", "", {}, {}, false, false, false, "", {}},
-        {"--bitrate", "Bit rate", FieldKind::Text, "", "", {}, {}, false, false, false, "", {}}};
+        {"", "Video", FieldKind::File, "data/a b.mp4", "", {}, {}, true, false, false, "", {}, ""},
+        {"--before", "Before", FieldKind::Text, "2", "2", {}, {}, false, false, false, "", {}, ""},
+        {"--after", "After", FieldKind::Text, "3", "2", {}, {}, false, false, false, "", {}, ""},
+        {"--fast", "Fast", FieldKind::Flag, "1", "", {}, {}, false, false, false, "", {}, ""},
+        {"--bitrate", "Bit rate", FieldKind::Text, "", "", {}, {}, false, false, false, "", {}, ""}};
     CHECK(form.arguments() ==
           std::vector<std::string>{"cut", "data/a b.mp4", "--after", "3", "--fast"});
     CHECK(command_line("ttrally", form.arguments()) ==
@@ -193,15 +193,16 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     auto highlights = form_named(forms_for(snapshot.videos[0], snapshot), "highlights");
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--video-id", "match-a", "--rally-titles",
-                                   "--highlights-dir",
+                                   "--bitrate", "4", "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // The match day video: no video id, the flag instead
     highlights.field("--video-id")->value.clear();
+    highlights.field("--video-id")->initial_value.clear(); // as the match day button does
     highlights.field("--match-day")->value = "1";
     CHECK(highlights.arguments() ==
-          std::vector<std::string>{"highlights", "--match-day", "--rally-titles",
-                                   "--highlights-dir",
+          std::vector<std::string>{"highlights", "--match-day", "--rally-titles", "--bitrate",
+                                   "4", "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // Players on each rally is on by default and can be switched off
@@ -209,6 +210,38 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     const std::vector<std::string> without = highlights.arguments();
     CHECK(std::ranges::find(without, "--rally-titles") == without.end());
     CHECK_FALSE(supports_batch("highlights"));
+}
+
+TEST_CASE("an emptied field stands for the value the form proposed") {
+    const auto snapshot = workspace();
+    auto cut = form_named(forms_for(snapshot.videos[0], snapshot), "cut");
+    const std::vector<std::string> proposed = cut.arguments();
+    for (const char* flag : {"--rallies", "--out", "--before", "--bitrate", "--cache-dir"}) {
+        cut.field(flag)->value.clear();
+    }
+    CHECK(cut.arguments() == proposed);
+    CHECK(cut.missing().empty());
+    // Flags stay off when emptied
+    cut.field("--fast")->value = "1";
+    cut.field("--fast")->value.clear();
+    const std::vector<std::string> without_fast = cut.arguments();
+    CHECK(std::ranges::find(without_fast, "--fast") == without_fast.end());
+}
+
+TEST_CASE("the bit rate follows the codec until one of the user's own is entered") {
+    const auto snapshot = workspace();
+    auto cut = form_named(forms_for(snapshot.videos[0], snapshot), "cut");
+    CHECK(cut.field("--bitrate")->value == "4");
+    cut.field("--codec")->value = "h264";
+    propose_bitrate_for_codec(cut);
+    CHECK(cut.field("--bitrate")->value == "8");
+    cut.field("--bitrate")->value.clear(); // emptied: the proposal for H.264
+    CHECK(cut.field("--bitrate")->effective_value() == "8");
+    cut.field("--bitrate")->value = "12";
+    cut.field("--codec")->value = "h265";
+    propose_bitrate_for_codec(cut);
+    CHECK(cut.field("--bitrate")->value == "12"); // the user's own stays
+    CHECK(cut.field("--bitrate")->effective_value() == "12");
 }
 
 TEST_CASE("the encoder is chosen from a list that explains each entry") {

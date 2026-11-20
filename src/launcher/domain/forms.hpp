@@ -15,4 +15,8 @@ namespace ttrally::launcher {
 [[nodiscard]] std::vector<CommandForm> forms_for(const VideoEntry& video,
                                                  const WorkspaceSnapshot& workspace);
 
+/// After the codec of a form (cut, highlights) changed: proposes its bit rate, unless one of
+/// the user's own was entered.
+void propose_bitrate_for_codec(CommandForm& form);
+
 } // namespace ttrally::launcher

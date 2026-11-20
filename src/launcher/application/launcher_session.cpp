@@ -158,6 +158,14 @@ void LauncherSession::run(const CommandForm& form) {
 }
 
 void LauncherSession::field_edited(const CommandForm& form, const Field& field) {
+    if (field.flag == "--codec") {
+        for (CommandForm& existing : forms_) {
+            if (existing.name == form.name) {
+                propose_bitrate_for_codec(existing);
+            }
+        }
+        return;
+    }
     if (pre_cuts_ == nullptr || form.name != kAlignForm || field.label != kPreCutField ||
         !selected_) {
         return;

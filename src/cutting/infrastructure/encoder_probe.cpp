@@ -253,8 +253,8 @@ void EncoderFailures::add(const std::string& key, ProbeOutcome outcome) {
 
 std::string EncoderFailures::key(const std::string& encoder, const VideoFormat& format,
                                  std::int64_t bitrate) {
-    return std::format("{} {}x{} {}/{} fps {} {}", encoder, format.width, format.height,
-                       format.frame_rate.num, format.frame_rate.den,
+    return std::format("{} {}x{} {}/{} fps {} {}", encoder_label(encoder), format.width,
+                       format.height, format.frame_rate.num, format.frame_rate.den,
                        format.full_range ? "full" : "limited", bitrate);
 }
 

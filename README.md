@@ -698,11 +698,11 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 - **Frame-accurate (default):** every section starts and ends exactly at a frame; the video is
   re-encoded as **H.265 (HEVC)** with the GPU (VAAPI on AMD/Intel under Linux, NVENC, Quick Sync,
   AMF or Media Foundation). Without an H.265 encoder, H.264 is used (GPU, else OpenH264, else
-  FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). With `--codec h264` on Linux,
-  **OpenH264 on the CPU** comes first (about 3x real time for Full HD at 60 fps on a 24-thread
-  CPU), because `h264_vaapi` on AMD gives artifacts (see below); the GPU encoders follow. Its
-  simple H.264 profile gives lower quality than H.265 on the GPU: on a fast rally, SSIM 0.973
-  at 8 Mbit/s against 0.983 for H.265 at 4 Mbit/s. Colours and value range of
+  FFmpeg's own MPEG-4 encoder; no GPL encoders such as x264/x265). With `--codec h264` the GPU
+  encoders come first (`h264_vaapi` always at constant bit rate, see below), then OpenH264 on
+  the CPU (about 3x real time for Full HD at 60 fps on a 24-thread CPU, but its simple H.264
+  profile gives clearly lower quality: on the same clip 43.4 dB PSNR at 8 Mbit/s, against
+  45.8 dB for `h264_vaapi` at 8 Mbit/s and 45.9 dB for `hevc_vaapi` at 4 Mbit/s). Colours and value range of
   the source are kept, the audio is encoded as AAC. A 10-minute match takes about 40 s on an
   RX 7800 XT. Before encoding, the output lists the video encoders this FFmpeg supports (in the
   order they are tried), those that cannot be opened on this machine, and the one used with its
@@ -720,21 +720,30 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   Below 5 Mbit/s the size goes down in proportion (about 7.5 MB per minute per Mbit/s, plus
   1.5 MB per minute of audio); the quality below 5 has not been measured.
 - **H.265 playback:** VLC, mpv, current browsers, smartphones, Windows (with the HEVC
-  extension) and YouTube play it. The files use the tag `hev1`; Apple's own players prefer
-  `hvc1`, which the VAAPI encoder cannot produce correctly. For maximum compatibility use
-  `--codec h264` (with `h264_vaapi` limited to 15 Mbit/s, because the driver hangs above).
-- **Bit rates the driver gets wrong:** `h264_vaapi` on Mesa misreads its stream headers at
-  some bit rates and then hangs or writes broken pictures (blocks in fast motion) without
-  reporting an error; for Full HD at 59.94 fps for example 2, 3, 4 and 6 Mbit/s hang, 7 and
-  7.5 give broken pictures, 5 and 8 to 15 work. Which ones fail cannot be predicted, so every
-  VAAPI encoder first encodes a short test pattern at the chosen bit rate and decodes it again;
+  extension), YouTube and Apple devices (Safari, QuickTime, iPhone/iPad) play it. The files use
+  the tag `hvc1` and keep the parameter sets (picture size, profile; what a decoder needs
+  first) in the file header, as Apple's players require. For maximum compatibility use
+  `--codec h264`.
+- **Video header:** an MP4 file keeps the parameter sets in its header (`hvcC`/`avcC`), and
+  encoders may repeat them in the stream. The VAAPI encoder on Mesa (AMD) writes a header copy
+  that differs from the one it actually encodes with; most players read the stream copy and do
+  not notice, but Apple's players read the header and then play only the sound or nothing.
+  ttrally therefore builds the header from the parameter sets in the stream. Videos made by
+  earlier versions (tag `hev1`) are repaired with [`repair-mp4`](#repair-mp4).
+- **`h264_vaapi` at constant bit rate:** with FFmpeg's default variable bit rate, Mesa misreads
+  the stream headers FFmpeg passes it: for Full HD at 59.94 fps 2, 3, 4 and 6 Mbit/s hung, 7
+  and 7.5 gave broken pictures, and the others ignored the bit rate (about 2.4 Mbit/s at "8",
+  which showed as blocks in fast motion). ttrally therefore always opens it with constant bit
+  rate and access unit delimiters (`rc_mode=CBR`, `aud=1`); with these, 1.5 to 40 Mbit/s all
+  worked at the asked bit rate (Mesa 26.2.6, RX 7800 XT). `hevc_vaapi` is not affected.
+- **Bit rates the driver gets wrong:** as a safeguard against other driver versions, every VAAPI
+  encoder first encodes a short test pattern at the chosen bit rate and decodes it again;
   if that fails, the nearest bit rate that works is used (0.5 Mbit/s steps, the higher one
   first) and the output says which were skipped. Failures are remembered in
   `~/.cache/ttrally/encoder-failures.csv` (on Windows `%LOCALAPPDATA%\ttrally\`) and not tried
   again; delete the file after a driver update. A probe that hangs keeps one CPU core busy until
   the command ends. If an encoder still stops answering while encoding, the command ends after
-  20 s with a message and removes the unfinished video. Even at bit rates that pass the test,
-  videos from `h264_vaapi` showed blocky artifacts, so `auto` no longer picks it first.
+  20 s with a message and removes the unfinished video.
 - **`--fast`:** copies the compressed video without re-encoding (under a second), but each
   section is widened to the keyframes around it. Cameras often write a keyframe only every few
   seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every
@@ -746,6 +755,22 @@ Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the defa
 `libopenh264`; default: the first of the codec that works), `--cache-dir`. In the launcher the
 encoder is a drop-down list under "Advanced"; hovering an entry says what it runs on and what it
 needs.
+
+### `repair-mp4`
+
+```
+ttrally repair-mp4 <match day>/ttrally-data/cuts <match day>/ttrally-data/highlights
+ttrally repair-mp4 --check video.mp4
+```
+
+Repairs the video header of MP4 files made by earlier versions, so that Apple devices play
+them (see "Video header" under `cut`): files tagged `hev1`, or whose header differs from the
+parameter sets in the stream. Takes files or folders (their MP4 files, not subfolders). Nothing
+is re-encoded: the packets are copied, the header is built from the stream's parameter sets and
+H.265 is tagged `hvc1`. The copy is written next to the file and replaces it only after its
+header and every video and audio packet were checked against the original; otherwise the
+original is kept. Files that are fine are left unchanged. About a second per file plus the time
+to copy it. `--check` only reports what is wrong.
 
 ### `highlights`
 

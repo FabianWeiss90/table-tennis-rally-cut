@@ -127,20 +127,20 @@ Field encoder_field() {
     const std::vector<Encoder> encoders{
         {"auto",
          "The first that works: for H.265 hevc_vaapi, hevc_nvenc, hevc_qsv on the graphics "
-         "card; for H.264 libopenh264 on the CPU first (h264_vaapi has a driver bug on AMD), "
-         "then h264_nvenc, h264_qsv, h264_vaapi and mpeg4.",
+         "card; for H.264 h264_vaapi, h264_nvenc, h264_qsv, then libopenh264 and mpeg4 on "
+         "the CPU.",
          ""},
         {"hevc_vaapi", "H.265 on the graphics card via VA-API (AMD or Intel)." + ignores_codec,
          vaapi},
         {"hevc_nvenc", "H.265 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
         {"hevc_qsv", "H.265 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
-        openh264,
+        {"h264_vaapi",
+         "H.264 on the graphics card via VA-API (AMD or Intel), always at constant bit rate "
+         "(the AMD driver misreads the default variable rate)." + ignores_codec,
+         vaapi},
         {"h264_nvenc", "H.264 on the graphics card (NVIDIA NVENC)." + ignores_codec, nvenc},
         {"h264_qsv", "H.264 on the graphics card (Intel Quick Sync)." + ignores_codec, qsv},
-        {"h264_vaapi",
-         "H.264 on the graphics card via VA-API (AMD or Intel); on AMD with Mesa it hangs or "
-         "writes artifacts at some bit rates." + ignores_codec,
-         vaapi},
+        openh264,
         mpeg4};
 #endif
     Field field = choice("--encoder", "Encoder", {}, "auto",

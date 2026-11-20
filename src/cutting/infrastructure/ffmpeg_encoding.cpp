@@ -3,6 +3,7 @@
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 
 #include "cutting/infrastructure/encoder_probe.hpp"
+#include "cutting/infrastructure/parameter_sets.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
 #include "media/application/media_error.hpp"
 
@@ -39,14 +40,10 @@ constexpr double kH265BitsPerPixel = 0.032;
 /// H.264 needs about twice the bit rate for the same quality (8 Mbit/s for Full HD at 60 fps,
 /// after rounding to whole Mbit/s).
 constexpr double kH264BitsPerPixel = 0.064;
-/// h264_vaapi hangs in the driver (Mesa, RX 7800 XT) at 20 Mbit/s and above or with constant
-/// quality; 15 Mbit/s was measured to work.
-constexpr std::int64_t kMaxH264VaapiBitrate = 15'000'000;
 constexpr std::int64_t kAudioBitrate = 192'000;
 constexpr double kKeyframeIntervalS = 2.0;
 /// A single encoder call takes milliseconds; one that has not returned after this long hangs
-/// (h264_vaapi, Mesa 26.2, RX 7800 XT: an endless loop in the driver at some bit rates, e.g.
-/// 2, 4 and 6 Mbit/s, measured on 2026-11-18; 5, 7, 8, 10, 12 and 15 Mbit/s worked).
+/// (seen with h264_vaapi on Mesa 26.2 before its settings were fixed; kept as a guard).
 constexpr std::chrono::seconds kEncoderHangTimeout{20};
 constexpr std::chrono::milliseconds kWatchdogPoll{500};
 /// Bit rate suggested after a hang: the H.264 default, else the next step above it.
@@ -61,9 +58,7 @@ std::vector<std::string> platform_video_encoders(VideoCodec codec) {
                                   "h264_mf",  "libopenh264", "mpeg4"};
 #else
     std::vector<std::string> h265{"hevc_vaapi", "hevc_nvenc", "hevc_qsv"};
-    // H.264 on the CPU first: h264_vaapi on Mesa (AMD) hangs or writes artifacts at some bit
-    // rates without reporting an error
-    std::vector<std::string> h264{"libopenh264", "h264_nvenc", "h264_qsv", "h264_vaapi",
+    std::vector<std::string> h264{"h264_vaapi", "h264_nvenc", "h264_qsv", "libopenh264",
                                   "mpeg4"};
 #endif
     if (codec == VideoCodec::H264) {
@@ -74,23 +69,16 @@ std::vector<std::string> platform_video_encoders(VideoCodec codec) {
 }
 
 /// Bit rate for re-encoding: as asked, else by resolution and frame rate, rounded to whole
-/// Mbit/s; limited where a driver is known to hang.
+/// Mbit/s.
 std::int64_t video_bitrate(const std::string& encoder, const VideoFormat& format,
-                           double requested_mbps, ProgressReporter& progress) {
+                           double requested_mbps) {
     const double bits_per_pixel =
         encoder.starts_with("hevc") ? kH265BitsPerPixel : kH264BitsPerPixel;
     constexpr double kMbit = 1e6;
     const double by_format = bits_per_pixel * format.width * format.height *
                              av_q2d(format.frame_rate) / kMbit;
-    auto bitrate = static_cast<std::int64_t>(
+    return static_cast<std::int64_t>(
         (requested_mbps > 0 ? requested_mbps : std::max(1.0, std::round(by_format))) * kMbit);
-    if (encoder == "h264_vaapi" && bitrate > kMaxH264VaapiBitrate) {
-        progress.report(std::format("Note: h264_vaapi is limited to {} Mbit/s (the driver hangs "
-                                    "above); use H.265 for higher quality.",
-                                    kMaxH264VaapiBitrate / 1'000'000));
-        bitrate = kMaxH264VaapiBitrate;
-    }
-    return bitrate;
 }
 
 bool is_vaapi(const std::string& name) { return name.ends_with("_vaapi"); }
@@ -102,9 +90,8 @@ std::string hang_advice(const std::string& encoder, double mbps, std::chrono::se
                              : kSuggestedBitrateMbps;
     return std::format(
         "Error: the video encoder {} has not answered for {} s and was stopped; the graphics "
-        "driver hangs at this bit rate ({:.1f} Mbit/s, a known bug of H.264 on AMD with Mesa). "
-        "The unfinished video was removed. Try again with another bit rate, e.g. {:g} Mbit/s, "
-        "or with H.265.",
+        "driver hangs at this bit rate ({:.1f} Mbit/s). The unfinished video was removed. Try "
+        "again with another bit rate, e.g. {:g} Mbit/s, or with another encoder.",
         encoder, timeout.count(), mbps, other);
 }
 
@@ -237,24 +224,80 @@ AVStream* Output::add_stream() {
     return stream;
 }
 
+void Output::take_parameter_sets_from_stream(AVStream* stream) {
+    AVCodecParameters& parameters = *stream->codecpar;
+    av_freep(&parameters.extradata);
+    parameters.extradata_size = 0;
+    if (parameters.codec_id == AV_CODEC_ID_HEVC) {
+        parameters.codec_tag = MKTAG('h', 'v', 'c', '1');
+    }
+    waits_for_ = stream;
+}
+
 void Output::open() {
     std::filesystem::create_directories(path_.parent_path().empty() ? "." : path_.parent_path());
     if ((context_->oformat->flags & AVFMT_NOFILE) == 0) {
         ff::check(avio_open(&context_->pb, ff::path_to_utf8(path_).c_str(), AVIO_FLAG_WRITE),
                   "cannot write " + path_.string());
     }
+    if (waits_for_ == nullptr) {
+        write_header();
+    }
+}
+
+void Output::write_header() {
     AVDictionary* options = nullptr;
     av_dict_set(&options, "movflags", "+faststart", 0); // playable while downloading
     const int result = avformat_write_header(context_.get(), &options);
     av_dict_free(&options);
     ff::check(result, "output header");
+    header_written_ = true;
+}
+
+void Output::take_parameter_sets(const AVPacket& packet) {
+    const NalCodec codec =
+        waits_for_->codecpar->codec_id == AV_CODEC_ID_HEVC ? NalCodec::H265 : NalCodec::H264;
+    const std::span<const std::uint8_t> data(packet.data, static_cast<std::size_t>(packet.size));
+    const Bytes sets = to_annexb(parameter_sets(annexb_units(data), codec));
+    if (sets.empty()) {
+        throw MediaError("the first video packet has no parameter sets; cannot write " +
+                         path_.string());
+    }
+    AVCodecParameters& parameters = *waits_for_->codecpar;
+    parameters.extradata =
+        static_cast<std::uint8_t*>(av_mallocz(sets.size() + AV_INPUT_BUFFER_PADDING_SIZE));
+    if (parameters.extradata == nullptr) {
+        throw MediaError("out of memory (parameter sets)");
+    }
+    std::ranges::copy(sets, parameters.extradata);
+    parameters.extradata_size = static_cast<int>(sets.size());
 }
 
 void Output::write(AVPacket& packet) {
+    if (!header_written_) {
+        if (packet.stream_index != waits_for_->index) {
+            auto held = ff::make_packet();
+            ff::check(av_packet_ref(held.get(), &packet), "holding a packet");
+            held_.push_back(std::move(held));
+            return;
+        }
+        take_parameter_sets(packet);
+        write_header();
+        for (const ff::PacketPtr& held : held_) {
+            ff::check(av_interleaved_write_frame(context_.get(), held.get()),
+                      "writing the output");
+        }
+        held_.clear();
+    }
     ff::check(av_interleaved_write_frame(context_.get(), &packet), "writing the output");
 }
 
-void Output::finish() { ff::check(av_write_trailer(context_.get()), "finishing the output"); }
+void Output::finish() {
+    if (!header_written_) {
+        throw MediaError("no video was written to " + path_.string());
+    }
+    ff::check(av_write_trailer(context_.get()), "finishing the output");
+}
 
 // ------------------------------------------------------------------ video
 
@@ -296,7 +339,9 @@ std::optional<VideoEncoder> VideoEncoder::open(const std::string& name, const Vi
     context->colorspace = format.colorspace;
     context->color_primaries = format.color_primaries;
     context->color_trc = format.color_trc;
-    context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; // MP4 keeps the headers in the container
+    if (!writes_parameter_sets_in_stream(*codec)) {
+        context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; // MP4 keeps the headers in the container
+    }
 
     if (is_vaapi(name)) {
         if (!encoder.create_hardware_frames(AV_HWDEVICE_TYPE_VAAPI, AV_PIX_FMT_VAAPI)) {
@@ -306,7 +351,13 @@ std::optional<VideoEncoder> VideoEncoder::open(const std::string& name, const Vi
         encoder.software_format_ = software_format_of(codec, context);
         context->pix_fmt = encoder.software_format_;
     }
-    if (avcodec_open2(context, codec, nullptr) < 0) {
+    AVDictionary* options = nullptr;
+    for (const auto& [option, value] : encoder_settings(name)) {
+        av_dict_set(&options, option.c_str(), value.c_str(), 0);
+    }
+    const int opened = avcodec_open2(context, codec, &options);
+    av_dict_free(&options);
+    if (opened < 0) {
         return std::nullopt;
     }
     return encoder;
@@ -405,12 +456,10 @@ VideoEncoder open_video_encoder(const CutOptions& options, const VideoFormat& fo
     }
     EncoderFailures failures(default_encoder_failures_file());
     for (const std::string& name : candidates) {
-        std::int64_t bitrate = video_bitrate(name, format, options.bitrate_mbps, progress);
+        std::int64_t bitrate = video_bitrate(name, format, options.bitrate_mbps);
         if (is_vaapi(name)) {
             // The Mesa driver fails silently at some bit rates: try first, take a neighbour
-            const std::int64_t max = name == "h264_vaapi"
-                                         ? kMaxH264VaapiBitrate
-                                         : std::numeric_limits<std::int64_t>::max();
+            const std::int64_t max = std::numeric_limits<std::int64_t>::max();
             const std::optional<std::int64_t> working =
                 working_bitrate(name, format, bitrate, max, failures, progress);
             if (!working) {
@@ -555,7 +604,34 @@ AVStream* add_encoded_stream(Output& output, const AVCodecContext& encoder) {
     AVStream* stream = output.add_stream();
     ff::check(avcodec_parameters_from_context(stream->codecpar, &encoder), "output stream");
     stream->time_base = encoder.time_base;
+    if (encoder.codec != nullptr && writes_parameter_sets_in_stream(*encoder.codec)) {
+        output.take_parameter_sets_from_stream(stream);
+    }
     return stream;
+}
+
+std::vector<std::pair<std::string, std::string>> encoder_settings(const std::string& encoder) {
+    if (encoder == "h264_vaapi") {
+        // Mesa (RX 7800 XT, Mesa 26.2.6) misparses the headers FFmpeg passes it with the default
+        // VBR: it hung at 2, 3, 4 and 6 Mbit/s for Full HD at 59.94 fps, wrote broken pictures
+        // at 7 and 7.5 and ignored the bit rate at the others (about 2.4 Mbit/s at "8"). With
+        // CBR and access unit delimiters, 1.5 to 40 Mbit/s all worked at the asked bit rate
+        // (measured 2026-11-20).
+        return {{"rc_mode", "CBR"}, {"aud", "1"}};
+    }
+    return {};
+}
+
+std::string encoder_label(const std::string& encoder) {
+    std::string label = encoder;
+    for (const auto& [option, value] : encoder_settings(encoder)) {
+        label += std::format(" {}={}", option, value);
+    }
+    return label;
+}
+
+bool writes_parameter_sets_in_stream(const AVCodec& codec) {
+    return codec.id == AV_CODEC_ID_H264 || codec.id == AV_CODEC_ID_HEVC;
 }
 
 } // namespace ttrally::cutting

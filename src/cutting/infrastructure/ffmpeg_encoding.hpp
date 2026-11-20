@@ -18,6 +18,8 @@ extern "C" {
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ttrally::cutting {
 
@@ -37,6 +39,11 @@ class Output {
     explicit Output(const std::filesystem::path& path);
 
     [[nodiscard]] AVStream* add_stream();
+    /// The H.264/H.265 stream's header box is built from the parameter sets in its first packet
+    /// (Annex B) rather than from the encoder's own copy, which the VAAPI encoder on Mesa gets
+    /// wrong; the file header then waits for that packet. H.265 is tagged hvc1, which Apple's
+    /// players need.
+    void take_parameter_sets_from_stream(AVStream* stream);
     /// Creates the folder and writes the header (moov first: playable while downloading).
     void open();
     void write(AVPacket& packet);
@@ -45,8 +52,15 @@ class Output {
     [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
 
   private:
+    void write_header();
+    /// Sets the stream's header box from the packet's parameter sets.
+    void take_parameter_sets(const AVPacket& packet);
+
     std::filesystem::path path_;
     OutputPtr context_;
+    AVStream* waits_for_ = nullptr;         ///< stream whose first packet completes the header
+    bool header_written_ = false;
+    std::vector<media::ff::PacketPtr> held_; ///< packets of other streams before that one
 };
 
 /// Size, frame rate and colours of the video to encode.
@@ -82,7 +96,7 @@ class VideoEncoder {
     void drain(AVStream* stream, Output& output, bool flush);
 
     /// From now on a call into the encoder (send, drain) that does not return within
-    /// kEncoderHangTimeout means the driver hangs (h264_vaapi does at some bit rates); the
+    /// kEncoderHangTimeout means the driver hangs (h264_vaapi on Mesa did); the
     /// process then prints `advice` to stderr, removes the unfinished `output` and exits with
     /// kEncoderHangExitCode, since the hanging call can neither be cancelled nor recovered from.
     void exit_on_hang(std::string advice, std::filesystem::path output);
@@ -138,7 +152,21 @@ class AudioEncoder {
 /// Writes all packets an encoder has ready; with flush, also the delayed ones.
 void drain(AVCodecContext* encoder, AVStream* stream, Output& output, bool flush);
 
-/// Adds a stream for an encoder's packets to the output.
+/// Adds a stream for an encoder's packets to the output (for H.264/H.265 with the header box
+/// built from the stream, see Output::take_parameter_sets_from_stream).
 [[nodiscard]] AVStream* add_encoded_stream(Output& output, const AVCodecContext& encoder);
+
+/// Options an encoder is always opened with (driver workarounds), e.g. rate control for
+/// h264_vaapi.
+[[nodiscard]] std::vector<std::pair<std::string, std::string>>
+encoder_settings(const std::string& encoder);
+
+/// The encoder's name with those options ("h264_vaapi rc_mode=CBR aud=1"), so that what was
+/// learnt about one setting is not applied to another.
+[[nodiscard]] std::string encoder_label(const std::string& encoder);
+
+/// H.264 and H.265 encoders are opened without a global header: they repeat their parameter
+/// sets in the stream, and the output builds its header box from those.
+[[nodiscard]] bool writes_parameter_sets_in_stream(const AVCodec& codec);
 
 } // namespace ttrally::cutting

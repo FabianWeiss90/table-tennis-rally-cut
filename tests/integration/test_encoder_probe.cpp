@@ -67,6 +67,14 @@ TEST_CASE("failures are remembered between runs") {
     std::filesystem::remove_all(root);
 }
 
+TEST_CASE("h264_vaapi always runs at constant bit rate, and failures are kept per setting") {
+    CHECK(encoder_label("h264_vaapi") == "h264_vaapi rc_mode=CBR aud=1");
+    CHECK(encoder_label("hevc_vaapi") == "hevc_vaapi");
+    // Failures found with the old default settings do not count for the new ones
+    CHECK(EncoderFailures::key("h264_vaapi", small_format(), 4'000'000).starts_with(
+        "h264_vaapi rc_mode=CBR aud=1 "));
+}
+
 TEST_CASE("a working encoder passes the probe") {
     const VideoFormat format = small_format();
     CHECK(probe_encoder("mpeg4", format, 2'000'000) == ProbeOutcome::Works);

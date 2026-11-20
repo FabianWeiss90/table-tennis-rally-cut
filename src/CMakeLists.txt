@@ -160,7 +160,9 @@ ttrally_layer(ttrally_cutting_infrastructure
         cutting/infrastructure/cut_list_choice.cpp
         cutting/infrastructure/encoder_probe.cpp
         cutting/infrastructure/ffmpeg_encoding.cpp
+        cutting/infrastructure/parameter_sets.cpp
         cutting/infrastructure/ffmpeg_video_cutter.cpp
+        cutting/infrastructure/mp4_repair.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure
         ttrally_annotation_infrastructure ttrally_ffmpeg)
 
@@ -280,7 +282,8 @@ add_executable(ttrally
     cli/cut_command.cpp
     cli/devices_command.cpp
     cli/highlights_command.cpp
-    cli/main.cpp)
+    cli/main.cpp
+    cli/repair_mp4_command.cpp)
 target_link_libraries(ttrally PRIVATE
     ttrally_options
     ttrally_alignment_infrastructure

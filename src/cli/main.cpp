@@ -10,6 +10,7 @@
 #include "cli/features_command.hpp"
 #endif
 #include "cli/cut_command.hpp"
+#include "cli/repair_mp4_command.hpp"
 #include "cli/devices_command.hpp"
 #include "cli/highlights_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
@@ -39,6 +40,7 @@ int main(int argc, char** argv) {
     ttrally::cli::CutCommand cut(app);
     ttrally::cli::HighlightsCommand highlights(app);
     ttrally::cli::DevicesCommand devices(app);
+    ttrally::cli::RepairMp4Command repair_mp4(app);
 
     CLI11_PARSE(app, argc, argv);
     ttrally::media::configure_ffmpeg_logging(verbose);
@@ -71,6 +73,9 @@ int main(int argc, char** argv) {
         }
         if (devices.selected()) {
             return devices.run();
+        }
+        if (repair_mp4.selected()) {
+            return repair_mp4.run();
         }
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << '\n';

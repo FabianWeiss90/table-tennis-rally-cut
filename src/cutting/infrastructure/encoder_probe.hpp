@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 // Finding bit rates at which a hardware encoder works. h264_vaapi on Mesa (RX 7800 XT, Mesa
-// 26.2) misreads the stream headers FFmpeg passes it at some bit rates: it then hangs (e.g. 2, 3,
-// 4 and 6 Mbit/s for Full HD at 59.94 fps) or writes broken pictures (7, 7.5, 7.95 Mbit/s), with
-// no error reported. Which bit rates fail cannot be predicted, only tried.
+// 26.2) misread the stream headers FFmpeg passes it at some bit rates with its default settings:
+// it then hung (e.g. 2, 3, 4 and 6 Mbit/s for Full HD at 59.94 fps) or wrote broken pictures (7,
+// 7.5, 7.95 Mbit/s), with no error reported. It is now opened with settings that avoid this (see
+// encoder_settings); every VAAPI encoder is still probed as a safeguard, since a driver failure
+// cannot be predicted, only tried.
 
 #pragma once
 
@@ -44,7 +46,7 @@ class EncoderFailures {
     [[nodiscard]] std::optional<ProbeOutcome> known(const std::string& key) const;
     void add(const std::string& key, ProbeOutcome outcome);
 
-    /// The key of an encoder, format and bit rate.
+    /// The key of an encoder (with its settings, see encoder_label), format and bit rate.
     [[nodiscard]] static std::string key(const std::string& encoder, const VideoFormat& format,
                                          std::int64_t bitrate);
 

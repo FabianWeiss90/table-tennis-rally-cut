@@ -69,7 +69,9 @@ ttrally_test(integration_tests
         integration/test_encoder_probe.cpp
         integration/test_frame_decoder.cpp
         integration/test_highlights_media.cpp
+        integration/test_mp4_repair.cpp
         integration/test_video_cutter.cpp
+        cutting/test_parameter_sets.cpp
     DEPENDS
         ttrally_alignment_infrastructure ttrally_cutting_infrastructure
         ttrally_highlights_infrastructure ttrally_media_infrastructure)

@@ -150,9 +150,10 @@ int HighlightsCommand::run() {
                                  .max_height = max_height_of(resolution_)},
                     .font = font_,
                     .shapes = shapes_dir_}});
-    std::cout << std::format("Done in {:.0f} s: {} rallies from {} game(s) in {} clips, {} of "
+    std::cout << std::format("Done in {}: {} rallies from {} game(s) in {} clips, {} of "
                              "video (encoded with {} at {:.1f} Mbit/s).\n",
-                             result.seconds, result.rallies, result.games.size(), result.clips,
+                             io::format_elapsed(result.seconds), result.rallies,
+                             result.games.size(), result.clips,
                              io::format_clock(result.render.duration_s),
                              result.render.video_encoder, result.render.bitrate_mbps);
     std::cout << "Highlight video: " << out_.string() << '\n';

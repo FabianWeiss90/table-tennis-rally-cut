@@ -117,7 +117,7 @@ int CutCommand::run() {
                      .bitrate_mbps = bitrate_mbps_,
                      .max_height = max_height_of(resolution_)}});
     std::cout << std::format(
-        "Done in {:.0f} s: {} rallies, {} of video ({}).\n", result.seconds, result.rallies,
+        "Done in {}: {} rallies, {} of video ({}).\n", io::format_elapsed(result.seconds), result.rallies,
         io::format_clock(result.cut.duration_s),
         result.cut.video_encoder == "copy"
             ? "copied, cuts at keyframes"

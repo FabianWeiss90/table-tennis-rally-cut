@@ -397,7 +397,7 @@ double FfmpegVideoJoiner::join(std::span<const std::filesystem::path> parts,
         progress.report(std::format(
             "{}: copied in {} ({:.0f} MB/s), {} of video{}", label, io::format_elapsed(took),
             took > 0 ? sizes[i] / kMegabyte / took : 0.0,
-            io::format_clock(static_cast<double>(duration) / AV_TIME_BASE),
+            io::format_elapsed(static_cast<double>(duration) / AV_TIME_BASE),
             i + 1 < opened.size() ? copying.remaining_text(copying.done()) : std::string()));
         offset += duration;
     }

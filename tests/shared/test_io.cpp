@@ -92,10 +92,10 @@ TEST_CASE("clock formatting") {
 }
 
 TEST_CASE("elapsed time and size formatting") {
-    CHECK(ttrally::io::format_elapsed(44.6) == "45 s");
-    CHECK(ttrally::io::format_elapsed(725.0) == "12 min 05 s");
-    CHECK(ttrally::io::format_elapsed(3725.0) == "1 h 02 min 05 s");
-    CHECK(ttrally::io::format_elapsed(-3.0) == "0 s");
+    CHECK(ttrally::io::format_elapsed(203.4) == "00:03:23");
+    CHECK(ttrally::io::format_elapsed(1044.0) == "00:17:24");
+    CHECK(ttrally::io::format_elapsed(3725.0) == "01:02:05");
+    CHECK(ttrally::io::format_elapsed(-3.0) == "00:00:00");
     CHECK(ttrally::io::format_size(8.4e9) == "8.4 GB");
     CHECK(ttrally::io::format_size(3.5e8) == "350 MB");
 }

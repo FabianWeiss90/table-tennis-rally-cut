@@ -34,7 +34,7 @@ int MergeCommand::run() {
     const auto result = merge.execute({.parts = parts_, .output = out_});
     progress.report(std::format("Done in {} in total: {} parts, {} of video",
                                 io::format_elapsed(result.seconds), result.parts,
-                                io::format_clock(result.duration_s)));
+                                io::format_elapsed(result.duration_s)));
     progress.report("Merged video: " + out_.string());
     return 0;
 }

@@ -11,6 +11,7 @@
 #include "media/infrastructure/ffmpeg_media_probe.hpp"
 #include "media/infrastructure/ffmpeg_media_reader.hpp"
 #include "shared/io/file_cache.hpp"
+#include "shared/io/formatting.hpp"
 
 #include <format>
 #include <iostream>
@@ -68,7 +69,7 @@ int FeaturesCommand::run() {
                                              decode_backend_),
                                          .force = force_});
     if (!result.skipped) {
-        std::cout << std::format("Done in {:.1f} s: {} rows x {} values\n", result.seconds,
+        std::cout << std::format("Done in {}: {} rows x {} values\n", io::format_elapsed(result.seconds),
                                  result.rows, result.dims);
     }
     std::cout << "Features: " << store.directory_for(video_id_).string() << '\n';

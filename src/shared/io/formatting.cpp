@@ -39,13 +39,7 @@ std::string format_elapsed(double seconds) {
     constexpr long long kHour = 3600;
     constexpr long long kMinute = 60;
     const long long total = std::llround(std::max(0.0, seconds));
-    if (total < kMinute) {
-        return std::format("{} s", total);
-    }
-    if (total < kHour) {
-        return std::format("{} min {:02} s", total / kMinute, total % kMinute);
-    }
-    return std::format("{} h {:02} min {:02} s", total / kHour, total / kMinute % kMinute,
+    return std::format("{:02}:{:02}:{:02}", total / kHour, total / kMinute % kMinute,
                        total % kMinute);
 }
 

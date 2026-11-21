@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace ttrally::gui {
 
@@ -22,7 +23,8 @@ struct HighlightCounts {
     std::size_t match_day = 0;     ///< match day highlights of all games of its match day
 };
 
-/// The highlights part of the launcher: the rallies of the selected video's game, numbered, with
+/// The highlights part of the launcher: the rallies of the selected video's game (or of every
+/// game of a match day chosen as a whole), numbered, with
 /// a mark for the game and one for the match day, the preselection by length, a player to watch
 /// a rally and the title. Every change is saved at once in the match day's highlights folder.
 class HighlightsPanel {
@@ -34,9 +36,15 @@ class HighlightsPanel {
     HighlightsPanel& operator=(const HighlightsPanel&) = delete;
 
     /// Draws the panel for the video; `reload` reads the rallies and marks again (e.g. when the
-    /// tab is opened). `margins` are played around a rally.
+    /// tab is opened). `margins` are played around a rally; with `crossfade_s` they give the
+    /// lengths of the highlight videos shown.
     void draw(const launcher::WorkspaceSnapshot& workspace, const launcher::VideoEntry& video,
-              bool reload, cutting::Margins margins);
+              bool reload, cutting::Margins margins, double crossfade_s);
+    /// Draws the match day as a whole: the rallies of all its games in one list, under a row
+    /// per game, with both marks, the player, the match title and the match day layout.
+    void draw_match_day(const launcher::WorkspaceSnapshot& workspace,
+                        const std::string& match_day, bool reload, cutting::Margins margins,
+                        double crossfade_s);
 
     [[nodiscard]] HighlightCounts counts() const;
 

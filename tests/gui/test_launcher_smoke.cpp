@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <utility>
 
 using namespace ttrally;
@@ -30,9 +31,16 @@ class OneVideo final : public launcher::WorkspaceScanner {
         video.aligned = true;
         video.annotation = launcher::AnnotationProgress::InProgress;
         workspace.videos = {video};
+        for (int i = 2; i <= extra_videos + 1; ++i) {
+            video.video_id = std::format("match-{}", i);
+            video.original = std::format("/lib/2026-10-03 Club/Match{}_FHD.mp4", i);
+            video.detected = true;
+            workspace.videos.push_back(video);
+        }
         workspace.trainable = {video.key(), "2026-10-10 Away/other"};
         return workspace;
     }
+    int extra_videos = 0; ///< more videos of the match day
 };
 
 class IdleRunner final : public launcher::ProcessRunner {
@@ -203,4 +211,36 @@ TEST_CASE("the launcher shows the highlights of the selected game") {
     if (keep == nullptr) {
         std::filesystem::remove(screenshot);
     }
+}
+
+TEST_CASE("the launcher shows a whole match day: its pipeline and highlights") {
+    use_offscreen_video_driver();
+    OneVideo scanner;
+    scanner.extra_videos = 2;
+    IdleRunner runner;
+    launcher::LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    session.select_match_day("2026-10-03 Club");
+    const char* keep = std::getenv("TTRALLY_SCREENSHOT_DIR");
+    GreyPreview preview;
+    MemoryHighlights highlights;
+    NoPlayback playback;
+    BlockFonts fonts;
+    for (const char* tab : {"pipeline", "highlights", "detect", "annotate"}) {
+        const auto screenshot = (keep != nullptr ? std::filesystem::path(keep)
+                                                 : std::filesystem::temp_directory_path()) /
+                                std::format("launcher_day_{}.bmp", tab);
+        gui::LauncherOptions options;
+        options.max_frames = 10;
+        options.screenshot = screenshot;
+        options.first_tab = tab;
+        options.highlights = &highlights;
+        options.playback = &playback;
+        options.fonts = &fonts;
+        gui::run_launcher(session, preview, options);
+        CHECK(std::filesystem::file_size(screenshot) > 0);
+        if (keep == nullptr) {
+            std::filesystem::remove(screenshot);
+        }
+    }
+    CHECK(session.selected_match_day() == "2026-10-03 Club");
 }

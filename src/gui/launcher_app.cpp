@@ -60,6 +60,9 @@ const ImVec4 kError{1.0F, 0.45F, 0.4F, 1.0F};
 constexpr const char* kHighlightsForm = "highlights";
 constexpr const char* kVideoIdFlag = "--video-id";
 constexpr const char* kMatchDayFlag = "--match-day";
+constexpr const char* kPipelineTab = "pipeline"; ///< for LauncherOptions::first_tab
+constexpr const char* kTrainForm = "train"; ///< the same for a video and a whole match day
+constexpr double kDefaultCrossfade = 0.5;   ///< of `ttrally highlights`
 
 /// Text input on a std::string (Dear ImGui works on char buffers); the hint shows while empty.
 bool input_text(const char* id, std::string& value, ImGuiInputTextFlags flags = 0,
@@ -308,8 +311,25 @@ class LauncherApp {
                 .c_str());
         if (is_open) {
             draw_scene_detection(match_day);
+            draw_match_day_entry(match_day, count);
         }
         return is_open;
+    }
+
+    /// The match day as a whole, above its videos: batches, pipeline and its highlights.
+    void draw_match_day_entry(const std::string& match_day, std::ptrdiff_t videos) {
+        ImGui::PushID(match_day.c_str());
+        const bool selected = session_.selected_match_day() == match_day;
+        const std::string label =
+            std::format("Whole match day ({} game{})", videos, videos == 1 ? "" : "s");
+        if (ImGui::Selectable(label.c_str(), selected) &&
+            !session_.running()) {
+            session_.select_match_day(match_day);
+        }
+        ImGui::SetItemTooltip("Run steps for all games at once (pipeline) and choose the match "
+                              "day highlights from all its rallies");
+        ImGui::PopID();
+        ImGui::Spacing();
     }
 
     /// Selects the video chosen in the last session, so that its match day is the open one.
@@ -395,7 +415,8 @@ class LauncherApp {
             ImGui::PushID(static_cast<int>(i));
             const std::string label =
                 video.scene.empty() ? video.video_id : video.video_id + "   (scene " + video.scene + ")";
-            if (ImGui::Selectable(label.c_str(), session_.selected_video() == i)) {
+            if (ImGui::Selectable(label.c_str(), !session_.selected_match_day() &&
+                                                     session_.selected_video() == i)) {
                 if (!session_.running()) {
                     session_.select_video(i);
                 }
@@ -412,8 +433,12 @@ class LauncherApp {
             // (flickering every frame)
             ImGui::BeginChild("##selected", {0, 0}, ImGuiChildFlags_None,
                               ImGuiWindowFlags_AlwaysVerticalScrollbar);
-            draw_preview(videos[*selected]);
-            draw_details(videos[*selected]);
+            if (const auto& day = session_.selected_match_day()) {
+                draw_match_day_details(*day);
+            } else {
+                draw_preview(videos[*selected]);
+                draw_details(videos[*selected]);
+            }
             ImGui::EndChild();
         }
     }
@@ -484,6 +509,29 @@ class LauncherApp {
         ImGui::SetItemTooltip("%s", path.c_str());
     }
 
+    /// How many of the match day's videos have each step done.
+    void draw_match_day_details(const std::string& match_day) {
+        ImGui::Text("Match day %s", match_day.c_str());
+        std::vector<const VideoEntry*> videos;
+        for (const VideoEntry& video : session_.workspace().videos) {
+            if (video.match_day == match_day) {
+                videos.push_back(&video);
+            }
+        }
+        for (const std::string_view command : launcher::kPipelineSteps) {
+            const auto done = std::ranges::count_if(videos, [&](const VideoEntry* video) {
+                return launcher::step_done(command, *video);
+            });
+            ImGui::TextColored(done == std::ssize(videos) ? kDone : (done > 0 ? kPartly : kMuted),
+                               "%.*s: %td of %zu games", static_cast<int>(command.size()),
+                               command.data(), done, videos.size());
+        }
+        const auto complete = std::ranges::count_if(videos, [](const VideoEntry* video) {
+            return video->annotation == AnnotationProgress::Complete;
+        });
+        ImGui::TextColored(kMuted, "complete labels: %td of %zu games", complete, videos.size());
+    }
+
     void draw_details(const VideoEntry& video) {
         file_line("Original", video.original);
         if (video.cut_candidates.empty()) {
@@ -519,15 +567,34 @@ class LauncherApp {
             return;
         }
         bool highlights_shown = false;
+        const std::optional<std::string>& day = session_.selected_match_day();
+        if (day && ImGui::BeginTabItem("Pipeline", nullptr,
+                                       first_tab_ == kPipelineTab ? ImGuiTabItemFlags_SetSelected
+                                                                  : 0)) {
+            ImGui::BeginChild("##tab", {0, 0});
+            draw_pipeline(*day);
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
         for (std::size_t f = 0; f < forms.size(); ++f) {
             const bool select = !first_tab_.empty() && forms[f].name == first_tab_;
             if (ImGui::BeginTabItem(forms[f].title.c_str(), nullptr,
                                     select ? ImGuiTabItemFlags_SetSelected : 0)) {
                 // The tab's content scrolls below the tabs, which stay in place
                 ImGui::BeginChild("##tab", {0, 0});
+                const bool reopened = !highlights_shown_ || shown_day_ != day;
                 if (forms[f].name == kHighlightsForm) {
-                    draw_highlights(forms[f], f, !highlights_shown_);
+                    draw_highlights(forms[f], f, reopened);
                     highlights_shown = true;
+                    shown_day_ = day;
+                } else if (day && launcher::supports_batch(forms[f].name)) {
+                    draw_match_day_form(forms[f], f, *day);
+                } else if (day && forms[f].name != kTrainForm) {
+                    ImGui::TextWrapped("%s", forms[f].description.c_str());
+                    ImGui::Spacing();
+                    ImGui::TextColored(kMuted, "%s works on one game at a time: choose a game on "
+                                               "the left.",
+                                       forms[f].title.c_str());
                 } else {
                     draw_form(forms[f], f);
                 }
@@ -556,7 +623,14 @@ class LauncherApp {
             return;
         }
         const VideoEntry& video = session_.workspace().videos[*selected];
-        highlights_->draw(session_.workspace(), video, opened, margins_of(form));
+        const std::optional<std::string>& day = session_.selected_match_day();
+        if (day) {
+            highlights_->draw_match_day(session_.workspace(), *day, opened, margins_of(form),
+                                        crossfade_of(form));
+        } else {
+            highlights_->draw(session_.workspace(), video, opened, margins_of(form),
+                              crossfade_of(form));
+        }
         ImGui::SeparatorText("Highlight videos");
         auto set_by_buttons = [](const Field& field) {
             return field.flag == kVideoIdFlag || field.flag == kMatchDayFlag;
@@ -594,6 +668,19 @@ class LauncherApp {
         return margins;
     }
 
+    /// The cross-fade of the form, else the command's default.
+    static double crossfade_of(CommandForm& form) {
+        const Field* field = form.field("--crossfade");
+        if (field != nullptr) {
+            try {
+                return std::max(0.0, std::stod(field->effective_value()));
+            } catch (const std::exception&) {
+                // the default while the field is being edited
+            }
+        }
+        return kDefaultCrossfade;
+    }
+
     void draw_highlight_buttons(const CommandForm& form, const VideoEntry& video) {
         const HighlightCounts counts = highlights_->counts();
         auto run = [&](bool match_day) {
@@ -610,13 +697,16 @@ class LauncherApp {
                 error_ = error.what();
             }
         };
-        ImGui::BeginDisabled(session_.running() || counts.game == 0);
-        if (ImGui::Button(std::format("Make game video ({} rallies)", counts.game).c_str())) {
-            run(false);
+        if (!session_.selected_match_day()) {
+            ImGui::BeginDisabled(session_.running() || counts.game == 0);
+            if (ImGui::Button(std::format("Make game video ({} rallies)", counts.game).c_str())) {
+                run(false);
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("The game highlights of %s, with its title",
+                                  video.video_id.c_str());
+            ImGui::SameLine();
         }
-        ImGui::EndDisabled();
-        ImGui::SetItemTooltip("The game highlights of %s, with its title", video.video_id.c_str());
-        ImGui::SameLine();
         ImGui::BeginDisabled(session_.running() || counts.match_day == 0);
         if (ImGui::Button(
                 std::format("Make match day video ({} rallies)", counts.match_day).c_str())) {
@@ -1053,7 +1143,6 @@ class LauncherApp {
             }
         }
         ImGui::EndDisabled();
-        draw_batch(form);
         if (session_.running()) {
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {100, 0})) {
@@ -1069,17 +1158,55 @@ class LauncherApp {
         }
     }
 
-    /// "Run all" and "Run missing" for the whole match day of the selected video.
-    void draw_batch(const CommandForm& form) {
+    /// A command's form for the match day as a whole: only the settings that are the same for
+    /// every game (they are used for each), then "Compute all" and "Compute missing".
+    void draw_match_day_form(CommandForm& form, std::size_t form_index, const std::string& day) {
+        ImGui::TextWrapped("%s", form.description.c_str());
+        ImGui::TextColored(kMuted, "For every game of %s, one after another; the paths of each "
+                                   "game are filled in for it.",
+                           day.c_str());
+        ImGui::Spacing();
         const auto selected = session_.selected_video();
-        if (!launcher::supports_batch(form.name) || !selected) {
-            return;
+        const std::vector<bool> dependent =
+            selected ? launcher::video_dependent_fields(
+                           form.name, session_.workspace().videos[*selected], session_.workspace())
+                     : std::vector<bool>(form.fields.size(), false);
+        const auto own = [&](std::size_t i) { return i < dependent.size() && dependent[i]; };
+        for (std::size_t i = 0; i < form.fields.size(); ++i) {
+            if (!form.fields[i].advanced && !own(i)) {
+                draw_field(form.fields[i], form_index, i);
+            }
         }
-        const auto& videos = session_.workspace().videos;
-        const std::string& day = videos[*selected].match_day;
+        if (ImGui::CollapsingHeader("Advanced")) {
+            for (std::size_t i = 0; i < form.fields.size(); ++i) {
+                if (form.fields[i].advanced && !own(i)) {
+                    draw_field(form.fields[i], form_index, i);
+                }
+            }
+        }
+        ImGui::Separator();
+        draw_batch(form, day);
+        draw_cancel_and_error();
+    }
+
+    void draw_cancel_and_error() {
+        if (session_.running()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", {100, 0})) {
+                session_.cancel();
+            }
+        }
+        if (!error_.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(kError, "%s", error_.c_str());
+        }
+    }
+
+    /// "Compute all" and "Compute missing" for every game of the match day.
+    void draw_batch(const CommandForm& form, const std::string& day) {
         std::size_t total = 0;
         std::size_t open = 0;
-        for (const VideoEntry& video : videos) {
+        for (const VideoEntry& video : session_.workspace().videos) {
             if (video.match_day == day) {
                 ++total;
                 open += launcher::step_done(form.name, video) ? 0 : 1;
@@ -1094,22 +1221,111 @@ class LauncherApp {
             }
         };
         ImGui::BeginDisabled(session_.running());
-        ImGui::SameLine();
-        if (ImGui::Button(std::format("Run all ({})", total).c_str())) {
+        if (ImGui::Button(std::format("Compute all ({})", total).c_str())) {
             run(launcher::BatchScope::All);
         }
-        ImGui::SetItemTooltip("Runs %s again for every video of %s, one after another, with the "
-                              "settings above; videos without its input are skipped",
+        ImGui::SetItemTooltip("Runs %s again for every game of %s, one after another, with the "
+                              "settings above; games without its input are skipped",
                               form.name.c_str(), day.c_str());
         ImGui::SameLine();
         ImGui::BeginDisabled(open == 0);
-        if (ImGui::Button(std::format("Run missing ({})", open).c_str())) {
+        if (ImGui::Button(std::format("Compute missing ({})", open).c_str())) {
             run(launcher::BatchScope::Missing);
         }
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Runs %s only for the videos of %s that do not have its result yet",
+        ImGui::SetItemTooltip("Runs %s only for the games of %s that do not have its result yet",
                               form.name.c_str(), day.c_str());
         ImGui::EndDisabled();
+    }
+
+    /// The steps to run for every game of the match day, and the buttons that run them.
+    void draw_pipeline(const std::string& day) {
+        ImGui::TextWrapped("Run the ticked steps for every game of %s: all steps of one game, "
+                           "then the next game. Each step uses the settings of its own tab. A "
+                           "failed step skips the rest of its game.",
+                           day.c_str());
+        ImGui::Spacing();
+        std::vector<std::string>& steps = session_.pipeline_steps();
+        std::vector<const VideoEntry*> videos;
+        for (const VideoEntry& video : session_.workspace().videos) {
+            if (video.match_day == day) {
+                videos.push_back(&video);
+            }
+        }
+        ImGui::BeginDisabled(session_.running());
+        bool first = true;
+        for (const std::string_view step : launcher::kPipelineSteps) {
+            if (!first) {
+                ImGui::SameLine();
+                ImGui::TextColored(kMuted, "->");
+                ImGui::SameLine();
+            }
+            first = false;
+            const std::string name(step);
+            bool ticked = std::ranges::find(steps, name) != steps.end();
+            if (ImGui::Checkbox(name.c_str(), &ticked)) {
+                if (ticked) {
+                    steps.push_back(name);
+                } else {
+                    std::erase(steps, name);
+                }
+            }
+            const auto done = std::ranges::count_if(
+                videos, [&](const VideoEntry* video) { return launcher::step_done(step, *video); });
+            ImGui::SetItemTooltip("Done for %td of %zu games", done, videos.size());
+        }
+        ImGui::SameLine(0, 30);
+        if (ImGui::SmallButton("Default")) {
+            steps = launcher::default_pipeline();
+        }
+        ImGui::SetItemTooltip("features -> detect -> cut");
+        ImGui::EndDisabled();
+        ImGui::Spacing();
+        std::size_t all = 0;
+        std::size_t missing = 0;
+        if (ImGui::BeginTable("##plan", 2, ImGuiTableFlags_SizingFixedFit)) {
+            for (const VideoEntry* video : videos) {
+                const auto planned =
+                    launcher::pipeline_for(steps, *video, launcher::BatchScope::Missing);
+                all += launcher::pipeline_for(steps, *video, launcher::BatchScope::All).size();
+                missing += planned.size();
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(video->video_id.c_str());
+                ImGui::TableNextColumn();
+                std::string text;
+                for (const std::string& step : planned) {
+                    text += (text.empty() ? "" : ", ") + step;
+                }
+                ImGui::TextColored(planned.empty() ? kDone : kPartly, "%s",
+                                   planned.empty() ? "done" : ("missing: " + text).c_str());
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Separator();
+        auto run = [&](launcher::BatchScope scope) {
+            try {
+                session_.run_pipeline(scope);
+                error_.clear();
+            } catch (const std::exception& error) {
+                error_ = error.what();
+            }
+        };
+        ImGui::BeginDisabled(session_.running() || all == 0);
+        if (ImGui::Button(std::format("Compute all ({} steps)", all).c_str())) {
+            run(launcher::BatchScope::All);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Runs every ticked step again for every game");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(session_.running() || missing == 0);
+        if (ImGui::Button(std::format("Compute missing ({} steps)", missing).c_str())) {
+            run(launcher::BatchScope::Missing);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Per game from the first ticked step without its result on (the "
+                              "later steps would be out of date otherwise)");
+        draw_cancel_and_error();
     }
 
     // ------------------------------------------------------------------ output
@@ -1203,6 +1419,7 @@ class LauncherApp {
     launcher::SceneStore* scenes_;
     std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
     bool highlights_shown_ = false; ///< the tab was shown in the last frame
+    std::optional<std::string> shown_day_; ///< match day chosen as a whole when it was shown
     std::string first_tab_;         ///< selected in the first frame, then empty
     /// The selection last saved as the last video; a change opens its match day.
     std::optional<std::size_t> remembered_;

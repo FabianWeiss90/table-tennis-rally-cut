@@ -19,6 +19,7 @@ constexpr std::string_view kAnnotateForm = "annotate"; ///< depends on the pre-c
 constexpr std::string_view kPreCutField = "Pre-cut video";
 constexpr std::string_view kFeaturesForm = "features";
 constexpr std::string_view kRecomputeFlag = "--force"; ///< features are kept unless forced
+constexpr std::string_view kPipeline = "pipeline";
 
 const CommandForm& form_named(const std::vector<CommandForm>& forms, std::string_view name) {
     const auto it = std::ranges::find(forms, name, &CommandForm::name);
@@ -90,6 +91,7 @@ void LauncherSession::set_library(std::filesystem::path library) {
     library_ = std::move(library);
     workspace_ = scanner_.scan(library_);
     selected_.reset();
+    match_day_.reset();
     if (!workspace_.videos.empty()) {
         selected_ = 0;
     }
@@ -99,6 +101,7 @@ void LauncherSession::set_library(std::filesystem::path library) {
 void LauncherSession::select_video(std::size_t index) {
     static_cast<void>(workspace_.videos.at(index)); // bounds check
     selected_ = index;
+    match_day_.reset();
     std::vector<CommandForm> previous = std::move(forms_);
     rebuild_forms();
     for (std::size_t f = 0; f < forms_.size() && f < previous.size(); ++f) {
@@ -106,6 +109,18 @@ void LauncherSession::select_video(std::size_t index) {
             forms_[f] = std::move(previous[f]);
         }
     }
+}
+
+void LauncherSession::select_match_day(const std::string& match_day) {
+    const auto first = std::ranges::find(workspace_.videos, match_day, &VideoEntry::match_day);
+    if (first == workspace_.videos.end()) {
+        throw std::invalid_argument(std::format("match day {} has no videos", match_day));
+    }
+    const auto index = static_cast<std::size_t>(first - workspace_.videos.begin());
+    if (selected_ != index) {
+        select_video(index);
+    }
+    match_day_ = match_day;
 }
 
 void LauncherSession::rebuild_forms() {
@@ -122,6 +137,9 @@ void LauncherSession::rescan() {
         if (workspace_.videos[i].original == original) {
             selected_ = i;
         }
+    }
+    if (match_day_ && (!selected_ || workspace_.videos[*selected_].match_day != *match_day_)) {
+        match_day_.reset();
     }
     if (!selected_ && !workspace_.videos.empty()) {
         selected_ = 0;
@@ -217,32 +235,59 @@ void LauncherSession::run_batch(const CommandForm& form, BatchScope scope) {
             ++done;
             continue;
         }
-        std::string reason = missing_input(form.name, video);
-        CommandForm own = carry_over_edits(
-            form, unedited, form_named(forms_for(video, workspace_), form.name));
-        if (scope == BatchScope::All && form.name == kFeaturesForm) {
-            if (Field* force = own.field(std::string(kRecomputeFlag))) {
-                force->value = "1";
-            }
-        }
-        if (const auto missing = own.missing(); reason.empty() && !missing.empty()) {
-            reason = "fill in " + missing.front();
-        }
-        if (!reason.empty()) {
+        QueuedCommand command{video.original, video.video_id, form, unedited,
+                              scope == BatchScope::All && form.name == kFeaturesForm};
+        std::string reason;
+        if (!prepare(command, reason)) {
             skipped.push_back(std::format("{} ({})", video.video_id, reason));
             continue;
         }
-        queue_.push_back({video.video_id, invocation(own)});
+        queue_.push_back(std::move(command));
     }
-    log_ = std::format("{} for match day {}: {} to run", form.name, chosen.match_day,
-                       queue_.size());
+    std::string header = std::format("{} for match day {}: {} to run", form.name,
+                                     chosen.match_day, queue_.size());
     if (done > 0) {
-        log_ += std::format(", {} already done", done);
+        header += std::format(", {} already done", done);
     }
-    log_ += skipped.empty() ? "\n" : "\nSkipped: " + joined(skipped) + "\n";
-    batch_name_ = form.name;
+    header += skipped.empty() ? "\n" : "\nSkipped: " + joined(skipped) + "\n";
+    start_batch(form.name, std::move(header));
+}
+
+void LauncherSession::run_pipeline(BatchScope scope) {
+    if (running_) {
+        throw std::logic_error("another command is still running");
+    }
+    if (!selected_) {
+        throw std::logic_error("no match day chosen");
+    }
+    const VideoEntry& chosen = workspace_.videos[*selected_];
+    const std::vector<CommandForm> proposed = forms_for(chosen, workspace_);
+    queue_.clear();
+    std::string plan;
+    for (const VideoEntry& video : workspace_.videos) {
+        if (video.match_day != chosen.match_day) {
+            continue;
+        }
+        const std::vector<std::string> steps = pipeline_for(pipeline_steps_, video, scope);
+        plan += std::format("  {}: {}\n", video.video_id,
+                            steps.empty() ? std::string("all done") : joined(steps));
+        for (const std::string& step : steps) {
+            queue_.push_back({video.original, std::format("{}: {}", video.video_id, step),
+                              form_named(forms_, step), form_named(proposed, step),
+                              scope == BatchScope::All && step == kFeaturesForm});
+        }
+    }
+    start_batch(std::string(kPipeline),
+                std::format("pipeline ({}) for match day {}: {} steps to run\n{}",
+                            joined(pipeline_steps_), chosen.match_day, queue_.size(), plan));
+}
+
+void LauncherSession::start_batch(std::string name, std::string header) {
+    log_ = std::move(header);
+    batch_name_ = std::move(name);
     batch_total_ = queue_.size();
     batch_failed_.clear();
+    batch_skipped_ = 0;
     if (queue_.empty()) {
         finish_batch();
         return;
@@ -250,35 +295,75 @@ void LauncherSession::run_batch(const CommandForm& form, BatchScope scope) {
     start_next();
 }
 
+std::optional<Invocation> LauncherSession::prepare(const QueuedCommand& command,
+                                                   std::string& skipped) const {
+    const auto video = std::ranges::find(workspace_.videos, command.original,
+                                         &VideoEntry::original);
+    if (video == workspace_.videos.end()) {
+        skipped = "no longer in the library";
+        return std::nullopt;
+    }
+    if (skipped = missing_input(command.edited.name, *video); !skipped.empty()) {
+        return std::nullopt;
+    }
+    CommandForm own = carry_over_edits(command.edited, command.unedited,
+                                       form_named(forms_for(*video, workspace_),
+                                                  command.edited.name));
+    if (command.recompute) {
+        if (Field* force = own.field(std::string(kRecomputeFlag))) {
+            force->value = "1";
+        }
+    }
+    if (const auto missing = own.missing(); !missing.empty()) {
+        skipped = "fill in " + missing.front();
+        return std::nullopt;
+    }
+    return invocation(own);
+}
+
 void LauncherSession::start_next() {
     while (!queue_.empty()) {
         QueuedCommand next = std::move(queue_.front());
         queue_.pop_front();
         const std::size_t number = batch_total_ - queue_.size();
-        append_log(std::format("\n[{}/{}] {}\n$ {}\n", number, batch_total_, next.video,
-                               command_line(next.call.program, next.call.arguments)));
+        std::string skipped;
+        const std::optional<Invocation> call = prepare(next, skipped);
+        if (!call) {
+            append_log(std::format("\n[{}/{}] {} skipped: {}\n", number, batch_total_,
+                                   next.label, skipped));
+            ++batch_skipped_;
+            continue;
+        }
+        append_log(std::format("\n[{}/{}] {}\n$ {}\n", number, batch_total_, next.label,
+                               command_line(call->program, call->arguments)));
         try {
-            runner_.start(next.call);
+            runner_.start(*call);
         } catch (const std::exception& error) {
             append_log(std::format("{}\n", error.what()));
-            batch_failed_.push_back(next.video);
+            batch_failed_.push_back(next.label);
+            drop_rest_of(next.original);
             continue;
         }
         running_ = true;
-        running_name_ = next.video;
+        running_name_ = next.label;
+        running_original_ = next.original;
         status_ = std::format("{} {}/{}: {} is running...", batch_name_, number, batch_total_,
-                              next.video);
+                              next.label);
         return;
     }
     finish_batch();
 }
 
 void LauncherSession::finish_batch() {
-    const std::size_t succeeded = batch_total_ - batch_failed_.size();
+    const std::size_t succeeded = batch_total_ - batch_failed_.size() - batch_skipped_;
+    const char* unit = batch_name_ == kPipeline ? "steps" : "videos";
     status_ = batch_failed_.empty()
-                  ? std::format("{} finished for {} videos", batch_name_, succeeded)
-                  : std::format("{} failed for {} of {} videos: {}", batch_name_,
-                                batch_failed_.size(), batch_total_, joined(batch_failed_));
+                  ? std::format("{} finished for {} {}", batch_name_, succeeded, unit)
+                  : std::format("{} failed for {} of {} {}: {}", batch_name_,
+                                batch_failed_.size(), batch_total_, unit, joined(batch_failed_));
+    if (batch_skipped_ > 0) {
+        status_ += std::format(" ({} skipped)", batch_skipped_);
+    }
     append_log("\n" + status_ + "\n");
     batch_name_.clear();
     rescan();
@@ -287,7 +372,7 @@ void LauncherSession::finish_batch() {
 void LauncherSession::cancel() {
     if (running_) {
         for (const QueuedCommand& dropped : queue_) {
-            batch_failed_.push_back(dropped.video + " (cancelled)");
+            batch_failed_.push_back(dropped.label + " (cancelled)");
         }
         queue_.clear();
         runner_.cancel();
@@ -310,6 +395,7 @@ void LauncherSession::poll() {
         if (code != 0) {
             batch_failed_.push_back(running_name_);
             append_log(std::format("{} failed (exit code {})\n", running_name_, code));
+            drop_rest_of(running_original_);
         }
         rescan(); // shows each finished video at once
         start_next();
@@ -318,6 +404,22 @@ void LauncherSession::poll() {
     status_ = code == 0 ? running_name_ + " finished"
                         : std::format("{} failed (exit code {})", running_name_, code);
     rescan();
+}
+
+void LauncherSession::drop_rest_of(const std::string& original) {
+    // Later steps of the video would work on a missing or stale result
+    std::vector<std::string> dropped;
+    std::erase_if(queue_, [&](const QueuedCommand& command) {
+        if (command.original != original) {
+            return false;
+        }
+        dropped.push_back(command.label);
+        return true;
+    });
+    if (!dropped.empty()) {
+        append_log(std::format("Not run: {}\n", joined(dropped)));
+        batch_total_ -= dropped.size();
+    }
 }
 
 void LauncherSession::append_log(const std::string& text) {

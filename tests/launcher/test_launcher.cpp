@@ -461,6 +461,133 @@ TEST_CASE("which steps a batch can run, has done and lacks the input for") {
     CHECK(missing_input("features", entry).empty());
 }
 
+TEST_CASE("a pipeline plans per video the ticked steps still to do") {
+    VideoEntry entry = video("match-a");
+    const std::vector<std::string> steps = default_pipeline();
+    CHECK(steps == std::vector<std::string>{"features", "detect", "cut"});
+    CHECK(pipeline_for(steps, entry, BatchScope::Missing) == steps);
+    entry.features_model = "dinov2";
+    entry.detected = true;
+    CHECK(pipeline_for(steps, entry, BatchScope::Missing) == std::vector<std::string>{"cut"});
+    CHECK(pipeline_for(steps, entry, BatchScope::All) == steps);
+    entry.cuts = {"/lib/day-1/ttrally-data/cuts/match-a.mp4"};
+    CHECK(pipeline_for(steps, entry, BatchScope::Missing).empty());
+    entry.features_model.clear(); // features again: detect and cut follow
+    CHECK(pipeline_for(steps, entry, BatchScope::Missing) == steps);
+    // In the order of the steps, whatever order they were ticked in
+    const std::vector<std::string> ticked{"cut", "align"};
+    CHECK(pipeline_for(ticked, video("match-b"), BatchScope::All) ==
+          std::vector<std::string>{"align", "cut"});
+}
+
+TEST_CASE("the match day's form leaves out the fields that follow from the video") {
+    const WorkspaceSnapshot snapshot = workspace();
+    const VideoEntry& entry = snapshot.videos[0];
+    const CommandForm cut = form_named(forms_for(entry, snapshot), "cut");
+    const std::vector<bool> dependent = video_dependent_fields("cut", entry, snapshot);
+    REQUIRE(dependent.size() == cut.fields.size());
+    for (std::size_t i = 0; i < cut.fields.size(); ++i) {
+        const Field& field = cut.fields[i];
+        const bool own = field.flag.empty() || field.flag == "--rallies" ||
+                         field.flag == "--out" || field.flag == "--video-id";
+        INFO(field.label);
+        CHECK(dependent[i] == own);
+    }
+}
+
+TEST_CASE("a match day is chosen as a whole") {
+    FakeScanner scanner;
+    scanner.snapshot.videos.push_back(video("match-c"));
+    scanner.snapshot.videos[2].match_day = "day-2";
+    FakeRunner runner;
+    LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    CHECK_FALSE(session.selected_match_day());
+    session.select_video(1);
+    session.select_match_day("day-2");
+    CHECK(session.selected_match_day() == "day-2");
+    CHECK(session.selected_video() == 2u); // its first video fills the forms in
+    session.rescan();
+    CHECK(session.selected_match_day() == "day-2");
+    session.select_match_day("day-1");
+    CHECK(session.selected_video() == 0u);
+    session.select_video(1);
+    CHECK_FALSE(session.selected_match_day());
+    CHECK_THROWS_AS(session.select_match_day("day-9"), std::invalid_argument);
+}
+
+TEST_CASE("a pipeline runs the steps for one video after another") {
+    FakeScanner scanner;
+    FakeRunner runner;
+    LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
+    session.select_match_day("day-1");
+    // match-b has detections and complete labels already
+    for (CommandForm& form : session.forms()) {
+        if (form.name == "cut") {
+            form.field("--before")->value = "2"; // carried over to every video
+        }
+    }
+    const auto step_of = [&] {
+        return runner.started.arguments.empty() ? std::string() : runner.started.arguments[0];
+    };
+    const auto finish = [&](int code) {
+        runner.is_running = false;
+        runner.code = code;
+        session.poll();
+    };
+
+    SECTION("only what is missing") {
+        session.run_pipeline(BatchScope::Missing);
+        CHECK(session.log().find("match-a: features, detect, cut") != std::string::npos);
+        CHECK(session.log().find("match-b: features, detect, cut") != std::string::npos);
+        CHECK(step_of() == "features");
+        CHECK(runner.started.arguments[1] == "/lib/day-1/match-a_FHD.mp4");
+        finish(0);
+        CHECK(step_of() == "detect");
+        // detect writes the detections: cut is filled in for them when its turn comes
+        scanner.snapshot.videos[0].detected = true;
+        finish(0);
+        REQUIRE(step_of() == "cut");
+        const auto before = std::ranges::find(runner.started.arguments, "--before");
+        REQUIRE(before != runner.started.arguments.end());
+        CHECK(*std::next(before) == "2");
+        CHECK(std::ranges::find(runner.started.arguments,
+                                in_library("day-1/ttrally-data/detections/match-a.csv")) !=
+              runner.started.arguments.end());
+        finish(0);
+        CHECK(runner.started.arguments[1] == "/lib/day-1/match-b_FHD.mp4");
+        finish(0);
+        finish(0);
+        finish(0);
+        CHECK_FALSE(session.running());
+        CHECK(session.status() == "pipeline finished for 6 steps");
+    }
+    SECTION("a failed step skips the rest of its video") {
+        session.run_pipeline(BatchScope::All);
+        finish(1); // features of match-a
+        CHECK(session.log().find("Not run: match-a: detect, match-a: cut") != std::string::npos);
+        CHECK(step_of() == "features");
+        CHECK(runner.started.arguments[1] == "/lib/day-1/match-b_FHD.mp4");
+        finish(0);
+        finish(0);
+        finish(0);
+        CHECK_FALSE(session.running());
+        CHECK(session.status() == "pipeline failed for 1 of 4 steps: match-a: features");
+    }
+    SECTION("a step without its input is skipped by itself") {
+        session.pipeline_steps() = {"align", "features"};
+        scanner.snapshot.videos[0].cut_candidates.clear();
+        session.rescan();
+        session.run_pipeline(BatchScope::All);
+        CHECK(step_of() == "features"); // align of match-a skipped
+        CHECK(session.log().find("match-a: align skipped: no pre-cut video") != std::string::npos);
+        finish(0);
+        CHECK(step_of() == "align");
+        finish(0);
+        finish(0);
+        CHECK(session.status() == "pipeline finished for 3 steps (1 skipped)");
+    }
+}
+
 TEST_CASE("a form with empty required fields is not run") {
     FakeScanner scanner;
     scanner.snapshot.videos[0].cut_candidates.clear();

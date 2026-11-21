@@ -391,13 +391,21 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
 - **Run:** the command runs as its own process; its output appears below, and it can be
   cancelled. The exact command line is shown above the button and can be copied. The list of
   videos is updated when a command has finished.
-- **Run all / Run missing** (align, features, detect, cut): runs the command for every video of
-  the selected video's match day, one after another, or only for those without its result yet.
-  Settings changed in the form that are the same for every video (e.g. the bit rate) apply to all;
-  paths and ids follow each video. Videos without the input are skipped and listed in the output
-  (align without a pre-cut video, cut without labels or detections); a failed video does not stop
-  the others, and "Cancel" stops the rest. "Run all" computes the features again even if they are
-  current.
+- **Whole match day:** the first entry under each match day chooses the match day as a whole.
+  The tabs align, features, detect and cut then show only the settings that are the same for
+  every game and **Compute all / Compute missing**: the command for every game of the match day,
+  one after another, or only for those without its result yet. Settings changed there (e.g. the
+  bit rate) apply to all games; paths and ids follow each game. Games without the input are
+  skipped and listed in the output (align without a pre-cut video, cut without labels or
+  detections); a failed game does not stop the others, and "Cancel" stops the rest. "Compute
+  all" computes the features again even if they are current. Annotate and refine need a single
+  game; train is the same as for a video.
+- **Pipeline** (only for a whole match day): ticks for the steps align, features, detect and cut
+  (default features → detect → cut), run for every game: all steps of one game, then the next.
+  Each step uses the settings of its own tab. "Compute missing" starts each game at its first
+  ticked step without a result and runs the later ones too (they would be out of date
+  otherwise); "Compute all" runs every ticked step again. A failed step skips the rest of its
+  game; a step without its input (e.g. align without a pre-cut video) is skipped by itself.
 - **Train** runs the Python training with `uv` in `training/` (the uv program can be set under
   "Advanced"; a copy in `external/uv/` is found automatically). All videos with complete labels
   and features are listed by match day with a thumbnail (a click shows the video with its preview
@@ -779,7 +787,9 @@ to copy it. `--check` only reports what is wrong.
 ### `highlights`
 
 The best rallies of a game or of a whole match day as one video. They are chosen in the
-launcher's **Highlights** tab, for the game of the selected video:
+launcher's **Highlights** tab, for the game of the selected video, or for all games at once when
+the whole match day is chosen on the left (one long list, each game's rallies under a row with
+its name, its number of rallies, the length of its game video and its marks):
 
 - **The rallies** of the game, numbered, with start and length: those `cut` would use (complete
   labels, else the refined detections, else the detections).
@@ -788,8 +798,11 @@ launcher's **Highlights** tab, for the game of the selected video:
   not the other way round. "Match day marks the game too" switches this coupling off for a game.
 - **Preselection:** the first time a match day is opened, the longest rallies of every game
   (5 by default) are ticked as game and match day highlights. "This game" and "All games"
-  preselect again with the chosen number, "Clear" removes every mark of the game. Marks survive
+  preselect again with the chosen number, "Clear" removes every mark of the game (for the whole
+  match day: "of every game" and "Clear all"). Marks survive
   new detections or refining: they move to the rally that overlaps the marked one.
+- **Length:** above the list, about how long the game video and the match day video will be
+  with the current marks, margins and cross-fade (updated with every tick).
 - **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest
   first), a second click reverses the order; the number stays the rally's number in the game.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "launcher/application/ports.hpp"
+#include "launcher/domain/batch.hpp"
 #include "launcher/domain/forms.hpp"
 
 #include <cstddef>
@@ -13,12 +14,6 @@
 #include <vector>
 
 namespace ttrally::launcher {
-
-/// Which videos a batch runs for.
-enum class BatchScope {
-    All,     ///< every video of the match day, computed again
-    Missing, ///< only the videos without the command's result
-};
 
 /// Application service behind the launcher window: the workspace and its videos, one set of
 /// forms for the selected video, and the command currently running with its output.
@@ -39,6 +34,14 @@ class LauncherSession {
     /// Fills the forms in for the video (edits made for the previous video are dropped, except
     /// in the training form, which does not depend on the video).
     void select_video(std::size_t index);
+    /// Chooses a whole match day: its batches, pipeline and highlights. The forms are filled in
+    /// for its first video (selected_video() names it). Throws std::invalid_argument for a match
+    /// day without videos.
+    void select_match_day(const std::string& match_day);
+    /// The match day chosen as a whole; nullopt while a single video is selected.
+    [[nodiscard]] const std::optional<std::string>& selected_match_day() const noexcept {
+        return match_day_;
+    }
     [[nodiscard]] std::vector<CommandForm>& forms() noexcept { return forms_; }
     /// To be called when the user has changed a field of one of the forms: keeps the pre-cut
     /// video chosen in the align form (an empty value forgets it).
@@ -59,6 +62,13 @@ class LauncherSession {
     /// the log; a failed video does not stop the others. Throws std::logic_error if a command is
     /// running.
     void run_batch(const CommandForm& form, BatchScope scope);
+    /// Runs the ticked steps of the pipeline (see pipeline_for) for every video of the selected
+    /// video's match day: all steps of one video, then the next. Each step uses the settings of
+    /// its form (as for a batch); a failed step skips the rest of its video, a step without its
+    /// input only itself. Throws std::logic_error if a command is running.
+    void run_pipeline(BatchScope scope);
+    /// The steps the pipeline runs (default_pipeline() at first).
+    [[nodiscard]] std::vector<std::string>& pipeline_steps() noexcept { return pipeline_steps_; }
     /// Stops the running command and the rest of a batch.
     void cancel();
     /// Collects new output; when the command has ended, notes the result and rescans.
@@ -76,10 +86,23 @@ class LauncherSession {
     void start_next();
     void finish_batch();
 
+    /// A command of a batch or pipeline, filled in for its video only when it starts (an earlier
+    /// step may change what the form proposes, e.g. the rallies cut uses).
     struct QueuedCommand {
-        std::string video;
-        Invocation call;
+        std::string original; ///< of the video
+        std::string label;    ///< e.g. "match-a" or "match-a: detect"
+        CommandForm edited;   ///< the form with the user's settings
+        CommandForm unedited; ///< as the form was proposed for the video it was edited for
+        bool recompute = false; ///< features: computed again even if current
     };
+
+    /// The command line of a queued command; empty with the reason in `skipped` if it lacks
+    /// an input now.
+    [[nodiscard]] std::optional<Invocation> prepare(const QueuedCommand& command,
+                                                    std::string& skipped) const;
+    void start_batch(std::string name, std::string header);
+    /// Removes the queued commands of a video whose command failed.
+    void drop_rest_of(const std::string& original);
 
     WorkspaceScanner& scanner_;
     ProcessRunner& runner_;
@@ -89,15 +112,19 @@ class LauncherSession {
     std::filesystem::path library_;
     WorkspaceSnapshot workspace_;
     std::optional<std::size_t> selected_;
+    std::optional<std::string> match_day_; ///< chosen as a whole
+    std::vector<std::string> pipeline_steps_ = default_pipeline();
     std::vector<CommandForm> forms_;
     bool running_ = false;
     std::string running_name_;
+    std::string running_original_; ///< video of the running batch command
     std::string log_;
     std::string status_;
     std::deque<QueuedCommand> queue_; ///< the rest of a batch
     std::string batch_name_;          ///< empty: no batch runs
     std::size_t batch_total_ = 0;
     std::vector<std::string> batch_failed_;
+    std::size_t batch_skipped_ = 0; ///< commands that lacked an input when their turn came
 };
 
 } // namespace ttrally::launcher

@@ -176,6 +176,7 @@ ttrally_layer(ttrally_highlights_domain
 ttrally_layer(ttrally_highlights_application
     SOURCES
         highlights/application/game_highlights.cpp
+        highlights/application/highlight_length.cpp
         highlights/application/make_highlight_video.cpp
     DEPENDS ttrally_highlights_domain ttrally_cutting_application ttrally_media_application)
 

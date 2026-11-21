@@ -9,8 +9,6 @@ namespace ttrally::launcher {
 
 namespace {
 
-constexpr std::array<std::string_view, 4> kBatchCommands{"align", "features", "detect", "cut"};
-
 const Field* find(const CommandForm& form, const Field& like) {
     const auto it = std::ranges::find_if(form.fields, [&](const Field& field) {
         return field.flag == like.flag && field.label == like.label;
@@ -21,7 +19,7 @@ const Field* find(const CommandForm& form, const Field& like) {
 } // namespace
 
 bool supports_batch(std::string_view command) {
-    return std::ranges::find(kBatchCommands, command) != kBatchCommands.end();
+    return std::ranges::find(kPipelineSteps, command) != kPipelineSteps.end();
 }
 
 bool step_done(std::string_view command, const VideoEntry& video) {
@@ -48,6 +46,42 @@ std::string missing_input(std::string_view command, const VideoEntry& video) {
         return "no labels or detections";
     }
     return {};
+}
+
+std::vector<std::string> default_pipeline() { return {"features", "detect", "cut"}; }
+
+std::vector<std::string> pipeline_for(std::span<const std::string> steps, const VideoEntry& video,
+                                      BatchScope scope) {
+    std::vector<std::string> planned;
+    for (const std::string_view step : kPipelineSteps) {
+        if (std::ranges::find(steps, step) == steps.end()) {
+            continue;
+        }
+        if (scope == BatchScope::All || !planned.empty() || !step_done(step, video)) {
+            planned.emplace_back(step);
+        }
+    }
+    return planned;
+}
+
+std::vector<bool> video_dependent_fields(std::string_view command, const VideoEntry& video,
+                                         const WorkspaceSnapshot& workspace) {
+    // Another video of the same match day: what differs follows from the video itself
+    VideoEntry other = video;
+    other.video_id += "\x01other";
+    other.original += "\x01other";
+    const auto named = [command](const std::vector<CommandForm>& forms) {
+        const auto it = std::ranges::find(forms, command, &CommandForm::name);
+        return it == forms.end() ? CommandForm{} : *it;
+    };
+    const CommandForm mine = named(forms_for(video, workspace));
+    const CommandForm theirs = named(forms_for(other, workspace));
+    std::vector<bool> dependent;
+    for (const Field& field : mine.fields) {
+        const Field* same = find(theirs, field);
+        dependent.push_back(same == nullptr || same->value != field.value);
+    }
+    return dependent;
 }
 
 CommandForm carry_over_edits(const CommandForm& edited, const CommandForm& selected,

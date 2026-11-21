@@ -4,6 +4,7 @@
 // MakeHighlightVideo use case with in-memory fakes.
 
 #include "highlights/application/game_highlights.hpp"
+#include "highlights/application/highlight_length.hpp"
 #include "highlights/application/make_highlight_video.hpp"
 #include "support/fake_media.hpp"
 
@@ -161,6 +162,31 @@ TEST_CASE("marks are carried over to changed rallies by their overlap") {
     CHECK(rallies[1] == rally(300, 350));            // new
     CHECK(rallies[2] == rally(450, 600, true));      // shares 50 of the shorter one's 100
     CHECK(rallies[3] == rally(480, 900));            // shares only 20
+}
+
+TEST_CASE("the length of a highlight video follows the marks, margins and cross-fades") {
+    const std::vector<HighlightRally> rallies{
+        rally(600, 1199, true, true),  // 10 s to 20 s
+        rally(1260, 1559, true),       // 21 s to 26 s: margins overlap the first one
+        rally(6000, 6299, true, true), // 100 s to 105 s
+    };
+    const cutting::Margins margins{.before_s = 1.0, .after_s = 1.5};
+    const auto game = clip_lengths(rallies, HighlightVideo::Game, margins, kFps);
+    REQUIRE(game.size() == 2);
+    CHECK(game[0] == Approx(27.5 - 9.0)); // merged: 9 s to 27.5 s
+    CHECK(game[1] == Approx(7.5));
+    const auto day = clip_lengths(rallies, HighlightVideo::MatchDay, margins, kFps);
+    REQUIRE(day.size() == 2);
+    CHECK(day[0] == Approx(12.5));
+    CHECK(joined_length(game, 0.0) == Approx(26.0));
+    CHECK(joined_length(game, 0.5) == Approx(25.5));
+    // A fade takes at most half of either clip
+    const std::vector<double> short_clips{1.0, 10.0, 4.0};
+    CHECK(joined_length(short_clips, 3.0) == Approx(15.0 - 0.5 - 2.0));
+    CHECK(joined_length({}, 0.5) == 0.0);
+    CHECK(clip_lengths(rallies, HighlightVideo::Game, margins, 0.0).empty());
+    const std::vector<HighlightRally> start{rally(0, 59, true)};
+    CHECK(clip_lengths(start, HighlightVideo::Game, margins, kFps)[0] == Approx(2.5));
 }
 
 TEST_CASE("titles from file names") {

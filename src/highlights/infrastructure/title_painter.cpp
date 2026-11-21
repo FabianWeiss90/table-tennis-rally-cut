@@ -232,6 +232,7 @@ TitleMask TitleFont::render(std::string_view text, int line_height, TextAlign al
     mask.width = *std::ranges::max_element(widths) + 2 * pad;
     mask.height = advance * static_cast<int>(lines.size()) + 2 * pad;
     mask.text.assign(static_cast<std::size_t>(mask.width * mask.height), 0);
+    const int text_height = static_cast<int>(std::lround((ascent - descent) * scale));
 
     std::vector<unsigned char> glyph;
     for (std::size_t l = 0; l < lines.size(); ++l) {
@@ -241,6 +242,11 @@ TitleMask TitleFont::render(std::string_view text, int line_height, TextAlign al
                                             : align == TextAlign::Center ? free / 2
                                                                          : free));
         const int y = pad + static_cast<int>(l) * advance + baseline;
+        const int line_top = pad + static_cast<int>(l) * advance;
+        mask.lines.push_back({.left = static_cast<int>(x),
+                              .top = line_top,
+                              .right = static_cast<int>(x) + widths[l],
+                              .bottom = line_top + text_height});
         for (std::size_t i = 0; i < line.size(); ++i) {
             const int c = static_cast<int>(line[i]);
             int x0 = 0;
@@ -347,56 +353,77 @@ Yuv to_yuv(Rgb color, bool full_range) noexcept {
             .v = channel(kChromaNeutral + v * chroma_range)};
 }
 
-void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& title) {
-    const TitlePosition position = title.position;
+PaintableTitle paintable(const TitleImage& image, bool full_range) {
+    PaintableTitle title;
+    title.width = image.width;
+    title.height = image.height;
+    const auto pixels =
+        static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height);
+    title.y.resize(pixels);
+    title.u.resize(pixels);
+    title.v.resize(pixels);
+    title.alpha.resize(pixels);
+    for (std::size_t i = 0; i < pixels; ++i) {
+        const Yuv yuv = to_yuv({image.rgba[4 * i], image.rgba[4 * i + 1], image.rgba[4 * i + 2]},
+                               full_range);
+        title.y[i] = static_cast<std::uint8_t>(yuv.y);
+        title.u[i] = static_cast<std::uint8_t>(yuv.u);
+        title.v[i] = static_cast<std::uint8_t>(yuv.v);
+        title.alpha[i] = image.rgba[4 * i + 3];
+    }
+    return title;
+}
+
+void paint_title(const YuvPlanes& picture, const PaintableTitle& title, TitlePosition position) {
     const int margin = static_cast<int>(std::lround(picture.height * kMarginShare));
     const TextAlign align = align_for(position);
     const int left = align == TextAlign::Left     ? margin
-                     : align == TextAlign::Center ? (picture.width - mask.width) / 2
-                                                  : picture.width - margin - mask.width;
+                     : align == TextAlign::Center ? (picture.width - title.width) / 2
+                                                  : picture.width - margin - title.width;
     const bool top = position == TitlePosition::TopLeft || position == TitlePosition::TopCenter ||
                      position == TitlePosition::TopRight;
-    const int top_row = top ? margin : picture.height - margin - mask.height;
-    const Yuv fill = to_yuv(title.color, picture.full_range);
-    const Yuv edge = to_yuv(title.outline, picture.full_range);
-
-    auto coverage = [&](const std::vector<std::uint8_t>& plane, int x, int y) -> int {
-        const int mx = x - left;
-        const int my = y - top_row;
-        if (mx < 0 || my < 0 || mx >= mask.width || my >= mask.height) {
-            return 0;
-        }
-        return plane[static_cast<std::size_t>(my * mask.width + mx)];
+    const int top_row = top ? margin : picture.height - margin - title.height;
+    const auto at = [&](int x, int y) {
+        return static_cast<std::size_t>((y - top_row) * title.width + (x - left));
     };
     const int x_begin = std::max(0, left);
-    const int x_end = std::min(picture.width, left + mask.width);
+    const int x_end = std::min(picture.width, left + title.width);
     const int y_begin = std::max(0, top_row);
-    const int y_end = std::min(picture.height, top_row + mask.height);
+    const int y_end = std::min(picture.height, top_row + title.height);
     for (int y = y_begin; y < y_end; ++y) {
         std::uint8_t* row = picture.y + static_cast<std::ptrdiff_t>(y) * picture.y_stride;
         for (int x = x_begin; x < x_end; ++x) {
-            const int dark = title.outlined ? coverage(mask.outline, x, y) : 0;
-            const int light = coverage(mask.text, x, y);
-            row[x] = mix(mix(row[x], edge.y, dark), fill.y, light);
+            const std::size_t i = at(x, y);
+            row[x] = mix(row[x], title.y[i], title.alpha[i]);
         }
     }
-    // Chroma: towards the outline's colour where the outline covers the 2x2 block, then towards
-    // the letters' colour where they do
+    // Chroma: towards the alpha-weighted mean colour of the title's pixels in the 2x2 block
     for (int cy = y_begin / 2; cy < (y_end + 1) / 2; ++cy) {
         std::uint8_t* u_row = picture.u + static_cast<std::ptrdiff_t>(cy) * picture.uv_stride;
         std::uint8_t* v_row = picture.v + static_cast<std::ptrdiff_t>(cy) * picture.uv_stride;
         for (int cx = x_begin / 2; cx < (x_end + 1) / 2; ++cx) {
-            int dark = 0;
-            int light = 0;
+            int alpha = 0;
+            int u = 0;
+            int v = 0;
             for (int dy = 0; dy < 2; ++dy) {
                 for (int dx = 0; dx < 2; ++dx) {
-                    dark += title.outlined ? coverage(mask.outline, 2 * cx + dx, 2 * cy + dy) : 0;
-                    light += coverage(mask.text, 2 * cx + dx, 2 * cy + dy);
+                    const int x = 2 * cx + dx;
+                    const int y = 2 * cy + dy;
+                    if (x < x_begin || x >= x_end || y < y_begin || y >= y_end) {
+                        continue;
+                    }
+                    const std::size_t i = at(x, y);
+                    alpha += title.alpha[i];
+                    u += title.alpha[i] * title.u[i];
+                    v += title.alpha[i] * title.v[i];
                 }
             }
+            if (alpha == 0) {
+                continue;
+            }
             constexpr int kBlock = 4;
-            u_row[cx] = mix(mix(u_row[cx], edge.u, dark / kBlock), fill.u, light / kBlock);
-            v_row[cx] = mix(mix(v_row[cx], edge.v, dark / kBlock), fill.v, light / kBlock);
+            u_row[cx] = mix(u_row[cx], (u + alpha / 2) / alpha, alpha / kBlock);
+            v_row[cx] = mix(v_row[cx], (v + alpha / 2) / alpha, alpha / kBlock);
         }
     }
 }

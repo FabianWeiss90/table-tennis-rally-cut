@@ -29,6 +29,7 @@ class HighlightsCommand {
     double crossfade_s_ = 0.5;
     bool rally_titles_ = false;
     std::filesystem::path font_;
+    std::filesystem::path shapes_dir_;
     std::string codec_ = "h265";
     std::string encoder_ = "auto";
     double bitrate_mbps_ = 0.0;

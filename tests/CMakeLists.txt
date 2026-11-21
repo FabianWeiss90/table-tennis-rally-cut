@@ -70,6 +70,7 @@ ttrally_test(integration_tests
         integration/test_frame_decoder.cpp
         integration/test_highlights_media.cpp
         integration/test_mp4_repair.cpp
+        integration/test_title_backdrops.cpp
         integration/test_video_cutter.cpp
         cutting/test_parameter_sets.cpp
     DEPENDS

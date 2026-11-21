@@ -194,7 +194,8 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--video-id", "match-a", "--rally-titles",
                                    "--bitrate", "4", "--highlights-dir",
-                                   in_library("day-1/ttrally-data/highlights"), "--cache-dir",
+                                   in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
+                                   in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // The match day video: no video id, the flag instead
     highlights.field("--video-id")->value.clear();
@@ -203,7 +204,8 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--match-day", "--rally-titles", "--bitrate",
                                    "4", "--highlights-dir",
-                                   in_library("day-1/ttrally-data/highlights"), "--cache-dir",
+                                   in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
+                                   in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // Players on each rally is on by default and can be switched off
     highlights.field("--rally-titles")->value.clear();

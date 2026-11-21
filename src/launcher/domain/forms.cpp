@@ -356,7 +356,7 @@ CommandForm cut_form(const VideoEntry& video) {
              cache_dir(video)}};
 }
 
-CommandForm highlights_form(const VideoEntry& video) {
+CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& workspace) {
     return {"highlights", "Highlights",
             "Choose the highlights of each game: the longest rallies are preselected, tick or "
             "untick them after watching. A match day highlight is also a game highlight (unless "
@@ -387,6 +387,9 @@ CommandForm highlights_form(const VideoEntry& video) {
                              "\".mp4\" is added if missing")),
              advanced(option("--font", "Title font", FieldKind::File, "", "",
                              "TrueType font; empty: a bold system font")),
+             advanced(option("--shapes-dir", "Title shapes", FieldKind::Directory,
+                             workspace.shapes_dir(), "",
+                             "SVG files for title backdrops, shared by all match days")),
              encoder_field(),
              cache_dir(video)}};
 }
@@ -437,7 +440,7 @@ std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnaps
     return {align_form(video),           annotate_form(video),
             features_form(video, workspace), detect_form(video, workspace),
             refine_form(video),          cut_form(video),
-            highlights_form(video),      train_form(workspace)};
+            highlights_form(video, workspace), train_form(workspace)};
 }
 
 } // namespace ttrally::launcher

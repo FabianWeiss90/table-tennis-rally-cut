@@ -73,6 +73,7 @@ struct RenderOptions {
     cutting::CutOptions encoding; ///< codec, encoder and bit rate (the mode is ignored)
     std::filesystem::path font;   ///< TrueType font for titles; empty: the match day's, else a
                                   ///< system font
+    std::filesystem::path shapes{}; ///< folder of the SVG shapes of title backdrops
 };
 
 /// Port: writes clips (possibly from different videos) one after the other into a video, with

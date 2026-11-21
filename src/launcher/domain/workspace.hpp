@@ -12,6 +12,8 @@ namespace ttrally::launcher {
 /// Folder the tool keeps its own files in: one per match day (next to the videos) and one in the
 /// library itself for what belongs to all match days (image models, detectors).
 inline constexpr std::string_view kWorkFolder = "ttrally-data";
+/// Folder of the library's SVG shapes for title backdrops, inside its own work folder.
+inline constexpr std::string_view kShapesFolder = "title-shapes";
 
 /// How far the annotation of a video has got.
 enum class AnnotationProgress {
@@ -51,6 +53,10 @@ struct WorkspaceSnapshot {
 
     /// The library's own ttrally-data folder.
     [[nodiscard]] std::string shared_dir() const { return library + "/" + std::string(kWorkFolder); }
+    /// The library's SVG shapes for title backdrops.
+    [[nodiscard]] std::string shapes_dir() const {
+        return shared_dir() + "/" + std::string(kShapesFolder);
+    }
 };
 
 } // namespace ttrally::launcher

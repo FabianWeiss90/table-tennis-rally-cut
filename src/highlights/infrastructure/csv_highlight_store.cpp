@@ -61,8 +61,105 @@ std::string value_of(const Settings& settings, const std::string& key) {
     return found == settings.end() ? std::string() : found->second;
 }
 
+double parse_length(const Settings& settings, const std::string& key, double fallback,
+                    double max) {
+    const std::string text = value_of(settings, key);
+    try {
+        return text.empty() ? fallback : std::clamp(std::stod(text), 0.0, max);
+    } catch (const std::exception&) {
+        return fallback;
+    }
+}
+
+int parse_opacity(const Settings& settings, const std::string& key, int fallback) {
+    const std::string text = value_of(settings, key);
+    int value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    return error != std::errc() || end != text.data() + text.size()
+               ? fallback
+               : std::clamp(value, 0, kMaxOpacity);
+}
+
+std::uint32_t parse_seed(const std::string& text, std::uint32_t fallback) {
+    std::uint32_t value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    return error != std::errc() || end != text.data() + text.size() ? fallback : value;
+}
+
+std::string length_text(double value) { return std::format("{:.3f}", value); }
+
+/// The decoration stored under keys "<prefix>_backdrop...", "_shadow..." and "_glow..."; the
+/// defaults for missing keys (files from before decorations).
+TitleDecoration read_decoration(const Settings& settings, const std::string& prefix) {
+    const TitleDecoration defaults;
+    TitleDecoration d;
+    Backdrop& b = d.backdrop;
+    const std::string bp = prefix + "_backdrop";
+    b.shape = parse_backdrop_shape(value_of(settings, bp)).value_or(BackdropShape::None);
+    b.svg = value_of(settings, bp + "_svg");
+    b.color = parse_color(settings, bp + "_color", defaults.backdrop.color);
+    b.opacity = parse_opacity(settings, bp + "_opacity", defaults.backdrop.opacity);
+    b.per_line = value_of(settings, bp + "_per_line") == "1";
+    b.seed = parse_seed(value_of(settings, bp + "_seed"), defaults.backdrop.seed);
+    b.padding = parse_length(settings, bp + "_padding", defaults.backdrop.padding,
+                             Backdrop::kMaxLength);
+    b.corner =
+        parse_length(settings, bp + "_corner", defaults.backdrop.corner, Backdrop::kMaxLength);
+    b.softness = parse_length(settings, bp + "_softness", defaults.backdrop.softness,
+                              Backdrop::kMaxLength);
+    b.bordered = value_of(settings, bp + "_bordered") == "1";
+    b.border = parse_color(settings, bp + "_border", defaults.backdrop.border);
+    b.border_width = parse_length(settings, bp + "_border_width", defaults.backdrop.border_width,
+                                  Backdrop::kMaxBorder);
+    TitleShadow& s = d.shadow;
+    const std::string sp = prefix + "_shadow";
+    s.shown = value_of(settings, sp) == "1";
+    s.color = parse_color(settings, sp + "_color", defaults.shadow.color);
+    s.opacity = parse_opacity(settings, sp + "_opacity", defaults.shadow.opacity);
+    s.offset =
+        parse_length(settings, sp + "_offset", defaults.shadow.offset, TitleShadow::kMaxLength);
+    s.blur = parse_length(settings, sp + "_blur", defaults.shadow.blur, TitleShadow::kMaxLength);
+    TitleGlow& g = d.glow;
+    const std::string gp = prefix + "_glow";
+    g.shown = value_of(settings, gp) == "1";
+    g.color = parse_color(settings, gp + "_color", defaults.glow.color);
+    g.opacity = parse_opacity(settings, gp + "_opacity", defaults.glow.opacity);
+    g.size = parse_length(settings, gp + "_size", defaults.glow.size, TitleGlow::kMaxSize);
+    return d;
+}
+
+void put_decoration(Settings& settings, const std::string& prefix, const TitleDecoration& d) {
+    const Backdrop& b = d.backdrop;
+    const std::string bp = prefix + "_backdrop";
+    settings[bp] = std::string(to_string(b.shape));
+    settings[bp + "_svg"] = b.svg;
+    settings[bp + "_color"] = to_hex(b.color);
+    settings[bp + "_opacity"] = std::to_string(b.opacity);
+    settings[bp + "_per_line"] = yes_no(b.per_line);
+    settings[bp + "_seed"] = std::to_string(b.seed);
+    settings[bp + "_padding"] = length_text(b.padding);
+    settings[bp + "_corner"] = length_text(b.corner);
+    settings[bp + "_softness"] = length_text(b.softness);
+    settings[bp + "_bordered"] = yes_no(b.bordered);
+    settings[bp + "_border"] = to_hex(b.border);
+    settings[bp + "_border_width"] = length_text(b.border_width);
+    const TitleShadow& s = d.shadow;
+    const std::string sp = prefix + "_shadow";
+    settings[sp] = yes_no(s.shown);
+    settings[sp + "_color"] = to_hex(s.color);
+    settings[sp + "_opacity"] = std::to_string(s.opacity);
+    settings[sp + "_offset"] = length_text(s.offset);
+    settings[sp + "_blur"] = length_text(s.blur);
+    const TitleGlow& g = d.glow;
+    const std::string gp = prefix + "_glow";
+    settings[gp] = yes_no(g.shown);
+    settings[gp + "_color"] = to_hex(g.color);
+    settings[gp + "_opacity"] = std::to_string(g.opacity);
+    settings[gp + "_size"] = length_text(g.size);
+}
+
 /// The title stored under keys "<prefix>" (text), "<prefix>_shown", "_size", "_position",
-/// "_color" and "_outline".
+/// "_color", "_outline" and those of its decoration.
 Title read_title(const Settings& settings, const std::string& prefix, TitlePosition fallback) {
     Title title;
     title.text = value_of(settings, prefix);
@@ -72,6 +169,7 @@ Title read_title(const Settings& settings, const std::string& prefix, TitlePosit
     title.color = parse_color(settings, prefix + "_color", kWhite);
     title.outlined = value_of(settings, prefix + "_outlined") == "1";
     title.outline = parse_color(settings, prefix + "_outline", kBlack);
+    title.decoration = read_decoration(settings, prefix);
     return title;
 }
 
@@ -83,6 +181,7 @@ void put_title(Settings& settings, const std::string& prefix, const Title& title
     settings[prefix + "_color"] = to_hex(title.color);
     settings[prefix + "_outlined"] = yes_no(title.outlined);
     settings[prefix + "_outline"] = to_hex(title.outline);
+    put_decoration(settings, prefix, title.decoration);
 }
 
 void write_settings(const fs::path& file, const Settings& settings) {
@@ -171,11 +270,7 @@ TitleLayout CsvHighlightStore::match_day_layout() {
     }
     const Title title = read_title(read_settings(file), std::string(kLayoutPrefix),
                                    TitlePosition::BottomCenter);
-    return {.size = title.size,
-            .position = title.position,
-            .color = title.color,
-            .outlined = title.outlined,
-            .outline = title.outline};
+    return TitleLayout::of(title);
 }
 
 void CsvHighlightStore::save_match_day_layout(const TitleLayout& layout) {

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "highlights/application/title_fonts.hpp"
+#include "highlights/infrastructure/svg_shape.hpp"
 
 #include <filesystem>
 #include <map>
@@ -16,7 +17,8 @@ class TitleFont;
 
 /// The TrueType and OpenType fonts in the usual font folders of the system and of the user
 /// (Linux: /usr/share/fonts, /usr/local/share/fonts, ~/.local/share/fonts, ~/.fonts; Windows:
-/// the Windows fonts folder and the user's), written with stb_truetype.
+/// the Windows fonts folder and the user's), written with stb_truetype; backdrops of SVG shapes
+/// read with nanosvg.
 class SystemTitleFonts final : public TitleFonts {
   public:
     SystemTitleFonts();
@@ -30,7 +32,9 @@ class SystemTitleFonts final : public TitleFonts {
     [[nodiscard]] std::vector<FontChoice> installed() override;
     [[nodiscard]] FontChoice fallback() override;
     [[nodiscard]] TitleImage render(const std::filesystem::path& font, const Title& title,
-                                    int line_height) override;
+                                    int line_height,
+                                    const std::filesystem::path& shapes) override;
+    [[nodiscard]] std::vector<std::string> shapes(const std::filesystem::path& folder) override;
 
   private:
     const TitleFont& loaded(const std::filesystem::path& file);
@@ -38,6 +42,7 @@ class SystemTitleFonts final : public TitleFonts {
     std::vector<std::filesystem::path> folders_;
     std::mutex mutex_; ///< installed() may run in the background
     std::map<std::filesystem::path, std::unique_ptr<TitleFont>> fonts_;
+    SvgShapeCache svgs_;
 };
 
 } // namespace ttrally::highlights

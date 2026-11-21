@@ -347,6 +347,7 @@ The videos can lie anywhere, e.g. on an external disk, in one folder per match d
       scenes.csv  pre-cuts.csv
   ttrally-data/                      shared by all match days
     models/                          image models and trained rally detectors
+    title-shapes/                    your own SVG shapes for title backgrounds (optional)
   exclude/                           videos the tool ignores
 ```
 
@@ -805,6 +806,23 @@ launcher's **Highlights** tab, for the game of the selected video:
   and once for the match day video, where every game's title looks the same. The game video
   shows the title all the time; the match day video only with "Players on each rally", then
   each clip shows its game's title. "Preview as" shows either layout in the player.
+- **Background:** the row below each layout puts a shape behind the title, in a colour and an
+  opacity (in percent) of its own: rounded box, pill, cloud, four banners (torn ends, paper
+  strip, tape, two layers), brush stroke, speech bubble (its tip points to the nearer edge of the
+  picture), ribbon and sport bar. "Per line" gives each line its own shape instead of one around
+  all lines. Shapes drawn by chance (cloud, banners, brush stroke) keep their look in every frame
+  and every video; "Reroll" draws another one of the same kind. "Effects..." sets the padding
+  around the text, the corner radius of the rounded box, a soft edge, an opaque line along the
+  edge, a shadow (behind the background, or behind the letters without one; colour, opacity,
+  offset, blur) and a glow around the letters (colour, opacity, size). Lengths are given in
+  percent of the line height, so they grow with the title.
+- **Own shapes:** SVG files in `<library>/ttrally-data/title-shapes/` appear in the shape list
+  ("Open the shapes folder..." creates and opens it). They are used as silhouettes: filled with
+  the background colour and opacity. The drawing is scaled to the height of the text plus
+  padding; only its middle is stretched to the text's width, its ends (a third of it each, at
+  most as wide as it is high) keep their shape, so a torn banner stays torn for long names.
+  Mind the licence of shapes from the web: public domain (CC0) needs no credit, CC BY needs
+  the author named wherever the video is shown.
 - **Font:** one for all titles of the match day, chosen from the fonts installed on the
   computer (TrueType and OpenType with the letters of German text, from the usual font folders);
   pointing at a font in the list shows it in the player. The player shows the titles in the
@@ -817,7 +835,7 @@ launcher's **Highlights** tab, for the game of the selected video:
 Every change is saved at once in `<match day>/ttrally-data/highlights/` (`<video id>.csv`
 with the marks, `<video id>.settings.csv` with the original, the coupling and the title,
 `match-day-title.csv` with the look of the players' titles in the match day video, the
-match title and the font); the
+match title and the font; a title's background and effects are saved with it); the
 videos are written there too.
 
 ```sh
@@ -833,15 +851,18 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
 - **Format:** size and frame rate of the first clip's video; clips of other videos are scaled
   and fitted to its frame grid. Sound is AAC stereo at 48 kHz. The video is encoded like `cut`
   (H.265 on the GPU by default, `--codec`, `--bitrate`, `--encoder`).
-- **Titles** are drawn in white with a black outline, in a bold system font (DejaVu Sans,
-  Liberation Sans or Noto Sans on Linux, Segoe UI or Arial on Windows) or the TrueType file given
-  with `--font`.
+- **Titles** are drawn as set in the launcher (colours, border, background, shadow, glow), in
+  the match day's font, else a bold system font (DejaVu Sans, Liberation Sans or Noto Sans on
+  Linux, Segoe UI or Arial on Windows), or the TrueType file given with `--font`. SVG
+  backgrounds are read from `--shapes-dir` (default `<library>/ttrally-data/title-shapes`, the
+  library being the folder around the match day); a missing file is noted and the title drawn
+  without its background.
 
 Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highlights`), `--out`
 (default `<video id>.mp4` or `<match day>-highlights.mp4` in the highlights directory; a bare
 name also goes there, and `.mp4` is added if it has no extension),
-`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--codec`, `--bitrate`,
-`--encoder`, `--cache-dir`.
+`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`, `--codec`,
+`--bitrate`, `--encoder`, `--cache-dir`.
 
 ## Annotation definitions and label format
 

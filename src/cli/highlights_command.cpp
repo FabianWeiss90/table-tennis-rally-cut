@@ -4,6 +4,7 @@
 
 #include "cli/stream_progress_reporter.hpp"
 #include "highlights/application/make_highlight_video.hpp"
+#include "highlights/application/title_fonts.hpp"
 #include "highlights/infrastructure/csv_highlight_store.hpp"
 #include "highlights/infrastructure/ffmpeg_highlight_renderer.hpp"
 #include "media/infrastructure/caching_media_reader.hpp"
@@ -36,6 +37,16 @@ std::string match_day_name(const std::filesystem::path& highlights_dir) {
 std::filesystem::path match_day_video(const std::filesystem::path& highlights_dir) {
     const std::string name = match_day_name(highlights_dir);
     return highlights_dir / ((name.empty() ? std::string("match-day") : name) + "-highlights.mp4");
+}
+
+/// The library's shapes folder, if the match day lies in a library:
+/// <library>/ttrally-data/title-shapes next to <library>/<match day>/ttrally-data/highlights.
+std::filesystem::path library_shapes(const std::filesystem::path& highlights_dir) {
+    const std::filesystem::path work = std::filesystem::absolute(highlights_dir)
+                                           .lexically_normal()
+                                           .parent_path(); // <match day>/ttrally-data
+    return work.parent_path().parent_path() / work.filename() /
+           std::string(highlights::kTitleShapesFolder);
 }
 
 /// A bare file name goes into the highlights directory, and a name without extension gets ".mp4".
@@ -83,6 +94,10 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
     command_->add_option("--font", font_,
                          "TrueType font for the titles (default: a bold system font)")
         ->check(CLI::ExistingFile);
+    command_->add_option("--shapes-dir", shapes_dir_,
+                         "Folder of the SVG shapes for title backdrops (default: "
+                         "<library>/ttrally-data/title-shapes, the library being the folder "
+                         "around the match day)");
     command_->add_option("--codec", codec_,
                          "h265 (best quality per bit) or h264 (plays everywhere)")
         ->check(CLI::IsMember({"h265", "h264"}))
@@ -107,6 +122,9 @@ int HighlightsCommand::run() {
                           : highlights_dir_ / (video_id_ + ".mp4");
     }
     out_ = output_video(out_, highlights_dir_);
+    if (shapes_dir_.empty()) {
+        shapes_dir_ = library_shapes(highlights_dir_);
+    }
     media::FfmpegMediaProbe probe;
     media::FfmpegMediaReader ffmpeg_reader;
     media::CachingMediaReader reader(ffmpeg_reader, cache_dir_);
@@ -127,7 +145,8 @@ int HighlightsCommand::run() {
                                                            : cutting::VideoCodec::H265,
                                  .encoder = encoder_,
                                  .bitrate_mbps = bitrate_mbps_},
-                    .font = font_}});
+                    .font = font_,
+                    .shapes = shapes_dir_}});
     std::cout << std::format("Done in {:.0f} s: {} rallies from {} game(s) in {} clips, {} of "
                              "video (encoded with {} at {:.1f} Mbit/s).\n",
                              result.seconds, result.rallies, result.games.size(), result.clips,

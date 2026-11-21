@@ -3,6 +3,8 @@
 #include "highlights/infrastructure/ffmpeg_highlight_renderer.hpp"
 
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
+#include "highlights/infrastructure/svg_shape.hpp"
+#include "highlights/infrastructure/title_composer.hpp"
 #include "highlights/infrastructure/title_painter.hpp"
 #include "media/application/media_error.hpp"
 
@@ -120,14 +122,16 @@ class TitleCache {
   public:
     /// A font that does not exist (e.g. uninstalled since it was chosen) is replaced by the
     /// default one, with a note.
-    TitleCache(std::filesystem::path font, ProgressReporter& progress)
-        : font_file_(std::move(font)), progress_(progress) {}
+    TitleCache(std::filesystem::path font, std::filesystem::path shapes, bool full_range,
+               ProgressReporter& progress)
+        : font_file_(std::move(font)), shapes_(std::move(shapes)), full_range_(full_range),
+          progress_(progress) {}
 
-    const TitleMask& mask(const Title& title, int picture_height) {
+    const PaintableTitle& title(const Title& title, int picture_height) {
         const int line_height =
             std::max(1, static_cast<int>(std::lround(title.size * picture_height)));
-        const auto key = std::make_tuple(title.text, line_height, title.position);
-        if (const auto found = masks_.find(key); found != masks_.end()) {
+        const auto key = std::make_pair(look_key(title), line_height);
+        if (const auto found = titles_.find(key); found != titles_.end()) {
             return found->second;
         }
         if (!font_) {
@@ -147,16 +151,35 @@ class TitleCache {
             }
             font_ = std::make_unique<TitleFont>(font_file_);
         }
-        return masks_
-            .emplace(key, font_->render(title.text, line_height, align_for(title.position)))
-            .first->second;
+        const TitleMask letters =
+            font_->render(title.text, line_height, align_for(title.position));
+        const TitleImage image = compose_title(letters, title, line_height, svg_of(title));
+        return titles_.emplace(key, paintable(image, full_range_)).first->second;
     }
 
   private:
+    /// The SVG drawing of the title's backdrop; nullptr (with a note) if it cannot be read.
+    const SvgShape* svg_of(const Title& title) {
+        const Backdrop& backdrop = title.decoration.backdrop;
+        if (backdrop.shape != BackdropShape::Svg || !backdrop.visible()) {
+            return nullptr;
+        }
+        try {
+            return &svgs_.load(shapes_ / backdrop.svg);
+        } catch (const std::exception& failure) {
+            progress_.report(std::format("Note: {}; the title is drawn without its backdrop",
+                                         failure.what()));
+            return nullptr;
+        }
+    }
+
     std::filesystem::path font_file_;
+    std::filesystem::path shapes_;
+    bool full_range_;
     ProgressReporter& progress_;
     std::unique_ptr<TitleFont> font_;
-    std::map<std::tuple<std::string, int, TitlePosition>, TitleMask> masks_;
+    SvgShapeCache svgs_;
+    std::map<std::pair<std::string, int>, PaintableTitle> titles_;
 };
 
 /// Decodes one clip and hands out its pictures on the output's frame grid and its sound.
@@ -508,17 +531,17 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
     const std::vector<ClipTiming> timing =
         plan_timing(clips, format.frame_rate, std::max(0.0, options.crossfade_s));
     HighlightWriter writer(output, format, options, progress);
-    TitleCache titles(options.font, progress);
+    TitleCache titles(options.font, options.shapes, format.full_range, progress);
     for (std::size_t i = 0; i < clips.size(); ++i) {
         const Clip& clip = clips[i];
         const ClipTiming& t = timing[i];
         const bool last_clip = i + 1 == clips.size();
         progress.report(std::format("  clip {} of {}: {} {:.1f}-{:.1f} s", i + 1, clips.size(),
                                     clip.video.filename().string(), clip.start_s, clip.end_s));
-        std::vector<std::pair<const TitleMask*, const Title*>> painted;
+        std::vector<std::pair<const PaintableTitle*, TitlePosition>> painted;
         for (const Title& title : clip.titles) {
             if (title.visible()) {
-                painted.emplace_back(&titles.mask(title, format.height), &title);
+                painted.emplace_back(&titles.title(title, format.height), title.position);
             }
         }
         const std::int64_t first_sample = sample_at_frame(t.first, format.frame_rate);
@@ -529,12 +552,12 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
         }
         ClipReader reader(clip, format, t.frames);
         const ClipReader::PictureConsumer consume = [&](std::int64_t j, AVFrame& picture) {
-            for (const auto& [mask, title] : painted) {
+            for (const auto& [title, position] : painted) {
                 paint_title({.y = picture.data[0], .u = picture.data[1], .v = picture.data[2],
                              .y_stride = picture.linesize[0], .uv_stride = picture.linesize[1],
                              .width = picture.width, .height = picture.height,
                              .full_range = format.full_range},
-                            *mask, *title);
+                            *title, position);
             }
             writer.add_picture(t, j, picture, last_clip);
         };

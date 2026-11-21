@@ -69,6 +69,94 @@ const char* position_label(TitlePosition position) {
     return "";
 }
 
+const char* backdrop_label(highlights::BackdropShape shape) {
+    using highlights::BackdropShape;
+    switch (shape) {
+    case BackdropShape::None:
+        return "No background";
+    case BackdropShape::RoundedBox:
+        return "Rounded box";
+    case BackdropShape::Pill:
+        return "Pill";
+    case BackdropShape::Cloud:
+        return "Cloud";
+    case BackdropShape::TornEnds:
+        return "Banner, torn ends";
+    case BackdropShape::PaperStrip:
+        return "Banner, paper strip";
+    case BackdropShape::Tape:
+        return "Banner, tape";
+    case BackdropShape::DoubleStrip:
+        return "Banner, two layers";
+    case BackdropShape::Brush:
+        return "Brush stroke";
+    case BackdropShape::SpeechBubble:
+        return "Speech bubble";
+    case BackdropShape::Ribbon:
+        return "Ribbon";
+    case BackdropShape::SportBar:
+        return "Sport bar";
+    case BackdropShape::Svg:
+        return "SVG shape";
+    }
+    return "";
+}
+
+const char* backdrop_help(highlights::BackdropShape shape) {
+    using highlights::BackdropShape;
+    switch (shape) {
+    case BackdropShape::None:
+        return "Only the letters";
+    case BackdropShape::RoundedBox:
+        return "A box with round corners (radius under Effects)";
+    case BackdropShape::Pill:
+        return "A box with half-round ends";
+    case BackdropShape::Cloud:
+        return "Round bumps around the text; Reroll for other bumps";
+    case BackdropShape::TornEnds:
+        return "A band with straight edges, its ends torn off";
+    case BackdropShape::PaperStrip:
+        return "A strip torn from a roll: slightly uneven edges, ragged ends";
+    case BackdropShape::Tape:
+        return "A slightly tilted piece of tape with finely jagged, slanted ends";
+    case BackdropShape::DoubleStrip:
+        return "Two paper strips, the one behind turned a little and darker";
+    case BackdropShape::Brush:
+        return "A broad brush stroke with frayed edges and bristly ends";
+    case BackdropShape::SpeechBubble:
+        return "A rounded bubble with its tip towards the nearer edge of the picture";
+    case BackdropShape::Ribbon:
+        return "A band with V-notched tails behind it (darker)";
+    case BackdropShape::SportBar:
+        return "A slanted bar, as in sports TV graphics";
+    case BackdropShape::Svg:
+        return "An SVG file from the library's shapes folder";
+    }
+    return "";
+}
+
+/// A slider for a length given as share of the line height, shown in percent.
+bool length_slider(const char* label, double& value, double max, const char* help) {
+    constexpr float kPercent = 100.0F;
+    auto percent = static_cast<float>(value * kPercent);
+    ImGui::SetNextItemWidth(140);
+    const bool changed = ImGui::SliderFloat(label, &percent, 0.0F,
+                                            static_cast<float>(max) * kPercent, "%.0f %%");
+    ImGui::SetItemTooltip("%s", help);
+    if (changed) {
+        value = std::clamp(static_cast<double>(percent) / kPercent, 0.0, max);
+    }
+    return changed;
+}
+
+bool opacity_slider(const char* label, int& opacity) {
+    ImGui::SetNextItemWidth(110);
+    const bool changed = ImGui::SliderInt(label, &opacity, 0, highlights::kMaxOpacity, "%d %%");
+    ImGui::SetItemTooltip("0 %%: invisible, 100 %%: opaque");
+    opacity = std::clamp(opacity, 0, highlights::kMaxOpacity);
+    return changed;
+}
+
 /// Multi-line text input on a std::string.
 bool input_multiline(const char* id, std::string& value, ImVec2 size) {
     auto resize = [](ImGuiInputTextCallbackData* data) {
@@ -92,6 +180,17 @@ class TitleOverlay {
     ~TitleOverlay() { clear(); }
     TitleOverlay(const TitleOverlay&) = delete;
     TitleOverlay& operator=(const TitleOverlay&) = delete;
+
+    /// The folder SVG backdrops are read from.
+    void set_shapes(const std::filesystem::path& shapes) {
+        if (shapes != shapes_) {
+            shapes_ = shapes;
+            clear();
+        }
+    }
+
+    /// Drops the rendered titles (e.g. after an SVG file changed).
+    void refresh() { clear(); }
 
     void draw(const std::vector<Title>& titles, const std::filesystem::path& font, ImVec2 origin,
               ImVec2 size) {
@@ -145,9 +244,7 @@ class TitleOverlay {
     const Image* image_of(const Title& title, const std::filesystem::path& font,
                           int line_height) {
         const std::string key =
-            std::format("{}|{}|{}|{}|{}|{}|{}", font.string(), title.text, line_height,
-                        highlights::to_hex(title.color), title.outlined,
-                        highlights::to_hex(title.outline), highlights::to_string(title.position));
+            std::format("{}|{}|{}", font.string(), line_height, highlights::look_key(title));
         if (const auto found = images_.find(key); found != images_.end()) {
             return &found->second;
         }
@@ -156,7 +253,7 @@ class TitleOverlay {
         }
         highlights::TitleImage mask;
         try {
-            mask = fonts_.render(font, title, line_height);
+            mask = fonts_.render(font, title, line_height, shapes_);
             error_.clear();
         } catch (const std::exception& failure) {
             error_ = failure.what();
@@ -172,31 +269,8 @@ class TitleOverlay {
             return nullptr;
         }
         SDL_SetTextureBlendMode(image.texture, SDL_BLENDMODE_BLEND);
-        const std::vector<std::uint8_t> pixels = rgba_of(mask, title);
-        SDL_UpdateTexture(image.texture, nullptr, pixels.data(), mask.width * 4);
+        SDL_UpdateTexture(image.texture, nullptr, mask.rgba.data(), mask.width * 4);
         return &images_.emplace(key, image).first->second;
-    }
-
-    /// Letters over their border, with straight (not premultiplied) alpha.
-    static std::vector<std::uint8_t> rgba_of(const highlights::TitleImage& mask,
-                                             const Title& title) {
-        constexpr float kFull = 255.0F;
-        std::vector<std::uint8_t> pixels(mask.text.size() * 4);
-        for (std::size_t i = 0; i < mask.text.size(); ++i) {
-            const float text = mask.text[i] / kFull;
-            const float border = title.outlined ? mask.outline[i] / kFull : 0.0F;
-            const float alpha = text + border * (1 - text);
-            const auto channel = [&](std::uint8_t letter, std::uint8_t edge) {
-                return alpha <= 0 ? std::uint8_t{0}
-                                  : static_cast<std::uint8_t>(std::lround(
-                                        (letter * text + edge * border * (1 - text)) / alpha));
-            };
-            pixels[4 * i] = channel(title.color.r, title.outline.r);
-            pixels[4 * i + 1] = channel(title.color.g, title.outline.g);
-            pixels[4 * i + 2] = channel(title.color.b, title.outline.b);
-            pixels[4 * i + 3] = static_cast<std::uint8_t>(std::lround(alpha * kFull));
-        }
-        return pixels;
     }
 
     void clear() {
@@ -209,6 +283,7 @@ class TitleOverlay {
     static constexpr std::size_t kMaxImages = 64;
     SDL_Renderer* renderer_;
     highlights::TitleFonts& fonts_;
+    std::filesystem::path shapes_;
     std::map<std::string, Image> images_;
     std::string error_;
 };
@@ -468,6 +543,8 @@ struct HighlightsPanel::Impl {
     std::unique_ptr<highlights::HighlightStore> store;
     std::unique_ptr<highlights::RallySource> rallies;
     int preselect = kDefaultPreselect;
+    std::filesystem::path shapes_dir; ///< the library's SVG shapes for title backdrops
+    std::vector<std::string> svg_names; ///< in it, read when the shape list opens
     highlights::TitleLayout day_layout; ///< of the players' titles in the match day video
     Title match;                        ///< the match, over every clip
     // Changes saved once no control is in use any more (a colour picker changes all the time)
@@ -691,44 +768,183 @@ struct HighlightsPanel::Impl {
         ImGui::EndTable();
     }
 
-    /// Size, position and colours of a title; true if one changed.
-    static bool draw_layout(const char* label, double& size, TitlePosition& position,
-                            highlights::Rgb& color, bool& outlined, highlights::Rgb& outline) {
+    /// Size, position, colours and decoration of a title; true if one changed.
+    bool draw_layout(const char* label, highlights::TitleLayout& layout) {
         ImGui::PushID(label);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(label);
         ImGui::SameLine(kLayoutLabelWidth);
         ImGui::SetNextItemWidth(140);
-        auto percent = static_cast<float>(size * 100);
+        auto percent = static_cast<float>(layout.size * 100);
         bool changed = false;
         if (ImGui::SliderFloat("Size", &percent, static_cast<float>(Title::kMinSize * 100),
                                static_cast<float>(Title::kMaxSize * 100), "%.1f %%")) {
-            size = percent / 100.0;
+            layout.size = percent / 100.0;
             changed = true;
         }
         ImGui::SetItemTooltip("Height of a line, as share of the picture height");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140);
-        if (ImGui::BeginCombo("Position", position_label(position))) {
+        if (ImGui::BeginCombo("Position", position_label(layout.position))) {
             for (const TitlePosition choice : highlights::kTitlePositions) {
-                if (ImGui::Selectable(position_label(choice), choice == position)) {
-                    position = choice;
+                if (ImGui::Selectable(position_label(choice), choice == layout.position)) {
+                    layout.position = choice;
                     changed = true;
                 }
             }
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        changed |= draw_color("Text", color);
+        changed |= draw_color("Text", layout.color);
         ImGui::SameLine();
-        changed |= ImGui::Checkbox("Border", &outlined);
+        changed |= ImGui::Checkbox("Border", &layout.outlined);
         ImGui::SetItemTooltip("A border around the letters (for busy backgrounds)");
         ImGui::SameLine();
-        ImGui::BeginDisabled(!outlined);
-        changed |= draw_color("##border", outline);
+        ImGui::BeginDisabled(!layout.outlined);
+        changed |= draw_color("##border", layout.outline);
         ImGui::EndDisabled();
+        changed |= draw_decoration(layout.decoration);
         ImGui::PopID();
         return changed;
+    }
+
+    /// The backdrop row below a layout: shape, colour, opacity, per line, reroll, and the
+    /// effects in a popup; true if one changed.
+    bool draw_decoration(highlights::TitleDecoration& decoration) {
+        using highlights::BackdropShape;
+        highlights::Backdrop& backdrop = decoration.backdrop;
+        bool changed = false;
+        ImGui::Dummy({kLayoutLabelWidth - ImGui::GetStyle().ItemSpacing.x, 0});
+        ImGui::SameLine(kLayoutLabelWidth);
+        ImGui::SetNextItemWidth(180);
+        const std::string preview = backdrop.shape == BackdropShape::Svg
+                                        ? backdrop.svg
+                                        : std::string(backdrop_label(backdrop.shape));
+        if (ImGui::BeginCombo("##backdrop", preview.c_str(), ImGuiComboFlags_HeightLarge)) {
+            if (ImGui::IsWindowAppearing()) {
+                svg_names = fonts.shapes(shapes_dir);
+                overlay.refresh(); // an SVG file may have changed
+            }
+            for (const BackdropShape shape : highlights::kBuiltInBackdrops) {
+                if (ImGui::Selectable(backdrop_label(shape), backdrop.shape == shape)) {
+                    backdrop.shape = shape;
+                    changed = true;
+                }
+                ImGui::SetItemTooltip("%s", backdrop_help(shape));
+            }
+            ImGui::SeparatorText("SVG shapes of the library");
+            for (const std::string& name : svg_names) {
+                const bool chosen = backdrop.shape == BackdropShape::Svg && backdrop.svg == name;
+                if (ImGui::Selectable(name.c_str(), chosen)) {
+                    backdrop.shape = BackdropShape::Svg;
+                    backdrop.svg = name;
+                    changed = true;
+                }
+                ImGui::SetItemTooltip("Filled with the background colour; the middle is "
+                                      "stretched to the text, the ends keep their shape");
+            }
+            if (svg_names.empty()) {
+                ImGui::TextColored(kMuted, "None yet: put SVG files into the shapes folder");
+            }
+            if (ImGui::Selectable("Open the shapes folder...", false,
+                                  ImGuiSelectableFlags_NoAutoClosePopups)) {
+                open_shapes_folder();
+            }
+            ImGui::SetItemTooltip("%s", shapes_dir.string().c_str());
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("%s", backdrop_help(backdrop.shape));
+        const bool none = backdrop.shape == BackdropShape::None;
+        ImGui::BeginDisabled(none);
+        ImGui::SameLine();
+        changed |= draw_color("##backdrop_color", backdrop.color);
+        ImGui::SetItemTooltip("Colour of the background");
+        ImGui::SameLine();
+        changed |= opacity_slider("Opacity", backdrop.opacity);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Per line", &backdrop.per_line);
+        ImGui::SetItemTooltip("One shape behind each line instead of one around all lines");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!highlights::uses_seed(backdrop.shape));
+        if (ImGui::Button("Reroll")) {
+            backdrop.seed = highlights::next_seed(backdrop.seed);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("Another shape of the same kind (other bumps, tears, bristles)");
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Effects...")) {
+            ImGui::OpenPopup("effects");
+        }
+        ImGui::SetItemTooltip("Padding, soft edge and line of the background; shadow; glow");
+        if (ImGui::BeginPopup("effects")) {
+            changed |= draw_effects(decoration);
+            ImGui::EndPopup();
+        }
+        return changed;
+    }
+
+    static bool draw_effects(highlights::TitleDecoration& decoration) {
+        using highlights::Backdrop;
+        highlights::Backdrop& backdrop = decoration.backdrop;
+        bool changed = false;
+        ImGui::SeparatorText("Background");
+        ImGui::BeginDisabled(backdrop.shape == highlights::BackdropShape::None);
+        changed |= length_slider("Padding", backdrop.padding, Backdrop::kMaxLength,
+                                 "Space between the text and the shape, per line height");
+        ImGui::BeginDisabled(backdrop.shape != highlights::BackdropShape::RoundedBox);
+        changed |= length_slider("Corner radius", backdrop.corner, Backdrop::kMaxLength,
+                                 "Of the rounded box, per line height");
+        ImGui::EndDisabled();
+        changed |= length_slider("Soft edge", backdrop.softness, Backdrop::kMaxLength,
+                                 "Width over which the edge fades out, per line height");
+        changed |= ImGui::Checkbox("Line along the edge", &backdrop.bordered);
+        ImGui::SameLine();
+        changed |= draw_color("##edge_color", backdrop.border);
+        ImGui::BeginDisabled(!backdrop.bordered);
+        changed |= length_slider("Line width", backdrop.border_width, Backdrop::kMaxBorder,
+                                 "Per line height; the line is opaque");
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+
+        highlights::TitleShadow& shadow = decoration.shadow;
+        ImGui::SeparatorText("Shadow");
+        changed |= ImGui::Checkbox("Shadow", &shadow.shown);
+        ImGui::SetItemTooltip("Behind the background, or behind the letters without one");
+        ImGui::SameLine();
+        changed |= draw_color("##shadow_color", shadow.color);
+        ImGui::BeginDisabled(!shadow.shown);
+        ImGui::SameLine();
+        changed |= opacity_slider("##shadow_opacity", shadow.opacity);
+        changed |= length_slider("Offset", shadow.offset, highlights::TitleShadow::kMaxLength,
+                                 "Down and to the right, per line height");
+        changed |= length_slider("Blur", shadow.blur, highlights::TitleShadow::kMaxLength,
+                                 "Per line height");
+        ImGui::EndDisabled();
+
+        highlights::TitleGlow& glow = decoration.glow;
+        ImGui::SeparatorText("Glow");
+        changed |= ImGui::Checkbox("Glow", &glow.shown);
+        ImGui::SetItemTooltip("A soft light around the letters");
+        ImGui::SameLine();
+        changed |= draw_color("##glow_color", glow.color);
+        ImGui::BeginDisabled(!glow.shown);
+        ImGui::SameLine();
+        changed |= opacity_slider("##glow_opacity", glow.opacity);
+        changed |= length_slider("Glow size", glow.size, highlights::TitleGlow::kMaxSize,
+                                 "Per line height");
+        ImGui::EndDisabled();
+        return changed;
+    }
+
+    void open_shapes_folder() {
+        std::error_code ignored;
+        std::filesystem::create_directories(shapes_dir, ignored);
+        const std::string url = "file://" + std::filesystem::absolute(shapes_dir).generic_string();
+        if (!SDL_OpenURL(url.c_str())) {
+            error = std::format("Opening {}: {}", shapes_dir.string(), SDL_GetError());
+        }
     }
 
     /// A colour swatch that opens a picker; true if the colour changed.
@@ -853,9 +1069,11 @@ struct HighlightsPanel::Impl {
             pending_match = true;
         }
         ImGui::SetItemTooltip("e.g. 2026-11-14-TeamA-TeamB becomes \"TeamA - TeamB\"");
-        pending_match |=
-            draw_layout("Layout", match.size, match.position, match.color, match.outlined,
-                        match.outline);
+        highlights::TitleLayout layout = highlights::TitleLayout::of(match);
+        if (draw_layout("Layout", layout)) {
+            match = layout.applied_to(match);
+            pending_match = true;
+        }
         pending_match |= input_multiline("##text", match.text,
                                          {-FLT_MIN, ImGui::GetTextLineHeight() * 2.5F});
         ImGui::SetItemTooltip("Several lines are possible (Enter), e.g. the final score");
@@ -882,10 +1100,12 @@ struct HighlightsPanel::Impl {
         ImGui::RadioButton("game video", &preview, kPreviewGame);
         ImGui::SameLine();
         ImGui::RadioButton("match day video", &preview, kPreviewMatchDay);
-        changed |= draw_layout("Game video", title.size, title.position, title.color,
-                               title.outlined, title.outline);
-        pending_layout |= draw_layout("Match day video", day_layout.size, day_layout.position,
-                                      day_layout.color, day_layout.outlined, day_layout.outline);
+        highlights::TitleLayout layout = highlights::TitleLayout::of(title);
+        if (draw_layout("Game video", layout)) {
+            title = layout.applied_to(title);
+            changed = true;
+        }
+        pending_layout |= draw_layout("Match day video", day_layout);
         ImGui::SameLine();
         ImGui::TextColored(kMuted, "(the same for every game)");
         changed |= input_multiline("##text", title.text,
@@ -952,6 +1172,8 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
     if (reload || video.match_day != self.day || !self.store) {
         self.load(workspace, video);
     }
+    self.shapes_dir = workspace.shapes_dir();
+    self.overlay.set_shapes(self.shapes_dir);
     if (video.key() != self.selected) {
         self.selected = video.key();
         self.playing.reset();

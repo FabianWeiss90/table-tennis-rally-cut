@@ -13,8 +13,23 @@
 
 namespace ttrally::highlights {
 
-/// A rendered title: coverage (0-255) of the letters and of the border around them.
-using TitleMask = TitleImage;
+/// The box a line of text takes, in pixels of its mask (right and bottom exclusive).
+struct TextBox {
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+};
+
+/// The letters of a title: coverage (0-255) of the letters and of the border around them, and
+/// the box of each line.
+struct TitleMask {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> text;
+    std::vector<std::uint8_t> outline;
+    std::vector<TextBox> lines;
+};
 
 /// Horizontal alignment of the lines of a title.
 enum class TextAlign { Left, Center, Right };
@@ -68,8 +83,19 @@ struct Yuv {
 
 [[nodiscard]] Yuv to_yuv(Rgb color, bool full_range) noexcept;
 
-/// Paints a title (the mask of its text) in its colour at its position, a small margin away from
-/// the picture's edges; with its border if it is outlined.
-void paint_title(const YuvPlanes& picture, const TitleMask& mask, const Title& title);
+/// A rendered title in a picture's YUV values, ready to be painted on every picture.
+struct PaintableTitle {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> y;
+    std::vector<std::uint8_t> u;
+    std::vector<std::uint8_t> v;
+    std::vector<std::uint8_t> alpha;
+};
+
+[[nodiscard]] PaintableTitle paintable(const TitleImage& image, bool full_range);
+
+/// Paints a rendered title at its position, a small margin away from the picture's edges.
+void paint_title(const YuvPlanes& picture, const PaintableTitle& title, TitlePosition position);
 
 } // namespace ttrally::highlights

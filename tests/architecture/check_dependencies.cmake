@@ -9,7 +9,8 @@
 #   <context>/domain     -> shared/kernel, <any context>/domain
 #   <context>/application-> the above, shared/application, <any context>/application
 #   <context>/infrastructure -> anything except cli; the only layer allowed to use
-#                           third-party libraries (FFmpeg, pocketfft, stb, ONNX Runtime) besides cli
+#                           third-party libraries (FFmpeg, pocketfft, stb, nanosvg, ONNX
+#                           Runtime) besides cli
 #   gui                  -> shared, <any context>/domain and application, gui; may use the GUI
 #                           libraries (SDL3, Dear ImGui) but no infrastructure (wired in cli)
 #   cli                  -> anything
@@ -21,7 +22,7 @@ if(NOT SOURCE_DIR)
 endif()
 get_filename_component(SOURCE_DIR "${SOURCE_DIR}" ABSOLUTE)
 
-set(third_party "^(libav|libsw|pocketfft|stb_|CLI/|catch2/|SDL3/|imgui|onnxruntime)")
+set(third_party "^(libav|libsw|pocketfft|stb_|nanosvg/|CLI/|catch2/|SDL3/|imgui|onnxruntime)")
 
 function(allowed_includes file out_project out_third_party)
     if(file MATCHES "^shared/kernel/")

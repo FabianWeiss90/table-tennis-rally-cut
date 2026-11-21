@@ -106,13 +106,15 @@ class BlockFonts final : public highlights::TitleFonts {
     std::vector<highlights::FontChoice> installed() override { return {{"/f/a.ttf", "Alpha"}}; }
     highlights::FontChoice fallback() override { return {"/f/default.ttf", "Default Bold"}; }
     highlights::TitleImage render(const std::filesystem::path&, const highlights::Title& title,
-                                  int line_height) override {
+                                  int line_height, const std::filesystem::path&) override {
         highlights::TitleImage image;
         image.width = std::max(1, line_height * static_cast<int>(title.text.size()) / 2);
         image.height = line_height;
-        image.text.assign(static_cast<std::size_t>(image.width * image.height), 255);
-        image.outline = image.text;
+        image.rgba.assign(static_cast<std::size_t>(image.width * image.height) * 4, 255);
         return image;
+    }
+    std::vector<std::string> shapes(const std::filesystem::path&) override {
+        return {"banner.svg"};
     }
 };
 

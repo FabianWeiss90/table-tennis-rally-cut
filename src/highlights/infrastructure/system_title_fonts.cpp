@@ -2,6 +2,7 @@
 
 #include "highlights/infrastructure/system_title_fonts.hpp"
 
+#include "highlights/infrastructure/title_composer.hpp"
 #include "highlights/infrastructure/title_painter.hpp"
 
 #include <algorithm>
@@ -98,7 +99,8 @@ FontChoice SystemTitleFonts::fallback() {
     }
 }
 
-TitleImage SystemTitleFonts::render(const fs::path& font, const Title& title, int line_height) {
+TitleImage SystemTitleFonts::render(const fs::path& font, const Title& title, int line_height,
+                                    const fs::path& shapes) {
     std::error_code error;
     // A chosen font that no longer exists is replaced by the default one, as in the video
     const fs::path file =
@@ -106,7 +108,18 @@ TitleImage SystemTitleFonts::render(const fs::path& font, const Title& title, in
     if (file.empty()) {
         throw std::runtime_error("no font found for the titles");
     }
-    return loaded(file).render(title.text, std::max(1, line_height), align_for(title.position));
+    const int height = std::max(1, line_height);
+    const TitleMask letters = loaded(file).render(title.text, height, align_for(title.position));
+    const Backdrop& backdrop = title.decoration.backdrop;
+    const SvgShape* svg = nullptr;
+    if (backdrop.shape == BackdropShape::Svg && backdrop.visible()) {
+        svg = &svgs_.load(shapes / backdrop.svg);
+    }
+    return compose_title(letters, title, height, svg);
+}
+
+std::vector<std::string> SystemTitleFonts::shapes(const fs::path& folder) {
+    return svg_files_in(folder);
 }
 
 const TitleFont& SystemTitleFonts::loaded(const fs::path& file) {

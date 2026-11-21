@@ -206,6 +206,38 @@ TEST_CASE("title positions have stable names") {
     CHECK_FALSE(Title{.text = "A vs B", .shown = false}.visible());
 }
 
+TEST_CASE("title backdrops have stable names and change the look") {
+    for (const BackdropShape shape : kBuiltInBackdrops) {
+        CHECK(parse_backdrop_shape(to_string(shape)) == shape);
+    }
+    CHECK(parse_backdrop_shape("svg") == BackdropShape::Svg);
+    CHECK_FALSE(parse_backdrop_shape("star").has_value());
+    CHECK(uses_seed(BackdropShape::Cloud));
+    CHECK(uses_seed(BackdropShape::DoubleStrip));
+    CHECK_FALSE(uses_seed(BackdropShape::RoundedBox));
+    CHECK(next_seed(1) != 1);
+    CHECK(next_seed(1) == next_seed(1));
+
+    CHECK_FALSE(Backdrop{}.visible());
+    CHECK(Backdrop{.shape = BackdropShape::Cloud}.visible());
+    CHECK_FALSE(Backdrop{.shape = BackdropShape::Svg}.visible()); // no file chosen
+    CHECK_FALSE(Backdrop{.shape = BackdropShape::Pill, .opacity = 0}.visible());
+    CHECK(Backdrop{.shape = BackdropShape::Pill, .opacity = 0, .bordered = true}.visible());
+
+    Title title{.text = "A - B", .shown = true};
+    const std::string plain = look_key(title);
+    title.decoration.backdrop.seed = 2;
+    CHECK(look_key(title) != plain);
+    title.decoration.backdrop.seed = 1;
+    title.decoration.glow.shown = true;
+    CHECK(look_key(title) != plain);
+
+    // A layout carries the decoration
+    const TitleLayout layout = TitleLayout::of(title);
+    CHECK(layout.decoration == title.decoration);
+    CHECK(layout.applied_to(Title{.text = "C - D"}).decoration == title.decoration);
+}
+
 TEST_CASE("opening a game's highlights") {
     MemoryRallies rallies;
     MemoryStore store;

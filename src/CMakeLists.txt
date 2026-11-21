@@ -168,6 +168,7 @@ ttrally_layer(ttrally_cutting_infrastructure
 
 # Highlights context (highlight videos of a game or a match day)
 find_package(Stb REQUIRED)
+find_package(NanoSVG CONFIG REQUIRED)
 
 ttrally_layer(ttrally_highlights_domain
     SOURCES highlights/domain/highlight_selection.cpp highlights/domain/title.cpp)
@@ -186,10 +187,14 @@ ttrally_layer(ttrally_highlights_infrastructure
         highlights/infrastructure/ffmpeg_playback_source.cpp
         highlights/infrastructure/system_title_fonts.cpp
         highlights/infrastructure/title_painter.cpp
+        highlights/infrastructure/backdrop_shapes.cpp
+        highlights/infrastructure/svg_shape.cpp
+        highlights/infrastructure/title_composer.cpp
     DEPENDS
         ttrally_highlights_application ttrally_cutting_infrastructure
         ttrally_annotation_infrastructure ttrally_shared_io)
 target_include_directories(ttrally_highlights_infrastructure SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
+target_link_libraries(ttrally_highlights_infrastructure PRIVATE NanoSVG::nanosvgrast)
 
 # Launcher context (the window that runs the commands)
 ttrally_layer(ttrally_launcher_domain

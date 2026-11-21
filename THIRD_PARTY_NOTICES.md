@@ -13,6 +13,7 @@ under CC BY-NC 4.0 (see [`weights/LICENSE`](weights/LICENSE)).
 | [pocketfft](https://github.com/mreineck/pocketfft) (C++ header-only) | FFT for audio alignment | BSD-3-Clause | vcpkg |
 | [CLI11](https://github.com/CLIUtils/CLI11) | Command-line parsing | BSD-3-Clause | vcpkg |
 | [stb_truetype](https://github.com/nothings/stb) (header-only) | Rendering the titles of highlight videos | MIT or Unlicense (public domain), used under MIT | vcpkg |
+| [NanoSVG](https://github.com/memononen/nanosvg) | Reading and drawing SVG shapes for title backgrounds | Zlib | vcpkg |
 | [Catch2](https://github.com/catchorg/Catch2) v3 | Unit tests (not part of the shipped tool) | BSL-1.0 | vcpkg |
 | [Dear ImGui](https://github.com/ocornut/imgui) | Annotation GUI | MIT | vcpkg (feature `gui`) |
 | [SDL3](https://www.libsdl.org/) | Window, input and rendering of the annotation GUI | Zlib | vcpkg (feature `gui`) |

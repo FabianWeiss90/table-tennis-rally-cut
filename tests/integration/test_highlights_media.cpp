@@ -184,6 +184,18 @@ TEST_CASE("highlight videos of a game and of a match day") {
         CHECK(video.frames == 105); // 30 fps: 60 + 60 - 15
         CHECK(video.audio_s == Catch::Approx(3.5).margin(0.05));
     }
+    SECTION("the match day at a lower resolution: every clip shrunk to it") {
+        const auto out = day / "small.mp4";
+        RenderOptions small = render;
+        small.encoding.max_height = 180; // weiss-becker is 640x360, weiss-ohrstedt 320x180
+        (void)make.execute({.video_id = std::nullopt,
+                            .output = out,
+                            .match_day_name = "",
+                            .margins = margins,
+                            .rally_titles = true,
+                            .render = small});
+        CHECK(inspect(out).width == 320);
+    }
     SECTION("hard cuts") {
         const auto out = day / "cuts.mp4";
         RenderOptions hard = render;

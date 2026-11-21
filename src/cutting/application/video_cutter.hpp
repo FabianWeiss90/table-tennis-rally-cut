@@ -30,6 +30,9 @@ struct CutOptions {
     /// Video bit rate for Exact; 0 = by codec, resolution and frame rate (H.265: 4 Mbit/s for
     /// Full HD at 60 fps, H.264: twice that)
     double bitrate_mbps = 0.0;
+    /// Largest height of the written video for Exact (e.g. 1080 for Full HD from 4K); a lower
+    /// original is not enlarged. 0: the original's size.
+    int max_height = 0;
 };
 
 struct CutResult {

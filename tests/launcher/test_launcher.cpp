@@ -193,7 +193,7 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     auto highlights = form_named(forms_for(snapshot.videos[0], snapshot), "highlights");
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--video-id", "match-a", "--rally-titles",
-                                   "--bitrate", "4", "--highlights-dir",
+                                   "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
                                    in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
@@ -202,8 +202,8 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     highlights.field("--video-id")->initial_value.clear(); // as the match day button does
     highlights.field("--match-day")->value = "1";
     CHECK(highlights.arguments() ==
-          std::vector<std::string>{"highlights", "--match-day", "--rally-titles", "--bitrate",
-                                   "4", "--highlights-dir",
+          std::vector<std::string>{"highlights", "--match-day", "--rally-titles",
+                                   "--highlights-dir",
                                    in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
                                    in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
@@ -230,18 +230,36 @@ TEST_CASE("an emptied field stands for the value the form proposed") {
     CHECK(std::ranges::find(without_fast, "--fast") == without_fast.end());
 }
 
-TEST_CASE("the bit rate follows the codec until one of the user's own is entered") {
+TEST_CASE("the bit rate follows the codec and resolution until one of the user's own is entered") {
     const auto snapshot = workspace();
     auto cut = form_named(forms_for(snapshot.videos[0], snapshot), "cut");
+    CHECK(cut.field("--resolution")->value == "original");
+    CHECK(cut.field("--bitrate")->effective_value().empty()); // the encoder chooses
+    const auto proposed = cut.arguments();
+    CHECK(std::ranges::find(proposed, "--bitrate") == proposed.end());
+    CHECK(std::ranges::find(proposed, "--resolution") == proposed.end());
+    cut.field("--resolution")->value = "1080p";
+    propose_bitrate(cut);
     CHECK(cut.field("--bitrate")->value == "4");
     cut.field("--codec")->value = "h264";
-    propose_bitrate_for_codec(cut);
+    propose_bitrate(cut);
     CHECK(cut.field("--bitrate")->value == "8");
     cut.field("--bitrate")->value.clear(); // emptied: the proposal for H.264
     CHECK(cut.field("--bitrate")->effective_value() == "8");
-    cut.field("--bitrate")->value = "12";
+    cut.field("--resolution")->value = "2160p";
+    propose_bitrate(cut);
+    CHECK(cut.field("--bitrate")->value == "32");
     cut.field("--codec")->value = "h265";
-    propose_bitrate_for_codec(cut);
+    cut.field("--resolution")->value = "1440p";
+    propose_bitrate(cut);
+    CHECK(cut.field("--bitrate")->value == "7");
+    const auto arguments = cut.arguments();
+    const auto resolution = std::ranges::find(arguments, "--resolution");
+    REQUIRE(resolution != arguments.end());
+    CHECK(*std::next(resolution) == "1440p");
+    cut.field("--bitrate")->value = "12";
+    cut.field("--resolution")->value = "original";
+    propose_bitrate(cut);
     CHECK(cut.field("--bitrate")->value == "12"); // the user's own stays
     CHECK(cut.field("--bitrate")->effective_value() == "12");
 }
@@ -586,6 +604,18 @@ TEST_CASE("a pipeline runs the steps for one video after another") {
         finish(0);
         CHECK(session.status() == "pipeline finished for 3 steps (1 skipped)");
     }
+}
+
+TEST_CASE("the merge form appends the parts in their order into a new file") {
+    const std::string proposed = merged_name("/lib/day-1/GX010001.MP4");
+    CHECK(proposed == (std::filesystem::path("/lib/day-1") / "GX010001-merged.MP4").string());
+    const CommandForm merge =
+        merge_form({"/lib/day-1/GX010001.MP4", "/lib/day-1/GX020001.MP4"}, proposed);
+    CHECK(merge.arguments() == std::vector<std::string>{"merge", "/lib/day-1/GX010001.MP4",
+                                                        "/lib/day-1/GX020001.MP4", "--out",
+                                                        proposed});
+    CHECK(merge_form({"/a.mp4", "/b.mp4"}, "").missing() ==
+          std::vector<std::string>{"Merged video"});
 }
 
 TEST_CASE("a form with empty required fields is not run") {

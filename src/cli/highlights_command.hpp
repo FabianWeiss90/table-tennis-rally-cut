@@ -33,6 +33,7 @@ class HighlightsCommand {
     std::string codec_ = "h265";
     std::string encoder_ = "auto";
     double bitrate_mbps_ = 0.0;
+    std::string resolution_ = "original";
 };
 
 } // namespace ttrally::cli

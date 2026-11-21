@@ -35,6 +35,8 @@ bool run(const std::string& command) {
 struct CutClip {
     std::int64_t frames = 0;
     double audio_s = 0.0;
+    int width = 0;
+    int height = 0;
 };
 
 CutClip inspect(const std::filesystem::path& path) {
@@ -46,7 +48,8 @@ CutClip inspect(const std::filesystem::path& path) {
     const auto content =
         reader.read(path, {.audio_sample_rate = 8000, .video_stream_index = info.video->index});
     return {content.video_timestamps->frame_count(),
-            static_cast<double>(content.audio->samples.size()) / 8000.0};
+            static_cast<double>(content.audio->samples.size()) / 8000.0,
+            info.video->width, info.video->height};
 }
 
 } // namespace
@@ -85,6 +88,17 @@ TEST_CASE("the video cutter writes exactly the frames of the sections") {
             {.mode = CutMode::Exact, .codec = VideoCodec::H264, .encoder = "auto"}, progress);
         CHECK_FALSE(result.video_encoder.empty());
         CHECK(inspect(dir / "h264.mp4").frames == 135);
+    }
+    SECTION("exact, shrunk to a lower resolution and never enlarged") {
+        CutOptions options{.mode = CutMode::Exact, .encoder = "auto", .max_height = 90};
+        static_cast<void>(cutter.cut(clip, sections, dir / "small.mp4", options, progress));
+        const auto small = inspect(dir / "small.mp4");
+        CHECK(small.width == 160);
+        CHECK(small.height == 90);
+        CHECK(small.frames == 135);
+        options.max_height = 1080;
+        static_cast<void>(cutter.cut(clip, sections, dir / "same.mp4", options, progress));
+        CHECK(inspect(dir / "same.mp4").height == 180);
     }
     SECTION("fast") {
         const auto result =

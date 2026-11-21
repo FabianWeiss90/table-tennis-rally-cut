@@ -314,6 +314,16 @@ VideoFormat video_format_of(const AVCodecContext& decoder, const AVStream& strea
             .color_trc = decoder.color_trc};
 }
 
+VideoFormat limited_to(VideoFormat format, int max_height) {
+    if (max_height <= 0 || format.height <= max_height) {
+        return format;
+    }
+    const double shrink = static_cast<double>(max_height) / format.height;
+    format.width = static_cast<int>(std::lround(format.width * shrink / 2)) * 2;
+    format.height = max_height & ~1;
+    return format;
+}
+
 std::optional<VideoEncoder> VideoEncoder::open(const std::string& name, const VideoFormat& format,
                                                std::int64_t bitrate) {
     const AVCodec* codec = avcodec_find_encoder_by_name(name.c_str());
@@ -415,13 +425,16 @@ bool VideoEncoder::create_hardware_frames(AVHWDeviceType type, AVPixelFormat har
 ff::FramePtr VideoEncoder::convert(const AVFrame& decoded) {
     auto converted = ff::make_frame();
     converted->format = software_format_;
-    converted->width = decoded.width;
-    converted->height = decoded.height;
+    converted->width = context_->width;
+    converted->height = context_->height;
     ff::check(av_frame_get_buffer(converted.get(), 0), "frame buffer");
+    // Bilinear is enough for the same size; shrinking (e.g. 4K to Full HD) needs an area filter
+    const bool scaled = decoded.width != context_->width || decoded.height != context_->height;
     scaler_.reset(sws_getCachedContext(scaler_.release(), decoded.width, decoded.height,
-                                       static_cast<AVPixelFormat>(decoded.format), decoded.width,
-                                       decoded.height, software_format_, SWS_BILINEAR, nullptr,
-                                       nullptr, nullptr));
+                                       static_cast<AVPixelFormat>(decoded.format),
+                                       context_->width, context_->height, software_format_,
+                                       scaled ? SWS_AREA : SWS_BILINEAR, nullptr, nullptr,
+                                       nullptr));
     if (!scaler_) {
         throw MediaError("cannot convert frames for the video encoder");
     }

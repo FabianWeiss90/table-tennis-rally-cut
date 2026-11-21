@@ -15,8 +15,18 @@ namespace ttrally::launcher {
 [[nodiscard]] std::vector<CommandForm> forms_for(const VideoEntry& video,
                                                  const WorkspaceSnapshot& workspace);
 
-/// After the codec of a form (cut, highlights) changed: proposes its bit rate, unless one of
-/// the user's own was entered.
-void propose_bitrate_for_codec(CommandForm& form);
+/// After the codec or resolution of a form (cut, highlights) changed: proposes its bit rate
+/// (empty for the original resolution: the encoder chooses), unless one of the user's own was
+/// entered.
+void propose_bitrate(CommandForm& form);
+
+/// The merge command: the parts (originals, in the order they were recorded) appended into a
+/// new video `output`.
+[[nodiscard]] CommandForm merge_form(const std::vector<std::string>& parts,
+                                     const std::string& output);
+
+/// The proposed merged video: next to the first part, named after it with "-merged" (e.g.
+/// "/day/GX010001.MP4" -> "/day/GX010001-merged.MP4").
+[[nodiscard]] std::string merged_name(const std::string& first_part);
 
 } // namespace ttrally::launcher

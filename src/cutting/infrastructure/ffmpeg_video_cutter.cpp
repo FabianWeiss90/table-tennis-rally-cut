@@ -102,8 +102,9 @@ class ExactCut {
         }
         video_stream_ = format_->streams[video_index_];
         video_decoder_ = ff::open_decoder(video_stream_);
-        video_encoder_.emplace(open_video_encoder(
-            options, video_format_of(*video_decoder_, *video_stream_), output_.path(), progress));
+        const VideoFormat format =
+            limited_to(video_format_of(*video_decoder_, *video_stream_), options.max_height);
+        video_encoder_.emplace(open_video_encoder(options, format, output_.path(), progress));
         // H.265 keeps the default tag hev1 (parameter sets in the stream). With hvc1, which Apple
         // players prefer, players use the parameter sets of the file header, and those written by
         // the VAAPI encoder do not match its stream (measured: hundreds of decode errors).

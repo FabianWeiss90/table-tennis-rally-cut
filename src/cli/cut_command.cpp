@@ -3,6 +3,7 @@
 #include "cli/cut_command.hpp"
 
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
+#include "cli/resolution_option.hpp"
 #include "cli/stream_progress_reporter.hpp"
 #include "cutting/application/cut_video.hpp"
 #include "cutting/infrastructure/cut_list_choice.hpp"
@@ -64,6 +65,7 @@ CutCommand::CutCommand(CLI::App& app)
                          "Video encoder, e.g. hevc_vaapi, h264_nvenc, libopenh264 (default: the "
                          "first of the codec that works: H.265 on the GPU, H.264 with OpenH264 first)")
         ->capture_default_str();
+    add_resolution_option(*command_, resolution_);
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: by resolution and frame rate; for "
                          "Full HD at 60 fps 4 with H.265, 8 with H.264)")
@@ -87,6 +89,10 @@ int CutCommand::run() {
                 rallies_.string()));
         }
     }
+    if (fast_ && max_height_of(resolution_) > 0) {
+        throw std::invalid_argument("--fast copies the video and cannot change its resolution; "
+                                    "leave out --fast or --resolution");
+    }
     if (out_.empty()) {
         out_ = std::filesystem::path("data/cuts") / (video_id_ + ".mp4");
     }
@@ -108,7 +114,8 @@ int CutCommand::run() {
                      .codec = codec_ == "h264" ? cutting::VideoCodec::H264
                                                : cutting::VideoCodec::H265,
                      .encoder = encoder_,
-                     .bitrate_mbps = bitrate_mbps_}});
+                     .bitrate_mbps = bitrate_mbps_,
+                     .max_height = max_height_of(resolution_)}});
     std::cout << std::format(
         "Done in {:.0f} s: {} rallies, {} of video ({}).\n", result.seconds, result.rallies,
         io::format_clock(result.cut.duration_s),

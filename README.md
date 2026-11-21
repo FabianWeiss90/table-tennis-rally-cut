@@ -2,7 +2,7 @@
 
 Automatic rally detection for untrimmed table tennis videos recorded from a **hobby/club camera
 perspective**: a fixed camera on a tripod, looking **diagonally from behind the table**, typically
-recording Full HD at 60 fps. The goal is a tool (`ttrally`) that cuts long recordings down to the
+recording Full HD (or 4K) at 60 fps. The goal is a tool (`ttrally`) that cuts long recordings down to the
 rallies.
 
 Existing work such as spin-detector and OpenTTGames targets a **side view**. Its hand-crafted
@@ -399,7 +399,8 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
   skipped and listed in the output (align without a pre-cut video, cut without labels or
   detections); a failed game does not stop the others, and "Cancel" stops the rest. "Compute
   all" computes the features again even if they are current. Annotate and refine need a single
-  game; train is the same as for a video.
+  game; train is the same as for a video. The **Merge** tab (first) joins the parts of a game
+  recorded in several files, see [`merge`](#merge).
 - **Pipeline** (only for a whole match day): ticks for the steps align, features, detect and cut
   (default features → detect → cut), run for every game: all steps of one game, then the next.
   Each step uses the settings of its own tab. "Compute missing" starts each game at its first
@@ -421,6 +422,33 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
 
 Options: `--library` (the library to open, remembered for the next start), `--project`
 (project directory with `weights/` and `training/`, default the current one).
+
+### `merge`
+
+A game recorded in several files (e.g. a camera that starts a new file every few gigabytes)
+becomes one video, before anything else is done with it:
+
+```sh
+ttrally merge GX010042.MP4 GX020042.MP4 GX030042.MP4 --out Weiss-Becker.mp4
+```
+
+- **No re-encoding:** the compressed video and the main sound of each part are copied, the
+  timestamps of each part moved to follow the previous one; it takes about as long as copying
+  the files. Other streams (camera metadata, timecode) are left out.
+- **Parts that do not fit** (other codec, picture size, codec settings or sound format) are
+  refused, since they would need re-encoding.
+- **Nothing is replaced:** the merged video is always a new file, and an existing file is never
+  overwritten. It is written as `<name>.merging.<ext>` first and renamed once complete. The
+  parts stay as they are.
+- **Container:** follows the extension of `--out` (`.mp4`, `.mov`, `.mkv`, ...); H.265 keeps the
+  tag `hvc1` that Apple's players need.
+
+In the launcher: choose the whole match day on the left, then the **Merge** tab. Tick the parts
+among the match day's videos (put in file name order, changeable with the arrows); the merged
+video is proposed next to the first part as `<first part>-merged.<ext>` and can be renamed. It
+appears in the list once done; the parts stay in the list until you move them out of the match
+day folder. A part that already has results (align, labels, features, ...) is pointed out:
+those stay with the part and are not carried over.
 
 ### `align`
 
@@ -756,6 +784,12 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   again; delete the file after a driver update. A probe that hangs keeps one CPU core busy until
   the command ends. If an encoder still stops answering while encoding, the command ends after
   20 s with a message and removes the unfinished video.
+- **Resolution:** `--resolution original|2160p|1440p|1080p` (default `original`): the height of
+  the written video, so a 4K recording can be cut to Full HD (2160p is 4K, 3840x2160; 1440p is
+  2560x1440). The picture keeps its shape, and a smaller original is not enlarged. With the
+  default bit rate it follows the size (H.265 at 60 fps: 4 Mbit/s for 1080p, 7 for 1440p, 16 for
+  2160p). In the launcher the bit rate is proposed for the chosen resolution and empty ("auto")
+  for the original's. `--fast` cannot change the resolution.
 - **`--fast`:** copies the compressed video without re-encoding (under a second), but each
   section is widened to the keyframes around it. Cameras often write a keyframe only every few
   seconds, so the cut can be much longer than asked (a 3:40 cut became 5:50 with keyframes every
@@ -763,7 +797,7 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 
 Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the default looks,
 `data/annotations` and `data/detections`), `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
-`--fast`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
+`--fast`, `--resolution`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
 `libopenh264`; default: the first of the codec that works), `--cache-dir`. In the launcher the
 encoder is a drop-down list under "Advanced"; hovering an entry says what it runs on and what it
 needs.
@@ -861,8 +895,8 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
   of their video ids.
 - **Cross-fade:** `--crossfade` seconds (default 0.5, 0 for hard cuts) in which picture and sound
   of one clip fade into the next.
-- **Format:** size and frame rate of the first clip's video; clips of other videos are scaled
-  and fitted to its frame grid. Sound is AAC stereo at 48 kHz. The video is encoded like `cut`
+- **Format:** size and frame rate of the first clip's video (or smaller with `--resolution`, as
+  in `cut`); clips of other videos are scaled and fitted to its frame grid. Sound is AAC stereo at 48 kHz. The video is encoded like `cut`
   (H.265 on the GPU by default, `--codec`, `--bitrate`, `--encoder`).
 - **Titles** are drawn as set in the launcher (colours, border, background, shadow, glow), in
   the match day's font, else a bold system font (DejaVu Sans, Liberation Sans or Noto Sans on
@@ -874,7 +908,8 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
 Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highlights`), `--out`
 (default `<video id>.mp4` or `<match day>-highlights.mp4` in the highlights directory; a bare
 name also goes there, and `.mp4` is added if it has no extension),
-`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`, `--codec`,
+`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`,
+`--resolution`, `--codec`,
 `--bitrate`, `--encoder`, `--cache-dir`.
 
 ## Annotation definitions and label format

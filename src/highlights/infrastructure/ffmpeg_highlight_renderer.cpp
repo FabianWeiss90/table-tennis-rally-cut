@@ -527,7 +527,8 @@ VideoFormat output_format(const Clip& first) {
 
 cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesystem::path& output,
                                 const RenderOptions& options, ProgressReporter& progress) {
-    const VideoFormat format = output_format(clips.front());
+    const VideoFormat format =
+        cutting::limited_to(output_format(clips.front()), options.encoding.max_height);
     const std::vector<ClipTiming> timing =
         plan_timing(clips, format.frame_rate, std::max(0.0, options.crossfade_s));
     HighlightWriter writer(output, format, options, progress);

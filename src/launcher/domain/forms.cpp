@@ -3,9 +3,11 @@
 #include "launcher/domain/forms.hpp"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <format>
 #include <initializer_list>
+#include <string_view>
 
 namespace ttrally::launcher {
 
@@ -16,12 +18,22 @@ const std::vector<std::string> kDecodeBackends{"auto",    "vaapi",  "cuda", "d3d
 const std::vector<std::string> kExecutionProviders{"auto",    "cuda",   "tensorrt",
                                                    "migraphx", "webgpu", "cpu"};
 constexpr std::string_view kPreferredBackbone = "fp16"; ///< the variant the detector is trained on
-/// Bit rates proposed per codec: what the encoder would pick for Full HD at 60 fps.
-constexpr const char* kH265Bitrate = "4";
-constexpr const char* kH264Bitrate = "8";
+/// Bit rates proposed per resolution with H.265 at 60 fps: what the encoder would pick (H.264
+/// takes twice as much). The original's size is not known here: empty, the encoder chooses.
+struct ResolutionBitrate {
+    std::string_view resolution;
+    int h265_mbps;
+};
+constexpr std::array<ResolutionBitrate, 3> kResolutionBitrates{
+    {{"1080p", 4}, {"1440p", 7}, {"2160p", 16}}};
+constexpr int kH264Factor = 2;
+constexpr const char* kOriginalResolution = "original";
+const std::vector<std::string> kResolutions{kOriginalResolution, "2160p", "1440p", "1080p"};
 constexpr const char* kBitrateHelp =
-    "Mbit/s, from 1. Proposed for Full HD at 60 fps: 4 with H.265, 8 with H.264 (follows the "
-    "codec until you enter your own)";
+    "Mbit/s, from 1. Empty (auto): chosen from the resolution and frame rate. Proposed for 60 "
+    "fps with H.265: 4 for 1080p, 7 for 1440p, 16 for 2160p (4K); H.264 twice that. Follows the "
+    "codec and resolution until you enter your own";
+
 
 Field positional(std::string label, FieldKind kind, std::string value, std::string help) {
     return {.flag = {}, .label = std::move(label), .kind = kind, .value = value,
@@ -59,6 +71,13 @@ Field choice(std::string flag, std::string label, std::vector<std::string> choic
                          default_value, std::move(help));
     field.choices = std::move(choices);
     return field;
+}
+
+/// The output size: the original's or smaller (never enlarged).
+Field resolution_field() {
+    return choice("--resolution", "Resolution", kResolutions, kOriginalResolution,
+                  "Height of the written video: 2160p is 4K (3840x2160), 1440p is 2560x1440, "
+                  "1080p is Full HD. A smaller original is not enlarged");
 }
 
 Field flag(std::string name, std::string label, std::string help) {
@@ -342,15 +361,16 @@ CommandForm cut_form(const VideoEntry& video) {
                     in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
              option("--before", "Seconds before each rally", FieldKind::Number, "1", "1", ""),
              option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
-             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number,
-                                     kH265Bitrate, "",
+             resolution_field(),
+             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number, "", "",
                                      std::string(kBitrateHelp) +
                                          ". Size per minute: about 7.5 MB per Mbit/s"),
-                              {"1", "2", "3", "4", "5", "8", "12"}),
+                              {"1", "2", "3", "4", "5", "8", "12", "16", "24"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
              flag("--fast", "Fast (no re-encoding)",
-                  "Seconds instead of minutes, but cuts snap to keyframes (often several s)"),
+                  "Seconds instead of minutes, but cuts snap to keyframes (often several s); "
+                  "keeps the original resolution"),
              advanced(option("--video-id", "Video id", FieldKind::Text, id, "", "")),
              encoder_field(),
              cache_dir(video)}};
@@ -373,9 +393,10 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
              option("--rally-titles", "Players on each rally", FieldKind::Flag, "1", "",
                     "Match day video: each clip shows its game's title (the game video always "
                     "shows it)"),
-             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number,
-                                     kH265Bitrate, "", kBitrateHelp),
-                              {"2", "4", "8", "12"}),
+             resolution_field(),
+             with_suggestions(option("--bitrate", "Bit rate (Mbit/s)", FieldKind::Number, "", "",
+                                     kBitrateHelp),
+                              {"2", "4", "8", "12", "16", "24"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
              advanced(option("--highlights-dir", "Highlights directory", FieldKind::Directory,
@@ -423,17 +444,45 @@ CommandForm train_form(const WorkspaceSnapshot& workspace) {
 
 } // namespace
 
-void propose_bitrate_for_codec(CommandForm& form) {
+void propose_bitrate(CommandForm& form) {
     const Field* codec = form.field("--codec");
+    const Field* resolution = form.field("--resolution");
     Field* bitrate = form.field("--bitrate");
     if (codec == nullptr || bitrate == nullptr) {
         return;
     }
-    const std::string proposed = codec->value == "h264" ? kH264Bitrate : kH265Bitrate;
+    std::string proposed; // the original: the encoder chooses
+    const std::string chosen = resolution != nullptr ? resolution->value : kOriginalResolution;
+    for (const ResolutionBitrate& entry : kResolutionBitrates) {
+        if (entry.resolution == chosen) {
+            proposed = std::to_string(entry.h265_mbps * (codec->value == "h264" ? kH264Factor : 1));
+        }
+    }
     if (bitrate->value.empty() || bitrate->value == bitrate->initial_value) {
         bitrate->value = proposed;
     }
     bitrate->initial_value = proposed;
+}
+
+CommandForm merge_form(const std::vector<std::string>& parts, const std::string& output) {
+    CommandForm form{"merge", "Merge",
+                     "Append the parts of a game recorded in several files into one new video, "
+                     "without re-encoding. The parts stay as they are.",
+                     Program::Ttrally, "", "", {"merge"}, {}};
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        form.fields.push_back(positional(std::format("Part {}", i + 1), FieldKind::File,
+                                         parts[i], "In the order they were recorded"));
+    }
+    form.fields.push_back(required(option("--out", "Merged video", FieldKind::File, output, "",
+                                          "A new file; an existing one is never replaced")));
+    return form;
+}
+
+std::string merged_name(const std::string& first_part) {
+    const std::filesystem::path first(first_part);
+    return (first.parent_path() /
+            (first.stem().string() + "-merged" + first.extension().string()))
+        .string();
 }
 
 std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnapshot& workspace) {

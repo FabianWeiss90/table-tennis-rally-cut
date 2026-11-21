@@ -225,7 +225,7 @@ TEST_CASE("the launcher shows a whole match day: its pipeline and highlights") {
     MemoryHighlights highlights;
     NoPlayback playback;
     BlockFonts fonts;
-    for (const char* tab : {"pipeline", "highlights", "detect", "annotate"}) {
+    for (const char* tab : {"merge", "pipeline", "highlights", "detect", "annotate", "cut"}) {
         const auto screenshot = (keep != nullptr ? std::filesystem::path(keep)
                                                  : std::filesystem::temp_directory_path()) /
                                 std::format("launcher_day_{}.bmp", tab);

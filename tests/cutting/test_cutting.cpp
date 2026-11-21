@@ -3,6 +3,7 @@
 // Cut planning and the CutVideo use case with in-memory fakes.
 
 #include "cutting/application/cut_video.hpp"
+#include "cutting/application/merge_videos.hpp"
 #include "support/fake_media.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -121,4 +122,47 @@ TEST_CASE("a cut list without rallies or with frames beyond the video is refused
     fixture.cut_list.labels.rallies = {{1100, 1300, {}, false, ""}};
     CHECK_THROWS_AS(fixture.run(), std::invalid_argument);
     CHECK(fixture.cutter.cut_sections.empty());
+}
+
+namespace {
+
+/// Remembers what it was asked to join.
+class RecordingJoiner final : public ttrally::cutting::VideoJoiner {
+  public:
+    double join(std::span<const std::filesystem::path> parts, const std::filesystem::path& output,
+                ttrally::ProgressReporter& /*progress*/) override {
+        joined.assign(parts.begin(), parts.end());
+        written = output;
+        return 12.5;
+    }
+    std::vector<std::filesystem::path> joined;
+    std::filesystem::path written;
+};
+
+} // namespace
+
+TEST_CASE("merging appends the parts in their order into a new video") {
+    RecordingJoiner joiner;
+    ttrally::SilentProgressReporter progress;
+    ttrally::cutting::MergeVideos merge(joiner, progress);
+    const auto result = merge.execute({.parts = {"day/GX020001.MP4", "day/GX010001.MP4"},
+                                       .output = "day/game.mp4"});
+    CHECK(result.parts == 2);
+    CHECK(result.duration_s == 12.5);
+    CHECK(joiner.joined ==
+          std::vector<std::filesystem::path>{"day/GX020001.MP4", "day/GX010001.MP4"});
+    CHECK(joiner.written == "day/game.mp4");
+}
+
+TEST_CASE("merging refuses a single part, a part twice and replacing a part") {
+    RecordingJoiner joiner;
+    ttrally::SilentProgressReporter progress;
+    ttrally::cutting::MergeVideos merge(joiner, progress);
+    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4"}, .output = "b.mp4"}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4", "./a.mp4"}, .output = "b.mp4"}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4", "b.mp4"}, .output = "dir/../b.mp4"}),
+                    std::invalid_argument);
+    CHECK(joiner.joined.empty());
 }

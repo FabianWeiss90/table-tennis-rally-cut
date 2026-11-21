@@ -152,7 +152,10 @@ ttrally_layer(ttrally_cutting_domain
     DEPENDS ttrally_shared_kernel)
 
 ttrally_layer(ttrally_cutting_application
-    SOURCES cutting/application/cut_video.cpp cutting/application/section_planning.cpp
+    SOURCES
+        cutting/application/cut_video.cpp
+        cutting/application/merge_videos.cpp
+        cutting/application/section_planning.cpp
     DEPENDS ttrally_cutting_domain ttrally_media_application ttrally_annotation_application)
 
 ttrally_layer(ttrally_cutting_infrastructure
@@ -162,6 +165,7 @@ ttrally_layer(ttrally_cutting_infrastructure
         cutting/infrastructure/ffmpeg_encoding.cpp
         cutting/infrastructure/parameter_sets.cpp
         cutting/infrastructure/ffmpeg_video_cutter.cpp
+        cutting/infrastructure/ffmpeg_video_joiner.cpp
         cutting/infrastructure/mp4_repair.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure
         ttrally_annotation_infrastructure ttrally_ffmpeg)
@@ -288,6 +292,7 @@ add_executable(ttrally
     cli/cut_command.cpp
     cli/devices_command.cpp
     cli/highlights_command.cpp
+    cli/merge_command.cpp
     cli/main.cpp
     cli/repair_mp4_command.cpp)
 target_link_libraries(ttrally PRIVATE

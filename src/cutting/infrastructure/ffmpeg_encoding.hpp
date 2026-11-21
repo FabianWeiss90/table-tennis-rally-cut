@@ -78,6 +78,10 @@ struct VideoFormat {
 /// The format of a decoded stream (camera footage is often full range BT.709).
 [[nodiscard]] VideoFormat video_format_of(const AVCodecContext& decoder, const AVStream& stream);
 
+/// The format shrunk to at most `max_height` lines (0: unchanged), keeping the picture's shape;
+/// both sizes even, as 4:2:0 needs. Never enlarged.
+[[nodiscard]] VideoFormat limited_to(VideoFormat format, int max_height);
+
 class EncoderWatchdog;
 
 class VideoEncoder {
@@ -89,8 +93,9 @@ class VideoEncoder {
     [[nodiscard]] AVCodecContext* context() const noexcept { return context_.get(); }
     [[nodiscard]] const std::string& name() const noexcept { return name_; }
 
-    /// Converts a frame (any software pixel format, the encoder's size) to what the encoder
-    /// takes and sends it with the given pts (in the encoder's time base: 1 / frame rate).
+    /// Converts a frame (any software pixel format and size; scaled to the encoder's) to what
+    /// the encoder takes and sends it with the given pts (in the encoder's time base: 1 / frame
+    /// rate).
     void send(const AVFrame& frame, std::int64_t pts);
     /// Writes the packets the encoder has ready; with flush, also the delayed ones.
     void drain(AVStream* stream, Output& output, bool flush);

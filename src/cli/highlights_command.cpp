@@ -2,6 +2,7 @@
 
 #include "cli/highlights_command.hpp"
 
+#include "cli/resolution_option.hpp"
 #include "cli/stream_progress_reporter.hpp"
 #include "highlights/application/make_highlight_video.hpp"
 #include "highlights/application/title_fonts.hpp"
@@ -106,6 +107,7 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
                          "Video encoder (default: the first of the codec that works: H.265 on the GPU, "
                          "H.264 with OpenH264 first)")
         ->capture_default_str();
+    add_resolution_option(*command_, resolution_);
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: as cut)")
         ->check(CLI::Range(kMinBitrateMbps, kMaxBitrateMbps));
@@ -144,7 +146,8 @@ int HighlightsCommand::run() {
                                  .codec = codec_ == "h264" ? cutting::VideoCodec::H264
                                                            : cutting::VideoCodec::H265,
                                  .encoder = encoder_,
-                                 .bitrate_mbps = bitrate_mbps_},
+                                 .bitrate_mbps = bitrate_mbps_,
+                                 .max_height = max_height_of(resolution_)},
                     .font = font_,
                     .shapes = shapes_dir_}});
     std::cout << std::format("Done in {:.0f} s: {} rallies from {} game(s) in {} clips, {} of "

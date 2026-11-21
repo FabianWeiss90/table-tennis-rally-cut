@@ -13,6 +13,7 @@
 #include "cli/repair_mp4_command.hpp"
 #include "cli/devices_command.hpp"
 #include "cli/highlights_command.hpp"
+#include "cli/merge_command.hpp"
 #include "media/infrastructure/ffmpeg_logging.hpp"
 #include "shared/kernel/version.hpp"
 
@@ -28,6 +29,7 @@ int main(int argc, char** argv) {
     bool verbose = false;
     app.add_flag("-v,--verbose", verbose, "Show FFmpeg diagnostics");
 
+    ttrally::cli::MergeCommand merge(app);
     ttrally::cli::AlignCommand align(app);
 #ifdef TTRALLY_WITH_GUI
     ttrally::cli::AnnotateCommand annotate(app);
@@ -46,6 +48,9 @@ int main(int argc, char** argv) {
     ttrally::media::configure_ffmpeg_logging(verbose);
 
     try {
+        if (merge.selected()) {
+            return merge.run();
+        }
         if (align.selected()) {
             return align.run();
         }

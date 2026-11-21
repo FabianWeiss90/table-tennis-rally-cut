@@ -91,6 +91,15 @@ TEST_CASE("clock formatting") {
     CHECK(ttrally::io::format_clock(-1.5) == "-0:00:01.500");
 }
 
+TEST_CASE("elapsed time and size formatting") {
+    CHECK(ttrally::io::format_elapsed(44.6) == "45 s");
+    CHECK(ttrally::io::format_elapsed(725.0) == "12 min 05 s");
+    CHECK(ttrally::io::format_elapsed(3725.0) == "1 h 02 min 05 s");
+    CHECK(ttrally::io::format_elapsed(-3.0) == "0 s");
+    CHECK(ttrally::io::format_size(8.4e9) == "8.4 GB");
+    CHECK(ttrally::io::format_size(3.5e8) == "350 MB");
+}
+
 TEST_CASE("cache keys depend on purpose and file") {
     const auto path = std::filesystem::temp_directory_path() / "ttrally_test_cache_key.bin";
     std::ofstream(path) << "content";

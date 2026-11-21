@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -26,6 +27,16 @@ constexpr std::size_t kVideo = 0;
 constexpr std::size_t kAudio = 1;
 constexpr int kProgressSteps = 10; ///< messages per part
 constexpr std::int64_t kNoTimestamp = std::numeric_limits<std::int64_t>::min();
+constexpr double kMegabyte = 1e6;
+/// Bytes per second a hard disk copies at while reading and writing at once (measured: about
+/// 40 MB/s each way), for the first guess before anything is measured.
+constexpr double kTypicalHardDisk = 40e6;
+
+using Clock = std::chrono::steady_clock;
+
+double seconds_since(Clock::time_point start) {
+    return std::chrono::duration<double>(Clock::now() - start).count();
+}
 
 /// A part opened for reading, with the streams that are copied.
 struct Part {
@@ -127,14 +138,9 @@ class JoinedOutput {
         }
         ff::check(avio_open(&context_->pb, ff::path_to_utf8(temporary_).c_str(), AVIO_FLAG_WRITE),
                   "opening " + temporary_.string());
-        AVDictionary* options = nullptr;
-        const std::string name = format->name;
-        if (name.find("mp4") != std::string::npos || name.find("mov") != std::string::npos) {
-            av_dict_set(&options, "movflags", "+faststart", 0); // playable while loading
-        }
-        const int written = avformat_write_header(context_.get(), &options);
-        av_dict_free(&options);
-        ff::check(written, "writing the header");
+        // Without "faststart": moving the index to the front would copy the whole (large) file a
+        // second time, and the merged original is played and processed locally, not streamed
+        ff::check(avformat_write_header(context_.get(), nullptr), "writing the header");
     }
 
     JoinedOutput(const JoinedOutput&) = delete;
@@ -230,14 +236,71 @@ std::int64_t start_of(const Part& part, const JoinedOutput& output) {
     return start == std::numeric_limits<std::int64_t>::max() ? 0 : start;
 }
 
+/// How far the copying of all parts has got, and how long the rest will take at the speed so
+/// far.
+class CopyProgress {
+  public:
+    CopyProgress(double total_bytes, ProgressReporter& progress)
+        : total_(total_bytes), progress_(progress), started_(Clock::now()) {}
+
+    /// A part of `bytes` begins; `label` names it in the messages.
+    void begin_part(std::string label, double bytes) {
+        label_ = std::move(label);
+        part_bytes_ = bytes;
+        reported_ = 0;
+    }
+
+    /// `position` bytes of the current part are copied.
+    void copied(double position) {
+        if (part_bytes_ <= 0) {
+            return;
+        }
+        const auto step = static_cast<int>(position * kProgressSteps / part_bytes_);
+        if (step <= reported_ || step >= kProgressSteps) {
+            return;
+        }
+        reported_ = step;
+        const double done = done_ + position;
+        progress_.report(std::format("{}: {} % of the part, {:.0f} % of all{}", label_,
+                                     step * 100 / kProgressSteps, done * 100 / total_,
+                                     remaining_text(done)));
+    }
+
+    /// The current part is copied completely.
+    void end_part() { done_ += part_bytes_; }
+
+    [[nodiscard]] double elapsed() const { return seconds_since(started_); }
+    [[nodiscard]] double done() const { return done_; }
+
+    /// ", about 4 min 10 s left (45 MB/s)", or nothing before a few seconds were measured.
+    [[nodiscard]] std::string remaining_text(double done) const {
+        const double elapsed = this->elapsed();
+        if (elapsed < kMinMeasured || done <= 0) {
+            return {};
+        }
+        const double speed = done / elapsed;
+        return std::format(", about {} left ({:.0f} MB/s)",
+                           io::format_elapsed((total_ - done) / speed), speed / kMegabyte);
+    }
+
+  private:
+    static constexpr double kMinMeasured = 5.0; ///< seconds before the speed is trusted
+
+    double total_;
+    ProgressReporter& progress_;
+    Clock::time_point started_;
+    std::string label_;
+    double part_bytes_ = 0.0;
+    double done_ = 0.0;
+    int reported_ = 0;
+};
+
 /// Copies a part's packets, moved so that the part starts at `offset` (AV_TIME_BASE); returns
 /// the part's duration (AV_TIME_BASE).
 std::int64_t copy_part(Part& part, JoinedOutput& output, std::int64_t offset,
-                       const std::string& label, ProgressReporter& progress) {
+                       CopyProgress& progress) {
     const std::int64_t start = start_of(part, output);
     std::int64_t end = start;
-    const std::int64_t size = avio_size(part.format->pb);
-    int reported = 0;
     auto packet = ff::make_packet();
     while (true) {
         const int result = av_read_frame(part.format.get(), packet.get());
@@ -267,12 +330,8 @@ std::int64_t copy_part(Part& part, JoinedOutput& output, std::int64_t offset,
             end = std::max(end, av_rescale_q(packet->pts + packet->duration, in->time_base,
                                              AV_TIME_BASE_Q));
         }
-        if (size > 0 && packet->pos > 0) {
-            const auto step = static_cast<int>(packet->pos * kProgressSteps / size);
-            if (step > reported) {
-                reported = step;
-                progress.report(std::format("{}: {} %", label, step * 100 / kProgressSteps));
-            }
+        if (packet->pos > 0) {
+            progress.copied(static_cast<double>(packet->pos));
         }
         av_packet_rescale_ts(packet.get(), in->time_base, out->time_base);
         const std::int64_t shift = av_rescale_q(offset - start, AV_TIME_BASE_Q, out->time_base);
@@ -308,19 +367,47 @@ double FfmpegVideoJoiner::join(std::span<const std::filesystem::path> parts,
                                     "metadata or timecode)",
                                     first.format->nb_streams - copied));
     }
+    std::vector<double> sizes;
+    for (const Part& part : opened) {
+        sizes.push_back(static_cast<double>(std::filesystem::file_size(part.path)));
+    }
+    double total = 0.0;
+    for (const double size : sizes) {
+        total += size;
+    }
+    progress.report(std::format(
+        "Copying {} parts ({}) one after another into the new file, without re-encoding: this "
+        "takes about as long as copying the files (on a hard disk that reads and writes at once "
+        "often 30-50 MB/s, i.e. about {} for these). The time left is estimated once the "
+        "copying has run for a few seconds.",
+        opened.size(), io::format_size(total), io::format_elapsed(total / kTypicalHardDisk)));
     JoinedOutput joined(output, first);
+    CopyProgress copying(total, progress);
     std::int64_t offset = 0;
     for (std::size_t i = 0; i < opened.size(); ++i) {
         const std::string label = std::format("Part {}/{} {}", i + 1, opened.size(),
                                               opened[i].path.filename().string());
-        progress.report(label);
-        const std::int64_t duration = copy_part(opened[i], joined, offset, label, progress);
-        progress.report(std::format("{}: {} long", label,
-                                    io::format_clock(static_cast<double>(duration) /
-                                                     AV_TIME_BASE)));
+        progress.report(std::format("{} ({}): copying{}", label, io::format_size(sizes[i]),
+                                    copying.remaining_text(copying.done())));
+        const auto started = Clock::now();
+        copying.begin_part(label, sizes[i]);
+        const std::int64_t duration = copy_part(opened[i], joined, offset, copying);
+        copying.end_part();
+        const double took = seconds_since(started);
+        progress.report(std::format(
+            "{}: copied in {} ({:.0f} MB/s), {} of video{}", label, io::format_elapsed(took),
+            took > 0 ? sizes[i] / kMegabyte / took : 0.0,
+            io::format_clock(static_cast<double>(duration) / AV_TIME_BASE),
+            i + 1 < opened.size() ? copying.remaining_text(copying.done()) : std::string()));
         offset += duration;
     }
+    progress.report(std::format("All parts copied in {}. Finishing the file (writing its "
+                                "index, a few seconds)",
+                                io::format_elapsed(copying.elapsed())));
+    const auto finishing = Clock::now();
     joined.finish();
+    progress.report(
+        std::format("File finished in {}", io::format_elapsed(seconds_since(finishing))));
     return static_cast<double>(offset) / AV_TIME_BASE;
 }
 

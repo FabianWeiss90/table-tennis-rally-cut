@@ -2,6 +2,7 @@
 
 #include "shared/io/formatting.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -32,6 +33,27 @@ std::string format_clock(double seconds) {
     return std::format("{}{}:{:02}:{:02}.{:03}", negative ? "-" : "", millis / kMillisPerHour,
                        millis / kMillisPerMinute % 60, millis / kMillisPerSecond % 60,
                        millis % kMillisPerSecond);
+}
+
+std::string format_elapsed(double seconds) {
+    constexpr long long kHour = 3600;
+    constexpr long long kMinute = 60;
+    const long long total = std::llround(std::max(0.0, seconds));
+    if (total < kMinute) {
+        return std::format("{} s", total);
+    }
+    if (total < kHour) {
+        return std::format("{} min {:02} s", total / kMinute, total % kMinute);
+    }
+    return std::format("{} h {:02} min {:02} s", total / kHour, total / kMinute % kMinute,
+                       total % kMinute);
+}
+
+std::string format_size(double bytes) {
+    constexpr double kMegabyte = 1e6;
+    constexpr double kGigabyte = 1e9;
+    return bytes >= kGigabyte ? std::format("{:.1f} GB", bytes / kGigabyte)
+                              : std::format("{:.0f} MB", bytes / kMegabyte);
 }
 
 } // namespace ttrally::io

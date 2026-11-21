@@ -440,6 +440,8 @@ ttrally merge GX010042.MP4 GX020042.MP4 GX030042.MP4 --out Weiss-Becker.mp4
 - **Nothing is replaced:** the merged video is always a new file, and an existing file is never
   overwritten. It is written as `<name>.merging.<ext>` first and renamed once complete. The
   parts stay as they are.
+- **Log:** every line starts with the time of day; each part reports its size, how long copying
+  it took and at what speed, then the time to finish the file and the total time.
 - **Container:** follows the extension of `--out` (`.mp4`, `.mov`, `.mkv`, ...); H.265 keeps the
   tag `hvc1` that Apple's players need.
 

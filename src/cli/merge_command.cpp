@@ -28,12 +28,14 @@ MergeCommand::MergeCommand(CLI::App& app)
 
 int MergeCommand::run() {
     cutting::FfmpegVideoJoiner joiner;
-    StreamProgressReporter progress(std::cout);
+    StreamProgressReporter lines(std::cout);
+    TimestampedProgressReporter progress(lines);
     cutting::MergeVideos merge(joiner, progress);
     const auto result = merge.execute({.parts = parts_, .output = out_});
-    std::cout << std::format("Done in {:.0f} s: {} parts, {} of video.\n", result.seconds,
-                             result.parts, io::format_clock(result.duration_s));
-    std::cout << "Merged video: " << out_.string() << '\n';
+    progress.report(std::format("Done in {} in total: {} parts, {} of video",
+                                io::format_elapsed(result.seconds), result.parts,
+                                io::format_clock(result.duration_s)));
+    progress.report("Merged video: " + out_.string());
     return 0;
 }
 

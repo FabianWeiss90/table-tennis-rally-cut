@@ -103,7 +103,69 @@ class FakePreCutStore final : public PreCutStore {
     std::map<std::filesystem::path, std::map<std::string, std::filesystem::path>> stored;
 };
 
+class FakeMatchStore final : public MatchStore {
+  public:
+    std::vector<Match> load(const std::filesystem::path& work_dir) override {
+        return stored[work_dir];
+    }
+    void save(const std::filesystem::path& work_dir, const std::vector<Match>& matches) override {
+        stored[work_dir] = matches;
+    }
+    std::map<std::filesystem::path, std::vector<Match>> stored;
+};
+
 } // namespace
+
+TEST_CASE("a match's id is proposed from what its parts have in common") {
+    const std::vector<std::string> none;
+    CHECK(propose_match_id(std::vector<std::string>{"kaether-baumgarten-1", "kaether-baumgarten-2"},
+                           none) == "kaether-baumgarten");
+    CHECK(propose_match_id(std::vector<std::string>{"weiss-becker_a", "weiss-becker_b"}, none) ==
+          "weiss-becker");
+    CHECK(propose_match_id(std::vector<std::string>{"gx010042", "gx020042"}, none) == "gx010042");
+    const std::vector<std::string> taken{"kaether-baumgarten"};
+    CHECK(propose_match_id(std::vector<std::string>{"kaether-baumgarten-1", "kaether-baumgarten-2"},
+                           taken) == "kaether-baumgarten-2");
+    CHECK(is_valid_match_id("kaether-baumgarten_2"));
+    CHECK_FALSE(is_valid_match_id(""));
+    CHECK_FALSE(is_valid_match_id("a/b"));
+    CHECK_FALSE(is_valid_match_id("a b"));
+    CHECK(part_list_name("m") == "m.ffconcat");
+    CHECK(pre_cut_list_name("m") == "m.pre-cut.ffconcat");
+}
+
+TEST_CASE("videos of a match day are joined into a match and split again") {
+    FakeScanner scanner;
+    scanner.snapshot.videos.push_back(video("match-c"));
+    scanner.snapshot.videos[2].match_day = "day-2";
+    scanner.snapshot.videos.push_back(video("match-d"));
+    FakeRunner runner;
+    FakeMatchStore store;
+    LauncherSession session(scanner, runner, "ttrally", ".", "/lib", nullptr, &store);
+    session.select_match_day("day-1");
+    const std::string a = "/lib/day-1/match-a_FHD.mp4";
+    const std::string b = "/lib/day-1/match-b_FHD.mp4";
+    session.join_match({a, b}, "match");
+    const auto work = scanner.snapshot.videos[0].work_dir;
+    REQUIRE(store.stored[work].size() == 1);
+    CHECK(store.stored[work][0] ==
+          Match{"match", {"match-a_FHD.mp4", "match-b_FHD.mp4"}});
+    CHECK(session.selected_match_day() == "day-1"); // still the whole match day
+    CHECK_THROWS_AS(session.join_match({a}, "x"), std::invalid_argument);
+    CHECK_THROWS_AS(session.join_match({a, b}, "no spaces"), std::invalid_argument);
+    CHECK_THROWS_AS(session.join_match({a, "/lib/day-1/match-c_FHD.mp4"}, "x"),
+                    std::invalid_argument); // another match day
+    CHECK_THROWS_AS(session.join_match({a, b}, "match-d"), std::invalid_argument); // a video's
+    CHECK_THROWS_AS(session.join_match({a, b}, "match"), std::invalid_argument);   // a match's
+    CHECK_NOTHROW(session.join_match({a, b}, "match-a")); // the name of one of its own parts
+    VideoEntry match = video("match");
+    match.parts = {a, b};
+    session.split_match(match);
+    REQUIRE(store.stored[work].size() == 1);
+    CHECK(store.stored[work][0].id == "match-a");
+    LauncherSession without(scanner, runner, "ttrally", ".", "/lib");
+    CHECK_THROWS_AS(without.join_match({a, b}, "m"), std::logic_error);
+}
 
 TEST_CASE("video ids are suggested from file names like the existing ones") {
     CHECK(suggest_video_id("Weiss-Heinemeier_FHD") == "weiss-heinemeier");
@@ -194,7 +256,10 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--video-id", "match-a", "--rally-titles",
                                    "--highlights-dir",
-                                   in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
+                                   in_library("day-1/ttrally-data/highlights"),
+                                   "--white-balance",
+                                   in_library("day-1/ttrally-data/white-balance.csv"),
+                                   "--shapes-dir",
                                    in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // The match day video: no video id, the flag instead
@@ -204,7 +269,10 @@ TEST_CASE("highlights are made from the match day's highlights folder") {
     CHECK(highlights.arguments() ==
           std::vector<std::string>{"highlights", "--match-day", "--rally-titles",
                                    "--highlights-dir",
-                                   in_library("day-1/ttrally-data/highlights"), "--shapes-dir",
+                                   in_library("day-1/ttrally-data/highlights"),
+                                   "--white-balance",
+                                   in_library("day-1/ttrally-data/white-balance.csv"),
+                                   "--shapes-dir",
                                    in_library("ttrally-data/title-shapes"), "--cache-dir",
                                    in_library("day-1/ttrally-data/cache")});
     // Players on each rally is on by default and can be switched off
@@ -605,18 +673,6 @@ TEST_CASE("a pipeline runs the steps for one video after another") {
         finish(0);
         CHECK(session.status() == "pipeline finished for 3 steps (1 skipped)");
     }
-}
-
-TEST_CASE("the merge form appends the parts in their order into a new file") {
-    const std::string proposed = merged_name("/lib/day-1/GX010001.MP4");
-    CHECK(proposed == (std::filesystem::path("/lib/day-1") / "GX010001-merged.MP4").string());
-    const CommandForm merge =
-        merge_form({"/lib/day-1/GX010001.MP4", "/lib/day-1/GX020001.MP4"}, proposed);
-    CHECK(merge.arguments() == std::vector<std::string>{"merge", "/lib/day-1/GX010001.MP4",
-                                                        "/lib/day-1/GX020001.MP4", "--out",
-                                                        proposed});
-    CHECK(merge_form({"/a.mp4", "/b.mp4"}, "").missing() ==
-          std::vector<std::string>{"Merged video"});
 }
 
 TEST_CASE("a form with empty required fields is not run") {

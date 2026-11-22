@@ -5,8 +5,10 @@
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "annotation/infrastructure/csv_review_state_store.hpp"
 #include "launcher/domain/video_id.hpp"
+#include "launcher/infrastructure/csv_match_store.hpp"
 #include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
+#include "media/infrastructure/part_list.hpp"
 #include "shared/io/json.hpp"
 
 #include <algorithm>
@@ -83,11 +85,12 @@ AnnotationProgress annotation_progress(const fs::path& directory, const std::str
     return complete ? AnnotationProgress::Complete : AnnotationProgress::InProgress;
 }
 
-VideoEntry describe(const fs::path& video, const fs::path& work) {
+/// A video (or a match's part list) of the match day with its id and progress.
+VideoEntry describe(const fs::path& video, const fs::path& work, std::string video_id) {
     VideoEntry entry;
-    entry.match_day = video.parent_path().filename().string();
+    entry.match_day = work.parent_path().filename().string();
     entry.original = video.string();
-    entry.video_id = suggest_video_id(video.stem().string());
+    entry.video_id = std::move(video_id);
     entry.work_dir = work.string();
     const std::string& id = entry.video_id;
     entry.aligned = fs::exists(work / "align" / (id + ".csv"));
@@ -128,38 +131,104 @@ std::vector<fs::path> pre_cut_videos(const fs::path& match_day) {
     return videos;
 }
 
+/// The pre-cut versions of a video: the one chosen for it first, then those named after it.
+std::vector<std::string> pre_cuts_of(const fs::path& video, const std::string& id,
+                                     const std::map<std::string, fs::path>& chosen,
+                                     const std::vector<fs::path>& pre_cuts) {
+    std::vector<std::string> found;
+    if (const auto it = chosen.find(id); it != chosen.end() && fs::is_regular_file(it->second)) {
+        found.push_back(it->second.string()); // first: the default
+    }
+    for (const fs::path& pre_cut : pre_cuts) {
+        if (is_pre_cut_of(pre_cut.stem().string(), video.stem().string()) &&
+            std::ranges::find(found, pre_cut.string()) == found.end()) {
+            found.push_back(pre_cut.string());
+        }
+    }
+    return found;
+}
+
+/// A match of several files as one video: its part list, and the list of its parts' pre-cuts
+/// (each part's first, in order) if any part has one. Nullopt if a list cannot be written.
+std::optional<VideoEntry> describe_match(const Match& match, const fs::path& match_day,
+                                         const std::map<std::string, fs::path>& chosen,
+                                         const std::vector<fs::path>& pre_cuts) {
+    const fs::path work = match_day / kWorkFolder;
+    const fs::path lists = work / kMatchesFolder;
+    std::vector<fs::path> parts;
+    std::vector<fs::path> part_pre_cuts;
+    for (const std::string& name : match.parts) {
+        const fs::path part = match_day / name;
+        parts.push_back(part);
+        const auto found =
+            pre_cuts_of(part, suggest_video_id(part.stem().string()), chosen, pre_cuts);
+        if (!found.empty()) {
+            part_pre_cuts.emplace_back(found.front());
+        }
+    }
+    const fs::path list = lists / part_list_name(match.id);
+    const fs::path pre_cut_list = lists / pre_cut_list_name(match.id);
+    try {
+        media::write_part_list(list, parts);
+        if (!part_pre_cuts.empty()) {
+            media::write_part_list(pre_cut_list, part_pre_cuts);
+        }
+    } catch (const std::exception&) {
+        return std::nullopt; // a missing or unreadable part: not offered
+    }
+    VideoEntry entry = describe(list, work, match.id);
+    for (const fs::path& part : parts) {
+        entry.parts.push_back(part.string());
+    }
+    if (const auto it = chosen.find(match.id);
+        it != chosen.end() && fs::is_regular_file(it->second)) {
+        entry.cut_candidates.push_back(it->second.string());
+    }
+    if (!part_pre_cuts.empty() &&
+        std::ranges::find(entry.cut_candidates, pre_cut_list.string()) ==
+            entry.cut_candidates.end()) {
+        entry.cut_candidates.push_back(pre_cut_list.string());
+    }
+    return entry;
+}
+
+template <typename Load> auto load_or_empty(Load load) -> decltype(load()) {
+    try {
+        return load();
+    } catch (const std::exception&) {
+        return {}; // an unreadable file only loses what it held
+    }
+}
+
 void scan_match_day(const fs::path& match_day, WorkspaceSnapshot& workspace) {
     const fs::path work = match_day / kWorkFolder;
     const std::vector<fs::path> pre_cuts = pre_cut_videos(match_day);
-    std::map<std::string, std::string> scenes;
-    try {
-        scenes = CsvSceneStore().load(work);
-    } catch (const std::exception&) {
-        scenes.clear(); // an unreadable file only loses the scenes
-    }
-    std::map<std::string, fs::path> chosen_pre_cuts;
-    try {
-        chosen_pre_cuts = CsvPreCutStore().load(work);
-    } catch (const std::exception&) {
-        chosen_pre_cuts.clear(); // an unreadable file only loses the choices
-    }
+    const auto scenes = load_or_empty([&] { return CsvSceneStore().load(work); });
+    const auto chosen = load_or_empty([&] { return CsvPreCutStore().load(work); });
+    const auto matches = load_or_empty([&] { return CsvMatchStore().load(work); });
+    std::vector<VideoEntry> day;
     for (const fs::path& video : entries(match_day, [](const fs::directory_entry& entry) {
              return entry.is_regular_file() && is_video(entry.path());
          })) {
-        VideoEntry entry = describe(video, work);
+        const std::string name = video.filename().string();
+        if (std::ranges::any_of(matches, [&](const Match& match) {
+                return std::ranges::find(match.parts, name) != match.parts.end();
+            })) {
+            continue; // a part of a match: listed as the match
+        }
+        VideoEntry entry = describe(video, work, suggest_video_id(video.stem().string()));
+        entry.cut_candidates = pre_cuts_of(video, entry.video_id, chosen, pre_cuts);
+        day.push_back(std::move(entry));
+    }
+    for (const Match& match : matches) {
+        if (auto entry = describe_match(match, match_day, chosen, pre_cuts)) {
+            day.push_back(std::move(*entry));
+        }
+    }
+    std::ranges::stable_sort(day, {}, &VideoEntry::video_id);
+    for (VideoEntry& entry : day) {
         if (const auto scene = scenes.find(entry.video_id); scene != scenes.end()) {
             entry.scene = scene->second;
-        }
-        if (const auto chosen = chosen_pre_cuts.find(entry.video_id);
-            chosen != chosen_pre_cuts.end() && fs::is_regular_file(chosen->second)) {
-            entry.cut_candidates.push_back(chosen->second.string()); // first: the default
-        }
-        for (const fs::path& pre_cut : pre_cuts) {
-            if (is_pre_cut_of(pre_cut.stem().string(), video.stem().string()) &&
-                std::ranges::find(entry.cut_candidates, pre_cut.string()) ==
-                    entry.cut_candidates.end()) {
-                entry.cut_candidates.push_back(pre_cut.string());
-            }
         }
         if (entry.annotation == AnnotationProgress::Complete && !entry.features_model.empty()) {
             workspace.trainable.push_back(entry.key());

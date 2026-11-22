@@ -72,11 +72,12 @@ ttrally_test(integration_tests
         integration/test_mp4_repair.cpp
         integration/test_title_backdrops.cpp
         integration/test_video_cutter.cpp
-        integration/test_video_joiner.cpp
+        integration/test_matches.cpp
         cutting/test_parameter_sets.cpp
     DEPENDS
         ttrally_alignment_infrastructure ttrally_cutting_infrastructure
-        ttrally_highlights_infrastructure ttrally_media_infrastructure)
+        ttrally_highlights_infrastructure ttrally_launcher_infrastructure
+        ttrally_media_infrastructure)
 
 # Architecture: layer rules, plus a self-test proving that violations are detected
 add_test(NAME "architecture: layer dependencies"

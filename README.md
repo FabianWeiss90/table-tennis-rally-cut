@@ -358,6 +358,49 @@ are ignored. A video is named by its match day and its id, e.g.
 `2026-10-03-Club-Away/weiss-heinemeier`. Caches are keyed by file name, size and modification
 time, so a library can be moved or copied (keeping the modification times) without recomputing.
 
+### Matches of several files
+
+A match recorded in several files (e.g. a camera that starts a new file every few gigabytes) is
+joined in the launcher: choose the whole match day on the left, then the **Matches** tab. Tick
+the files, put them in order with the arrows (proposed by file name), name the match (proposed
+from what the names have in common, e.g. `Kaether-Baumgarten-1.MP4` and `-2.MP4` →
+`kaether-baumgarten`) and press "Join". "Split again" undoes it.
+
+- **One video for every step:** the match is one entry in the list (its files listed under
+  it) with one continuous timeline: align, annotate, features, detect, refine, cut and
+  highlights work on it as on a single video. Nothing is copied or re-encoded: the tool reads
+  the files one after another through a small part list,
+  `<match day>/ttrally-data/matches/<id>.ffconcat` (FFmpeg's concat format, the files named
+  relative to it, each with its duration). Every command takes this list where it takes a video.
+- **Liimba:** upload each file on its own. The match's pre-cut is the list of the files'
+  pre-cuts in the same order (`<id>.pre-cut.ffconcat`, written when the library is scanned), so
+  align finds the segments on the match's timeline.
+- **Stored** in `<match day>/ttrally-data/matches.csv` (columns `match_id,part`). Results the
+  files had before (align, labels, features, ...) stay on disk but are not used; the match starts
+  without. The files must share codec and picture size, as the files of one recording do.
+
+### White balance
+
+Videos recorded with automatic white balance can differ in colour (more or less daylight).
+Each file is constant in itself, so one correction per file is enough. In the launcher, choose
+the whole match day, then the **White balance** tab:
+
+1. **Scenes:** "Detect scenes" groups the videos by hall and camera position (see the Train
+   tab); the area is set per scene.
+2. **Area:** on the scene's background (the median of frames spread over its first file, so the
+   players are gone) drag a rectangle over something that should be white or grey, e.g. the
+   table's white edge or a wall.
+3. **Choice per file** (each part of a match on its own, since the camera may have changed its
+   white balance between files): "As recorded", "Neutral" (the area becomes grey) or "Like
+   <file>" (the area gets the tint it has in that file of the scene). Each is shown as the
+   file's background with that correction; a click chooses it. The brightness stays; only the
+   colour balance changes.
+
+Stored in `<match day>/ttrally-data/white-balance.csv` (per file: choice and the gains for red,
+green and blue) and `white-balance-areas.csv` (per scene). `cut` and `highlights` apply it with
+`--white-balance <that file>` (the launcher passes it); a fast cut cannot (it copies the video).
+Labels, features and detections keep the colours as recorded.
+
 ### `gui`
 
 The easiest way to work: a window to run all commands without typing them. Start it from the
@@ -400,8 +443,8 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
   skipped and listed in the output (align without a pre-cut video, cut without labels or
   detections); a failed game does not stop the others, and "Cancel" stops the rest. "Compute
   all" computes the features again even if they are current. Annotate and refine need a single
-  game; train is the same as for a video. The **Merge** tab (first) joins the parts of a game
-  recorded in several files, see [`merge`](#merge).
+  game; train is the same as for a video. The **Matches** tab (first) joins the files of a match
+  recorded in several parts, see [Matches of several files](#matches-of-several-files).
 - **Pipeline** (only for a whole match day): ticks for the steps align, features, detect and cut
   (default features → detect → cut), run for every game: all steps of one game, then the next.
   Each step uses the settings of its own tab. "Compute missing" starts each game at its first
@@ -423,35 +466,6 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
 
 Options: `--library` (the library to open, remembered for the next start), `--project`
 (project directory with `weights/` and `training/`, default the current one).
-
-### `merge`
-
-A game recorded in several files (e.g. a camera that starts a new file every few gigabytes)
-becomes one video, before anything else is done with it:
-
-```sh
-ttrally merge GX010042.MP4 GX020042.MP4 GX030042.MP4 --out Weiss-Becker.mp4
-```
-
-- **No re-encoding:** the compressed video and the main sound of each part are copied, the
-  timestamps of each part moved to follow the previous one; it takes about as long as copying
-  the files. Other streams (camera metadata, timecode) are left out.
-- **Parts that do not fit** (other codec, picture size, codec settings or sound format) are
-  refused, since they would need re-encoding.
-- **Nothing is replaced:** the merged video is always a new file, and an existing file is never
-  overwritten. It is written as `<name>.merging.<ext>` first and renamed once complete. The
-  parts stay as they are.
-- **Log:** every line starts with the time of day; each part reports its size, how long copying
-  it took and at what speed, then the time to finish the file and the total time.
-- **Container:** follows the extension of `--out` (`.mp4`, `.mov`, `.mkv`, ...); H.265 keeps the
-  tag `hvc1` that Apple's players need.
-
-In the launcher: choose the whole match day on the left, then the **Merge** tab. Tick the parts
-among the match day's videos (put in file name order, changeable with the arrows); the merged
-video is proposed next to the first part as `<first part>-merged.<ext>` and can be renamed. It
-appears in the list once done; the parts stay in the list until you move them out of the match
-day folder. A part that already has results (align, labels, features, ...) is pointed out:
-those stay with the part and are not carried over.
 
 ### `align`
 
@@ -801,7 +815,8 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
 Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the default looks,
 `data/annotations` and `data/detections`), `--out` (used as given; default `<out-dir>/<video_id>-<height>p.mp4`, e.g. `match-1080p.mp4`
 with the height actually written), `--out-dir` (default `data/cuts`), `--before`, `--after`,
-`--fast`, `--resolution`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
+`--fast`, `--resolution`, `--white-balance` (see [White balance](#white-balance)), `--codec`
+(`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
 `libopenh264`; default: the first of the codec that works), `--cache-dir`. In the launcher the
 encoder is a drop-down list under "Advanced"; hovering an entry says what it runs on and what it
 needs.
@@ -931,7 +946,7 @@ Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highli
 directory, e.g. `-1080p`, with the height actually written; a bare
 name also goes there, and `.mp4` is added if it has no extension),
 `--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`,
-`--resolution`, `--codec`,
+`--resolution`, `--white-balance`, `--codec`,
 `--bitrate`, `--encoder`, `--cache-dir`.
 
 ## Annotation definitions and label format

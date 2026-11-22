@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "cutting/application/white_balance_store.hpp"
 #include "highlights/application/game_highlights.hpp"
 #include "highlights/application/playback_source.hpp"
 #include "highlights/application/title_fonts.hpp"
@@ -18,6 +19,8 @@ struct LauncherOptions {
     std::string title = "ttrally";
     launcher::LauncherSettings* settings = nullptr; ///< remembers a library chosen in the window
     launcher::SceneStore* scenes = nullptr; ///< scenes of the videos; nullptr: not shown
+    /// White balance of the match days (with `scenes`); nullptr: no White balance tab
+    cutting::WhiteBalanceStore* white_balance = nullptr;
     /// Highlight marks and playback for the Highlights tab; nullptr: the tab only explains
     highlights::MatchDayHighlights* highlights = nullptr;
     highlights::PlaybackSource* playback = nullptr;

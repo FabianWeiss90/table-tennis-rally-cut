@@ -70,6 +70,9 @@ CutCommand::CutCommand(CLI::App& app)
                          "first of the codec that works: H.265 on the GPU, H.264 with OpenH264 first)")
         ->capture_default_str();
     add_resolution_option(*command_, resolution_);
+    command_->add_option("--white-balance", white_balance_,
+                         "White balance of the match day (its white-balance.csv, set in the "
+                         "launcher's White balance tab); default: colours as recorded");
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: by resolution and frame rate; for "
                          "Full HD at 60 fps 4 with H.265, 8 with H.264)")
@@ -120,6 +123,7 @@ int CutCommand::run() {
                                                : cutting::VideoCodec::H265,
                      .encoder = encoder_,
                      .bitrate_mbps = bitrate_mbps_,
+                     .white_balance = white_balance_,
                      .max_height = max_height_of(resolution_)},
          .resolution_in_name = default_name});
     std::cout << std::format(

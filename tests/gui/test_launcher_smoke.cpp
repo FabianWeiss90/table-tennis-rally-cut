@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <map>
 #include <utility>
 
 using namespace ttrally;
@@ -30,7 +31,17 @@ class OneVideo final : public launcher::WorkspaceScanner {
         video.cut_candidates = {"/lib/2026-10-03 Club/Liimba/Match_FHD.mp4"};
         video.aligned = true;
         video.annotation = launcher::AnnotationProgress::InProgress;
+        video.scene = with_match ? "A" : "";
         workspace.videos = {video};
+        if (with_match) {
+            launcher::VideoEntry match = video;
+            match.video_id = "kaether-baumgarten";
+            match.original =
+                "/lib/2026-10-03 Club/ttrally-data/matches/kaether-baumgarten.ffconcat";
+            match.parts = {"/lib/2026-10-03 Club/Kaether-Baumgarten-1.MP4",
+                           "/lib/2026-10-03 Club/Kaether-Baumgarten-2.MP4"};
+            workspace.videos.push_back(match);
+        }
         for (int i = 2; i <= extra_videos + 1; ++i) {
             video.video_id = std::format("match-{}", i);
             video.original = std::format("/lib/2026-10-03 Club/Match{}_FHD.mp4", i);
@@ -41,6 +52,25 @@ class OneVideo final : public launcher::WorkspaceScanner {
         return workspace;
     }
     int extra_videos = 0; ///< more videos of the match day
+    bool with_match = false; ///< a match of two files too
+};
+
+/// White balance settings in memory.
+class MemoryWhiteBalance final : public cutting::WhiteBalanceStore {
+  public:
+    cutting::WhiteBalanceSettings load(const std::filesystem::path&) override { return saved; }
+    void save(const std::filesystem::path&,
+              const cutting::WhiteBalanceSettings& settings) override {
+        saved = settings;
+    }
+    cutting::WhiteBalanceSettings saved{.areas = {{"A", {0.2, 0.2, 0.4, 0.3}}}, .files = {}};
+};
+
+/// Scenes in memory.
+class MemoryScenes final : public launcher::SceneStore {
+  public:
+    std::map<std::string, std::string> load(const std::filesystem::path&) override { return {}; }
+    void save(const std::filesystem::path&, const std::map<std::string, std::string>&) override {}
 };
 
 class IdleRunner final : public launcher::ProcessRunner {
@@ -217,6 +247,7 @@ TEST_CASE("the launcher shows a whole match day: its pipeline and highlights") {
     use_offscreen_video_driver();
     OneVideo scanner;
     scanner.extra_videos = 2;
+    scanner.with_match = true;
     IdleRunner runner;
     launcher::LauncherSession session(scanner, runner, "ttrally", ".", "/lib");
     session.select_match_day("2026-10-03 Club");
@@ -225,7 +256,10 @@ TEST_CASE("the launcher shows a whole match day: its pipeline and highlights") {
     MemoryHighlights highlights;
     NoPlayback playback;
     BlockFonts fonts;
-    for (const char* tab : {"merge", "pipeline", "highlights", "detect", "annotate", "cut"}) {
+    MemoryWhiteBalance white_balance;
+    MemoryScenes scenes;
+    for (const char* tab :
+         {"matches", "pipeline", "white-balance", "highlights", "detect", "annotate", "cut"}) {
         const auto screenshot = (keep != nullptr ? std::filesystem::path(keep)
                                                  : std::filesystem::temp_directory_path()) /
                                 std::format("launcher_day_{}.bmp", tab);
@@ -236,6 +270,9 @@ TEST_CASE("the launcher shows a whole match day: its pipeline and highlights") {
         options.highlights = &highlights;
         options.playback = &playback;
         options.fonts = &fonts;
+        options.scenes = &scenes;
+        options.white_balance = &white_balance;
+        options.max_frames = 120; // the backgrounds are read in the background
         gui::run_launcher(session, preview, options);
         CHECK(std::filesystem::file_size(screenshot) > 0);
         if (keep == nullptr) {

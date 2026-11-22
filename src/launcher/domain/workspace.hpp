@@ -37,6 +37,9 @@ struct VideoEntry {
     AnnotationProgress refinement = AnnotationProgress::None; ///< of the detections (refine)
     std::vector<std::string> cuts; ///< Cut videos
     std::string scene; ///< e.g. "A": videos of a match day with the same hall and camera position
+    /// A match recorded in several files: its parts (absolute, recording order); `original` is
+    /// then their part list, read as one video. Empty for a single file.
+    std::vector<std::string> parts;
 
     /// Unique in the library: "<match day>/<video id>".
     [[nodiscard]] std::string key() const { return match_day + "/" + video_id; }

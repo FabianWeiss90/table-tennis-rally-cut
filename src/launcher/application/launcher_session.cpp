@@ -74,8 +74,10 @@ void update_suggestions(std::vector<CommandForm>& forms, const std::vector<Comma
 
 LauncherSession::LauncherSession(WorkspaceScanner& scanner, ProcessRunner& runner,
                                  std::string ttrally, std::filesystem::path project_directory,
-                                 std::filesystem::path library, PreCutStore* pre_cuts)
-    : scanner_(scanner), runner_(runner), pre_cuts_(pre_cuts), ttrally_(std::move(ttrally)),
+                                 std::filesystem::path library, PreCutStore* pre_cuts,
+                                 MatchStore* matches)
+    : scanner_(scanner), runner_(runner), pre_cuts_(pre_cuts), matches_(matches),
+      ttrally_(std::move(ttrally)),
       project_directory_(std::move(project_directory)), library_(std::move(library)),
       workspace_(scanner_.scan(library_)) {
     if (!workspace_.videos.empty()) {
@@ -126,6 +128,71 @@ void LauncherSession::select_match_day(const std::string& match_day) {
 void LauncherSession::rebuild_forms() {
     const VideoEntry none;
     forms_ = forms_for(selected_ ? workspace_.videos[*selected_] : none, workspace_);
+}
+
+void LauncherSession::join_match(const std::vector<std::string>& originals,
+                                 const std::string& id) {
+    if (matches_ == nullptr || running_) {
+        throw std::logic_error("matches cannot be changed now");
+    }
+    if (originals.size() < 2) {
+        throw std::invalid_argument("a match of several files needs at least two videos");
+    }
+    if (!is_valid_match_id(id)) {
+        throw std::invalid_argument(
+            std::format("\"{}\" cannot name a match: use letters, digits, - and _", id));
+    }
+    std::vector<const VideoEntry*> parts;
+    for (const std::string& original : originals) {
+        const auto video = std::ranges::find(workspace_.videos, original, &VideoEntry::original);
+        if (video == workspace_.videos.end() || !video->parts.empty()) {
+            throw std::invalid_argument(original + " is not a single video of the library");
+        }
+        if (!parts.empty() && video->match_day != parts.front()->match_day) {
+            throw std::invalid_argument("the parts of a match belong to one match day");
+        }
+        parts.push_back(&*video);
+    }
+    const VideoEntry& first = *parts.front();
+    for (const VideoEntry& video : workspace_.videos) {
+        const bool own = std::ranges::find(parts, &video) != parts.end();
+        if (video.match_day == first.match_day && video.video_id == id && !own) {
+            throw std::invalid_argument(std::format("{} already names a video", id));
+        }
+    }
+    std::vector<Match> stored = matches_->load(first.work_dir);
+    if (std::ranges::find(stored, id, &Match::id) != stored.end()) {
+        throw std::invalid_argument(std::format("{} already names a match", id));
+    }
+    Match match{id, {}};
+    for (const VideoEntry* part : parts) {
+        match.parts.push_back(std::filesystem::path(part->original).filename().string());
+    }
+    stored.push_back(std::move(match));
+    const std::string day = first.match_day;
+    matches_->save(first.work_dir, stored);
+    rescan_keeping_match_day(day);
+}
+
+void LauncherSession::split_match(const VideoEntry& match) {
+    if (matches_ == nullptr || running_) {
+        throw std::logic_error("matches cannot be changed now");
+    }
+    std::vector<Match> stored = matches_->load(match.work_dir);
+    std::erase_if(stored, [&](const Match& m) { return m.id == match.video_id; });
+    const std::string day = match.match_day;
+    matches_->save(match.work_dir, stored);
+    rescan_keeping_match_day(day);
+}
+
+void LauncherSession::rescan_keeping_match_day(const std::string& day) {
+    const bool whole_day = match_day_ == day;
+    rescan();
+    if (whole_day &&
+        std::ranges::find(workspace_.videos, day, &VideoEntry::match_day) !=
+            workspace_.videos.end()) {
+        select_match_day(day);
+    }
 }
 
 void LauncherSession::rescan() {

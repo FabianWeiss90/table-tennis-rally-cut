@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "launcher/domain/matches.hpp"
 #include "launcher/domain/workspace.hpp"
 
 #include <filesystem>
@@ -42,6 +43,18 @@ class PreCutStore {
     load(const std::filesystem::path& work_dir) = 0;
     virtual void save(const std::filesystem::path& work_dir,
                       const std::map<std::string, std::filesystem::path>& pre_cuts) = 0;
+};
+
+/// Port: the matches of a match day recorded in several files.
+class MatchStore {
+  public:
+    virtual ~MatchStore() = default;
+    /// Empty if none are stored.
+    [[nodiscard]] virtual std::vector<Match> load(const std::filesystem::path& work_dir) = 0;
+    /// Stores the matches and writes each one's part list (the parts lie in the match day folder
+    /// above `work_dir`); lists of matches no longer there are removed. Throws
+    /// std::runtime_error if a part cannot be read or a file cannot be written.
+    virtual void save(const std::filesystem::path& work_dir, const std::vector<Match>& matches) = 0;
 };
 
 /// A program to start.

@@ -80,6 +80,15 @@ Field resolution_field() {
                   "1080p is Full HD. A smaller original is not enlarged");
 }
 
+/// The match day's white balance, applied when cutting.
+Field white_balance_field(const VideoEntry& video) {
+    return advanced(option("--white-balance", "White balance", FieldKind::File,
+                           (std::filesystem::path(video.work_dir) / "white-balance.csv").string(),
+                           "",
+                           "Set in the White balance tab of the whole match day; empty: the "
+                           "colours as recorded. Not applied by a fast cut"));
+}
+
 Field flag(std::string name, std::string label, std::string help) {
     return option(std::move(name), std::move(label), FieldKind::Flag, "", "", std::move(help));
 }
@@ -372,6 +381,7 @@ CommandForm cut_form(const VideoEntry& video) {
                               {"1", "2", "3", "4", "5", "8", "12", "16", "24"}),
              choice("--codec", "Codec", {"h265", "h264"}, "h265",
                     "H.265: smaller at the same quality; H.264: plays everywhere"),
+             white_balance_field(video),
              flag("--fast", "Fast (no re-encoding)",
                   "Seconds instead of minutes, but cuts snap to keyframes (often several s); "
                   "keeps the original resolution"),
@@ -413,6 +423,7 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
                              "missing")),
              advanced(option("--font", "Title font", FieldKind::File, "", "",
                              "TrueType font; empty: a bold system font")),
+             white_balance_field(video),
              advanced(option("--shapes-dir", "Title shapes", FieldKind::Directory,
                              workspace.shapes_dir(), "",
                              "SVG files for title backdrops, shared by all match days")),
@@ -467,27 +478,6 @@ void propose_bitrate(CommandForm& form) {
         bitrate->value = proposed;
     }
     bitrate->initial_value = proposed;
-}
-
-CommandForm merge_form(const std::vector<std::string>& parts, const std::string& output) {
-    CommandForm form{"merge", "Merge",
-                     "Append the parts of a game recorded in several files into one new video, "
-                     "without re-encoding. The parts stay as they are.",
-                     Program::Ttrally, "", "", {"merge"}, {}};
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        form.fields.push_back(positional(std::format("Part {}", i + 1), FieldKind::File,
-                                         parts[i], "In the order they were recorded"));
-    }
-    form.fields.push_back(required(option("--out", "Merged video", FieldKind::File, output, "",
-                                          "A new file; an existing one is never replaced")));
-    return form;
-}
-
-std::string merged_name(const std::string& first_part) {
-    const std::filesystem::path first(first_part);
-    return (first.parent_path() /
-            (first.stem().string() + "-merged" + first.extension().string()))
-        .string();
 }
 
 std::vector<CommandForm> forms_for(const VideoEntry& video, const WorkspaceSnapshot& workspace) {

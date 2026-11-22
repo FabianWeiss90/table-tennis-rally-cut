@@ -7,6 +7,7 @@
 #pragma once
 
 #include "cutting/application/video_cutter.hpp"
+#include "cutting/domain/white_balance.hpp"
 #include "media/infrastructure/ffmpeg_api.hpp"
 
 extern "C" {
@@ -96,7 +97,8 @@ class VideoEncoder {
     /// Converts a frame (any software pixel format and size; scaled to the encoder's) to what
     /// the encoder takes and sends it with the given pts (in the encoder's time base: 1 / frame
     /// rate).
-    void send(const AVFrame& frame, std::int64_t pts);
+    /// With `gains`, the white balance is corrected after the conversion.
+    void send(const AVFrame& frame, std::int64_t pts, RgbGains gains = {});
     /// Writes the packets the encoder has ready; with flush, also the delayed ones.
     void drain(AVStream* stream, Output& output, bool flush);
 
@@ -129,6 +131,13 @@ inline constexpr int kEncoderHangExitCode = 3;
 [[nodiscard]] VideoEncoder open_video_encoder(const CutOptions& options, const VideoFormat& format,
                                               const std::filesystem::path& output,
                                               ProgressReporter& progress);
+
+/// Corrects the white balance of an 8-bit YUV 4:2:0 frame (planar or NV12) in place; other
+/// formats are left as they are. `bt709` and `full_range` describe its YUV values.
+void apply_white_balance(AVFrame& frame, RgbGains gains, YuvFormat format);
+
+/// How the YUV values of a frame relate to RGB (BT.601 for standard definition, else BT.709).
+[[nodiscard]] YuvFormat yuv_format_of(const AVFrame& frame);
 
 /// AAC audio, fed through a FIFO because the encoder takes fixed-size frames.
 class AudioEncoder {

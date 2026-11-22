@@ -375,8 +375,13 @@ std::optional<VideoEncoder> VideoEncoder::open(const std::string& name, const Vi
     return encoder;
 }
 
-void VideoEncoder::send(const AVFrame& frame, std::int64_t pts) {
+void VideoEncoder::send(const AVFrame& frame, std::int64_t pts, RgbGains gains) {
     auto converted = convert(frame);
+    if (!gains.identity()) {
+        YuvFormat format = yuv_format_of(frame);
+        format.full_range = context_->color_range == AVCOL_RANGE_JPEG;
+        apply_white_balance(*converted, gains, format);
+    }
     if (frames_) {
         auto uploaded = ff::make_frame();
         ff::check(av_hwframe_get_buffer(frames_.get(), uploaded.get(), 0), "GPU frame");
@@ -450,6 +455,66 @@ ff::FramePtr VideoEncoder::convert(const AVFrame& decoded) {
     ff::check(av_frame_copy_props(converted.get(), &decoded), "frame properties");
     converted->color_range = context_->color_range;
     return converted;
+}
+
+YuvFormat yuv_format_of(const AVFrame& frame) {
+    constexpr int kStandardDefinition = 576; ///< up to this height BT.601 is assumed
+    const bool bt601 = frame.colorspace == AVCOL_SPC_BT470BG ||
+                       frame.colorspace == AVCOL_SPC_SMPTE170M ||
+                       (frame.colorspace == AVCOL_SPC_UNSPECIFIED &&
+                        frame.height <= kStandardDefinition);
+    return {.bt709 = !bt601,
+            .full_range = frame.color_range == AVCOL_RANGE_JPEG ||
+                          frame.format == AV_PIX_FMT_YUVJ420P};
+}
+
+void apply_white_balance(AVFrame& frame, RgbGains gains, YuvFormat format) {
+    const bool nv12 = frame.format == AV_PIX_FMT_NV12;
+    const bool planar = frame.format == AV_PIX_FMT_YUV420P || frame.format == AV_PIX_FMT_YUVJ420P;
+    if (gains.identity() || (!nv12 && !planar)) {
+        return;
+    }
+    ff::check(av_frame_make_writable(&frame), "frame");
+    const std::array<double, 9> m = yuv_matrix(gains, format);
+    // In 1/65536: the matrix on (Y - black, U - 128, V - 128)
+    constexpr double kOne = 65536.0;
+    std::array<std::int64_t, 9> k{};
+    for (std::size_t i = 0; i < k.size(); ++i) {
+        k[i] = std::llround(m[i] * kOne);
+    }
+    const int black = format.full_range ? 0 : 16;
+    constexpr int kZero = 128;
+    const auto clamp = [](std::int64_t value) {
+        return static_cast<std::uint8_t>(std::clamp<std::int64_t>(value, 0, 255));
+    };
+    for (int cy = 0; cy < frame.height / 2; ++cy) {
+        const auto luma_row = [&](int y) {
+            return frame.data[0] + static_cast<std::ptrdiff_t>(y) * frame.linesize[0];
+        };
+        std::uint8_t* rows[2] = {luma_row(2 * cy), luma_row(2 * cy + 1)};
+        std::uint8_t* u_row = frame.data[1] + static_cast<std::ptrdiff_t>(cy) * frame.linesize[1];
+        std::uint8_t* v_row =
+            nv12 ? u_row + 1 : frame.data[2] + static_cast<std::ptrdiff_t>(cy) * frame.linesize[2];
+        const int step = nv12 ? 2 : 1;
+        for (int cx = 0; cx < frame.width / 2; ++cx) {
+            std::uint8_t& u_value = u_row[cx * step];
+            std::uint8_t& v_value = v_row[cx * step];
+            const std::int64_t u = u_value - kZero;
+            const std::int64_t v = v_value - kZero;
+            std::int64_t luma_sum = 0;
+            for (std::uint8_t* row : rows) {
+                for (int dx = 0; dx < 2; ++dx) {
+                    std::uint8_t& y_value = row[2 * cx + dx];
+                    const std::int64_t y = y_value - black;
+                    luma_sum += y;
+                    y_value = clamp(((k[0] * y + k[1] * u + k[2] * v) >> 16) + black);
+                }
+            }
+            const std::int64_t y = luma_sum / 4;
+            u_value = clamp(((k[3] * y + k[4] * u + k[5] * v) >> 16) + kZero);
+            v_value = clamp(((k[6] * y + k[7] * u + k[8] * v) >> 16) + kZero);
+        }
+    }
 }
 
 VideoEncoder open_video_encoder(const CutOptions& options, const VideoFormat& format,

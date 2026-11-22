@@ -2,6 +2,7 @@
 
 #include "highlights/infrastructure/ffmpeg_highlight_renderer.hpp"
 
+#include "cutting/infrastructure/csv_white_balance_store.hpp"
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 #include "highlights/infrastructure/svg_shape.hpp"
 #include "highlights/infrastructure/title_composer.hpp"
@@ -255,7 +256,7 @@ class ClipReader {
         const auto target = static_cast<std::int64_t>(
             std::floor(clip_.start_s / av_q2d(video_stream_->time_base)));
         // A failed seek (e.g. a file without index) reads from the start, which is only slower
-        av_seek_frame(format_.get(), video_index_, target, AVSEEK_FLAG_BACKWARD);
+        ff::seek_before(format_.get(), *video_stream_, target);
     }
 
     void decode(AVCodecContext* decoder, const AVPacket* packet, bool video) {
@@ -527,8 +528,26 @@ VideoFormat output_format(const Clip& first) {
 
 cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesystem::path& output,
                                 const RenderOptions& options, ProgressReporter& progress) {
+    std::map<std::filesystem::path, std::vector<cutting::ColorSpan>> spans;
+    const auto color_of = [&](const std::filesystem::path& video)
+        -> const std::vector<cutting::ColorSpan>& {
+        auto found = spans.find(video);
+        if (found == spans.end()) {
+            found = spans
+                        .emplace(video,
+                                 cutting::color_spans(video, options.encoding.white_balance))
+                        .first;
+        }
+        return found->second;
+    };
     const VideoFormat format =
         cutting::limited_to(output_format(clips.front()), options.encoding.max_height);
+    constexpr int kStandardDefinition = 576; ///< up to this height BT.601 is assumed
+    const bool high_definition = format.height > kStandardDefinition;
+    const cutting::YuvFormat yuv{
+        .bt709 = format.colorspace == AVCOL_SPC_BT709 ||
+                 (format.colorspace == AVCOL_SPC_UNSPECIFIED && high_definition),
+        .full_range = format.full_range};
     const std::vector<ClipTiming> timing =
         plan_timing(clips, format.frame_rate, std::max(0.0, options.crossfade_s));
     HighlightWriter writer(output, format, options, progress);
@@ -552,7 +571,12 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
             channel.assign(static_cast<std::size_t>(end_sample - first_sample), 0.0F);
         }
         ClipReader reader(clip, format, t.frames);
+        const std::vector<cutting::ColorSpan>& color = color_of(clip.video);
         const ClipReader::PictureConsumer consume = [&](std::int64_t j, AVFrame& picture) {
+            // The white balance first: the titles keep their colours
+            const double source_s =
+                clip.start_s + static_cast<double>(j) / av_q2d(format.frame_rate);
+            cutting::apply_white_balance(picture, cutting::gains_at(color, source_s), yuv);
             for (const auto& [title, position] : painted) {
                 paint_title({.y = picture.data[0], .u = picture.data[1], .v = picture.data[2],
                              .y_stride = picture.linesize[0], .uv_stride = picture.linesize[1],

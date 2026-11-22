@@ -2,6 +2,7 @@
 
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
 
+#include "cutting/infrastructure/csv_white_balance_store.hpp"
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 #include "media/application/media_error.hpp"
 
@@ -89,7 +90,11 @@ class ExactCut {
     ExactCut(const std::filesystem::path& input, std::span<const CutSection> sections,
              const std::filesystem::path& output, const CutOptions& options,
              ProgressReporter& progress)
-        : format_(ff::open_input(input)), map_(sections), output_(output), progress_(progress) {
+        : format_(ff::open_input(input)), map_(sections), output_(output), progress_(progress),
+          color_(color_spans(input, options.white_balance)) {
+        if (!color_.empty()) {
+            progress.report("White balance: corrected as chosen for the match day");
+        }
         video_index_ = best_stream(format_.get(), AVMEDIA_TYPE_VIDEO);
         if (video_index_ < 0) {
             throw MediaError(input.string() + " has no video stream");
@@ -199,7 +204,7 @@ class ExactCut {
         const std::int64_t pts = std::max(timestamp(*out, video_encoder_->context()->time_base),
                                           last_video_pts_ + 1);
         last_video_pts_ = pts;
-        video_encoder_->send(frame, pts);
+        video_encoder_->send(frame, pts, gains_at(color_, t));
         video_encoder_->drain(video_out_, output_, false);
     }
 
@@ -236,6 +241,7 @@ class ExactCut {
     SectionMap map_;
     Output output_;
     ProgressReporter& progress_;
+    std::vector<ColorSpan> color_; ///< white balance on the input's timeline
     int video_index_ = -1;
     int audio_index_ = -1;
     AVStream* video_stream_ = nullptr;

@@ -108,9 +108,7 @@ bool VideoStream::try_hardware(DecodeBackend candidate) {
 }
 
 void VideoStream::seek(std::int64_t timestamp) {
-    check(avformat_seek_file(format_.get(), stream_index_, std::numeric_limits<std::int64_t>::min(),
-                             timestamp, timestamp, 0),
-          "seek");
+    check(seek_before(format_.get(), *format_->streams[stream_index_], timestamp), "seek");
     avcodec_flush_buffers(decoder_.get());
     flushed_ = false;
 }

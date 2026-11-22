@@ -43,11 +43,4 @@ std::string format_elapsed(double seconds) {
                        total % kMinute);
 }
 
-std::string format_size(double bytes) {
-    constexpr double kMegabyte = 1e6;
-    constexpr double kGigabyte = 1e9;
-    return bytes >= kGigabyte ? std::format("{:.1f} GB", bytes / kGigabyte)
-                              : std::format("{:.0f} MB", bytes / kMegabyte);
-}
-
 } // namespace ttrally::io

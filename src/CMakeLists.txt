@@ -67,6 +67,7 @@ ttrally_layer(ttrally_media_infrastructure
         media/infrastructure/ffmpeg_media_probe.cpp
         media/infrastructure/ffmpeg_media_reader.cpp
         media/infrastructure/ffmpeg_video_stream.cpp
+        media/infrastructure/part_list.cpp
     DEPENDS ttrally_media_application ttrally_shared_io
     PRIVATE_DEPENDS ttrally_ffmpeg)
 
@@ -149,23 +150,23 @@ ttrally_layer(ttrally_detection_infrastructure
 # Cutting context (phase 8: the video cut down to its rallies)
 ttrally_layer(ttrally_cutting_domain
     SOURCES cutting/domain/cut_plan.cpp cutting/domain/resolution.cpp
+        cutting/domain/white_balance.cpp
     DEPENDS ttrally_shared_kernel)
 
 ttrally_layer(ttrally_cutting_application
     SOURCES
         cutting/application/cut_video.cpp
-        cutting/application/merge_videos.cpp
         cutting/application/section_planning.cpp
     DEPENDS ttrally_cutting_domain ttrally_media_application ttrally_annotation_application)
 
 ttrally_layer(ttrally_cutting_infrastructure
     SOURCES
+        cutting/infrastructure/csv_white_balance_store.cpp
         cutting/infrastructure/cut_list_choice.cpp
         cutting/infrastructure/encoder_probe.cpp
         cutting/infrastructure/ffmpeg_encoding.cpp
         cutting/infrastructure/parameter_sets.cpp
         cutting/infrastructure/ffmpeg_video_cutter.cpp
-        cutting/infrastructure/ffmpeg_video_joiner.cpp
         cutting/infrastructure/mp4_repair.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure
         ttrally_annotation_infrastructure ttrally_ffmpeg)
@@ -207,6 +208,7 @@ ttrally_layer(ttrally_launcher_domain
         launcher/domain/batch.cpp
         launcher/domain/command_form.cpp
         launcher/domain/forms.cpp
+        launcher/domain/matches.cpp
         launcher/domain/scenes.cpp
         launcher/domain/video_id.cpp)
 
@@ -218,6 +220,7 @@ ttrally_layer(ttrally_launcher_application
 
 ttrally_layer(ttrally_launcher_infrastructure
     SOURCES
+        launcher/infrastructure/csv_match_store.cpp
         launcher/infrastructure/csv_pre_cut_store.cpp
         launcher/infrastructure/csv_scene_store.cpp
         launcher/infrastructure/ffmpeg_video_preview.cpp
@@ -277,7 +280,8 @@ if(TTRALLY_BUILD_GUI)
         gui/gui_context.cpp
         gui/highlights_panel.cpp
         gui/launcher_app.cpp
-        gui/timeline_view.cpp)
+        gui/timeline_view.cpp
+        gui/white_balance_panel.cpp)
     target_include_directories(ttrally_gui PUBLIC ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(ttrally_gui
         PUBLIC ttrally_annotation_application ttrally_media_application
@@ -292,7 +296,6 @@ add_executable(ttrally
     cli/cut_command.cpp
     cli/devices_command.cpp
     cli/highlights_command.cpp
-    cli/merge_command.cpp
     cli/main.cpp
     cli/repair_mp4_command.cpp)
 target_link_libraries(ttrally PRIVATE

@@ -109,6 +109,9 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
                          "H.264 with OpenH264 first)")
         ->capture_default_str();
     add_resolution_option(*command_, resolution_);
+    command_->add_option("--white-balance", white_balance_,
+                         "White balance of the match day (its white-balance.csv, set in the "
+                         "launcher's White balance tab); default: colours as recorded");
     command_->add_option("--bitrate", bitrate_mbps_,
                          "Video bit rate in Mbit/s, at least 1 (default: as cut)")
         ->check(CLI::Range(kMinBitrateMbps, kMaxBitrateMbps));
@@ -149,6 +152,7 @@ int HighlightsCommand::run() {
                                                            : cutting::VideoCodec::H265,
                                  .encoder = encoder_,
                                  .bitrate_mbps = bitrate_mbps_,
+                                 .white_balance = white_balance_,
                                  .max_height = max_height_of(resolution_)},
                     .font = font_,
                     .shapes = shapes_dir_},

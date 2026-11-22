@@ -20,7 +20,4 @@ namespace ttrally::io {
 /// How long something took, rounded to whole seconds, as hh:mm:ss: "00:03:23", "01:02:05".
 [[nodiscard]] std::string format_elapsed(double seconds);
 
-/// A file size in GB (from 1 GB) or MB, e.g. "8.4 GB", "350 MB".
-[[nodiscard]] std::string format_size(double bytes);
-
 } // namespace ttrally::io

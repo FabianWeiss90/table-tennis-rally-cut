@@ -3,10 +3,12 @@
 #include "cli/gui_command.hpp"
 
 #include "gui/launcher_app.hpp"
+#include "cutting/infrastructure/csv_white_balance_store.hpp"
 #include "highlights/infrastructure/cut_list_rally_source.hpp"
 #include "highlights/infrastructure/ffmpeg_playback_source.hpp"
 #include "highlights/infrastructure/system_title_fonts.hpp"
 #include "launcher/application/launcher_session.hpp"
+#include "launcher/infrastructure/csv_match_store.hpp"
 #include "launcher/infrastructure/csv_pre_cut_store.hpp"
 #include "launcher/infrastructure/csv_scene_store.hpp"
 #include "launcher/infrastructure/ffmpeg_video_preview.hpp"
@@ -38,12 +40,16 @@ int GuiCommand::run() {
     launcher::LibraryScanner scanner(project_);
     launcher::SubprocessRunner runner;
     launcher::CsvPreCutStore pre_cuts;
+    launcher::CsvMatchStore matches;
     launcher::LauncherSession session(scanner, runner, launcher::current_executable().string(),
-                                      std::filesystem::absolute(project_), library, &pre_cuts);
+                                      std::filesystem::absolute(project_), library, &pre_cuts,
+                                      &matches);
     gui::LauncherOptions options;
     options.project_directory = project_;
     options.settings = &settings;
     launcher::CsvSceneStore scenes;
+    cutting::CsvWhiteBalanceStore white_balance;
+    options.white_balance = &white_balance;
     options.scenes = &scenes;
     highlights::FileMatchDayHighlights highlights;
     options.highlights = &highlights;

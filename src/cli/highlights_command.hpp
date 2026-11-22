@@ -34,6 +34,7 @@ class HighlightsCommand {
     std::string encoder_ = "auto";
     double bitrate_mbps_ = 0.0;
     std::string resolution_ = "original";
+    std::filesystem::path white_balance_;
 };
 
 } // namespace ttrally::cli

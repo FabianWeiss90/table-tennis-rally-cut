@@ -87,8 +87,19 @@ void check(int code, std::string_view what);
 /// UTF-8 representation of a path, as expected by FFmpeg on all platforms.
 [[nodiscard]] std::string path_to_utf8(const std::filesystem::path& path);
 
-/// Opens a media file and reads its stream information. Throws MediaError on failure.
+/// Extension of a part list: a match recorded in several files, read as one continuous video
+/// (FFmpeg's concat format, the parts named relative to the list).
+inline constexpr std::string_view kPartListExtension = ".ffconcat";
+
+/// Opens a media file (or a part list) and reads its stream information. Throws MediaError on
+/// failure.
 [[nodiscard]] FormatPtr open_input(const std::filesystem::path& path);
+
+/// Seeks to the last keyframe at or before `timestamp` (in the stream's time base); returns the
+/// FFmpeg result. Seeks on the whole file in microseconds, rounded down: a part list (concat)
+/// refuses most stream timestamps that are not whole microseconds, and starting a little earlier
+/// only means decoding a frame more.
+int seek_before(AVFormatContext* format, const AVStream& stream, std::int64_t timestamp);
 
 [[nodiscard]] FramePtr make_frame();
 [[nodiscard]] PacketPtr make_packet();

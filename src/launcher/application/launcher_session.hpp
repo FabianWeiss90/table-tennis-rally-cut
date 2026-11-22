@@ -24,7 +24,7 @@ class LauncherSession {
     /// video chosen in the align form is kept in `pre_cuts` (if given) for the video.
     LauncherSession(WorkspaceScanner& scanner, ProcessRunner& runner, std::string ttrally,
                     std::filesystem::path project_directory, std::filesystem::path library,
-                    PreCutStore* pre_cuts = nullptr);
+                    PreCutStore* pre_cuts = nullptr, MatchStore* matches = nullptr);
 
     [[nodiscard]] const WorkspaceSnapshot& workspace() const noexcept { return workspace_; }
     [[nodiscard]] const std::filesystem::path& library() const noexcept { return library_; }
@@ -46,6 +46,16 @@ class LauncherSession {
     /// To be called when the user has changed a field of one of the forms: keeps the pre-cut
     /// video chosen in the align form (an empty value forgets it).
     void field_edited(const CommandForm& form, const Field& field);
+
+    /// Makes videos of one match day (originals, in recording order) one match named `id` and
+    /// rescans; the results the videos had stay with them, unused. Throws std::invalid_argument
+    /// (fewer than two, an id that is invalid or taken, videos of other match days or already
+    /// part of a match), std::logic_error (no match store, a command running) or
+    /// std::runtime_error (a part cannot be read, the list cannot be written).
+    void join_match(const std::vector<std::string>& originals, const std::string& id);
+    /// Splits a match (a video with parts) into its parts again and rescans; its own results
+    /// stay, unused, until it is joined again under its id.
+    void split_match(const VideoEntry& match);
 
     /// Scans the workspace again; keeps the selection and the form values, updates the
     /// suggestions.
@@ -101,12 +111,16 @@ class LauncherSession {
     [[nodiscard]] std::optional<Invocation> prepare(const QueuedCommand& command,
                                                     std::string& skipped) const;
     void start_batch(std::string name, std::string header);
+    /// Rescans; the match day stays chosen as a whole if it was (its first video may have
+    /// changed).
+    void rescan_keeping_match_day(const std::string& day);
     /// Removes the queued commands of a video whose command failed.
     void drop_rest_of(const std::string& original);
 
     WorkspaceScanner& scanner_;
     ProcessRunner& runner_;
     PreCutStore* pre_cuts_;
+    MatchStore* matches_;
     std::string ttrally_;
     std::filesystem::path project_directory_;
     std::filesystem::path library_;

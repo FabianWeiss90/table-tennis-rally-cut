@@ -3,8 +3,8 @@
 // Cut planning and the CutVideo use case with in-memory fakes.
 
 #include "cutting/application/cut_video.hpp"
-#include "cutting/application/merge_videos.hpp"
 #include "cutting/domain/resolution.hpp"
+#include "cutting/domain/white_balance.hpp"
 #include "support/fake_media.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -158,43 +158,62 @@ TEST_CASE("a cut list without rallies or with frames beyond the video is refused
 
 namespace {
 
-/// Remembers what it was asked to join.
-class RecordingJoiner final : public ttrally::cutting::VideoJoiner {
-  public:
-    double join(std::span<const std::filesystem::path> parts, const std::filesystem::path& output,
-                ttrally::ProgressReporter& /*progress*/) override {
-        joined.assign(parts.begin(), parts.end());
-        written = output;
-        return 12.5;
-    }
-    std::vector<std::filesystem::path> joined;
-    std::filesystem::path written;
-};
+/// The YUV values (limited range, BT.709) of a colour, by inverting rgb_of numerically.
+std::array<double, 3> yuv_of(RgbColor color) {
+    const double kr = 0.2126;
+    const double kb = 0.0722;
+    const double y = kr * color.red + (1 - kr - kb) * color.green + kb * color.blue;
+    const double u = (color.blue - y) / (2 * (1 - kb));
+    const double v = (color.red - y) / (2 * (1 - kr));
+    return {16 + y * 219 / 255, 128 + u * 224 / 255, 128 + v * 224 / 255};
+}
 
 } // namespace
 
-TEST_CASE("merging appends the parts in their order into a new video") {
-    RecordingJoiner joiner;
-    ttrally::SilentProgressReporter progress;
-    ttrally::cutting::MergeVideos merge(joiner, progress);
-    const auto result = merge.execute({.parts = {"day/GX020001.MP4", "day/GX010001.MP4"},
-                                       .output = "day/game.mp4"});
-    CHECK(result.parts == 2);
-    CHECK(result.duration_s == 12.5);
-    CHECK(joiner.joined ==
-          std::vector<std::filesystem::path>{"day/GX020001.MP4", "day/GX010001.MP4"});
-    CHECK(joiner.written == "day/game.mp4");
+TEST_CASE("white balance gains make a surface neutral or like another video, at its brightness") {
+    const RgbColor white = rgb_of(235, 128, 128);
+    CHECK(white.red == Approx(255.0));
+    CHECK(white.green == Approx(255.0));
+    CHECK(white.blue == Approx(255.0));
+    const RgbColor warm{200, 180, 150};
+    const RgbGains neutral = neutral_gains(warm);
+    const RgbColor fixed{warm.red * neutral.red, warm.green * neutral.green,
+                         warm.blue * neutral.blue};
+    CHECK(fixed.red == Approx(fixed.green));
+    CHECK(fixed.blue == Approx(fixed.green));
+    CHECK(luma_of(fixed) == Approx(luma_of(warm)));
+    const RgbColor cool{150, 170, 200};
+    const RgbGains like = matching_gains(warm, cool);
+    const RgbColor matched{warm.red * like.red, warm.green * like.green, warm.blue * like.blue};
+    CHECK(matched.red / matched.green == Approx(cool.red / cool.green));
+    CHECK(matched.blue / matched.green == Approx(cool.blue / cool.green));
+    CHECK(luma_of(matched) == Approx(luma_of(warm)));
+    CHECK(RgbGains{}.identity());
+    CHECK_FALSE(neutral.identity());
 }
 
-TEST_CASE("merging refuses a single part, a part twice and replacing a part") {
-    RecordingJoiner joiner;
-    ttrally::SilentProgressReporter progress;
-    ttrally::cutting::MergeVideos merge(joiner, progress);
-    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4"}, .output = "b.mp4"}),
-                    std::invalid_argument);
-    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4", "./a.mp4"}, .output = "b.mp4"}),
-                    std::invalid_argument);
-    CHECK_THROWS_AS(merge.execute({.parts = {"a.mp4", "b.mp4"}, .output = "dir/../b.mp4"}),
-                    std::invalid_argument);
-    CHECK(joiner.joined.empty());
+TEST_CASE("the white balance applies to YUV values as a matrix") {
+    const RgbGains gains{1.1, 0.95, 0.9};
+    const RgbColor color{120, 140, 160};
+    const auto matrix = yuv_matrix(gains);
+    const auto before = yuv_of(color);
+    const auto expected =
+        yuv_of({color.red * gains.red, color.green * gains.green, color.blue * gains.blue});
+    const std::array<double, 3> centred{before[0] - 16, before[1] - 128, before[2] - 128};
+    for (int row = 0; row < 3; ++row) {
+        double value = 0;
+        for (int k = 0; k < 3; ++k) {
+            value += matrix[row * 3 + k] * centred[k];
+        }
+        INFO("row " << row);
+        CHECK(value + (row == 0 ? 16.0 : 128.0) == Approx(expected[row]).margin(1e-6));
+    }
+    const auto identity = yuv_matrix({});
+    CHECK(identity[0] == Approx(1.0));
+    CHECK(identity[4] == Approx(1.0));
+    CHECK(identity[1] == Approx(0.0).margin(1e-12));
+    const std::vector<ColorSpan> spans{{0.0, 10.0, gains}, {10.0, 20.0, {}}};
+    CHECK(gains_at(spans, 5.0) == gains);
+    CHECK(gains_at(spans, 15.0).identity());
+    CHECK(gains_at(spans, 25.0).identity());
 }

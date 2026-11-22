@@ -5,6 +5,7 @@
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
 #include "gui/highlights_panel.hpp"
+#include "gui/white_balance_panel.hpp"
 #include "launcher/domain/batch.hpp"
 #include "launcher/domain/scenes.hpp"
 #include "shared/io/formatting.hpp"
@@ -66,7 +67,8 @@ constexpr const char* kHighlightsForm = "highlights";
 constexpr const char* kVideoIdFlag = "--video-id";
 constexpr const char* kMatchDayFlag = "--match-day";
 constexpr const char* kPipelineTab = "pipeline"; ///< for LauncherOptions::first_tab
-constexpr const char* kMergeTab = "merge";       ///< for LauncherOptions::first_tab
+constexpr const char* kMatchesTab = "matches";   ///< for LauncherOptions::first_tab
+constexpr const char* kWhiteBalanceTab = "white-balance"; ///< for LauncherOptions::first_tab
 constexpr const char* kTrainForm = "train"; ///< the same for a video and a whole match day
 constexpr double kDefaultCrossfade = 0.5;   ///< of `ttrally highlights`
 
@@ -261,6 +263,10 @@ class LauncherApp {
             options.fonts != nullptr) {
             highlights_ = std::make_unique<HighlightsPanel>(gui, *options.highlights,
                                                             *options.playback, *options.fonts);
+        }
+        if (options.white_balance != nullptr && scenes_ != nullptr) {
+            white_balance_ =
+                std::make_unique<WhiteBalancePanel>(gui, preview, *options.white_balance);
         }
         restore_last_video();
     }
@@ -467,6 +473,10 @@ class LauncherApp {
                     session_.select_video(i);
                 }
             }
+            for (const std::string& part : video.parts) {
+                ImGui::TextColored(kMuted, "      + %s",
+                                   std::filesystem::path(part).filename().string().c_str());
+            }
             draw_status(video);
             ImGui::PopID();
             ImGui::Spacing();
@@ -614,11 +624,11 @@ class LauncherApp {
         }
         bool highlights_shown = false;
         const std::optional<std::string>& day = session_.selected_match_day();
-        if (day && ImGui::BeginTabItem("Merge", nullptr,
-                                       first_tab_ == kMergeTab ? ImGuiTabItemFlags_SetSelected
-                                                               : 0)) {
+        if (day && ImGui::BeginTabItem("Matches", nullptr,
+                                       first_tab_ == kMatchesTab ? ImGuiTabItemFlags_SetSelected
+                                                                 : 0)) {
             ImGui::BeginChild("##tab", {0, 0});
-            draw_merge(*day);
+            draw_matches(*day);
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
@@ -627,6 +637,16 @@ class LauncherApp {
                                                                   : 0)) {
             ImGui::BeginChild("##tab", {0, 0});
             draw_pipeline(*day);
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (day && white_balance_ &&
+            ImGui::BeginTabItem("White balance", nullptr,
+                                first_tab_ == kWhiteBalanceTab ? ImGuiTabItemFlags_SetSelected
+                                                               : 0)) {
+            ImGui::BeginChild("##tab", {0, 0});
+            draw_scene_detection(*day);
+            white_balance_->draw(session_.workspace(), *day);
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
@@ -1296,97 +1316,148 @@ class LauncherApp {
         ImGui::EndDisabled();
     }
 
-    /// Parts of a game recorded in several files, ticked among the match day's videos, put in
-    /// order and appended into a new video.
-    void draw_merge(const std::string& day) {
-        if (merge_day_ != day) {
-            merge_day_ = day;
-            merge_parts_.clear();
-            merge_output_.clear();
-            merge_output_edited_ = false;
+    /// Matches recorded in several files: those of the match day, each with its parts and
+    /// "Split again", then videos ticked, put in order and joined into a new one.
+    void draw_matches(const std::string& day) {
+        if (match_day_ != day) {
+            match_day_ = day;
+            match_parts_.clear();
+            match_id_.clear();
+            match_id_edited_ = false;
         }
-        ImGui::TextWrapped("Append the parts of a game recorded in several files (e.g. a camera "
-                           "that starts a new file every few gigabytes) into one new video, "
-                           "without re-encoding: takes about as long as copying the files. The "
-                           "parts stay where they are and stay in the list; move them out of "
-                           "the match day folder yourself once the merged video is checked.");
-        ImGui::Spacing();
+        ImGui::TextWrapped("A match recorded in several files (e.g. a camera that starts a new "
+                           "file every few gigabytes) is treated as one video by every step: "
+                           "one entry in the list, one continuous timeline for align, labels, "
+                           "features, detections, cuts and highlights. Nothing is copied; the "
+                           "files stay as they are. Upload each part to Liimba on its own: "
+                           "align uses the parts' pre-cuts one after another.");
         const auto& videos = session_.workspace().videos;
-        std::erase_if(merge_parts_, [&](const std::string& part) {
+        std::erase_if(match_parts_, [&](const std::string& part) {
             return std::ranges::find(videos, part, &VideoEntry::original) == videos.end();
         });
-        ImGui::SeparatorText("Parts");
+        ImGui::SeparatorText("Matches of several files");
+        bool any = false;
+        for (const VideoEntry& video : videos) {
+            if (video.match_day != day || video.parts.empty()) {
+                continue;
+            }
+            any = true;
+            ImGui::PushID(video.original.c_str());
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(video.video_id.c_str());
+            ImGui::SameLine();
+            ImGui::BeginDisabled(session_.running());
+            if (ImGui::SmallButton("Split again")) {
+                change_matches([&] { session_.split_match(video); });
+                ImGui::EndDisabled();
+                ImGui::PopID();
+                return; // the list changed
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("The parts become single videos again; the match's results "
+                                  "stay on disk, unused");
+            for (std::size_t i = 0; i < video.parts.size(); ++i) {
+                const std::string name = std::filesystem::path(video.parts[i]).filename().string();
+                ImGui::TextColored(kMuted, "   %zu. %s", i + 1, name.c_str());
+            }
+            ImGui::PopID();
+        }
+        if (!any) {
+            ImGui::TextColored(kMuted, "None yet");
+        }
+        ImGui::SeparatorText("Join videos into one match");
         ImGui::BeginDisabled(session_.running());
         for (const VideoEntry& video : videos) {
-            if (video.match_day != day) {
+            if (video.match_day != day || !video.parts.empty()) {
                 continue;
             }
             ImGui::PushID(video.original.c_str());
-            bool ticked = std::ranges::find(merge_parts_, video.original) != merge_parts_.end();
+            bool ticked = std::ranges::find(match_parts_, video.original) != match_parts_.end();
             if (ImGui::Checkbox(std::filesystem::path(video.original).filename().string().c_str(),
                                 &ticked)) {
                 if (ticked) {
-                    // In the list's order (by file name), which is usually the recording order
+                    // In the list's order (by name), which is usually the recording order
                     const auto later = std::ranges::find_if(
-                        merge_parts_, [&](const std::string& p) { return p > video.original; });
-                    merge_parts_.insert(later, video.original);
+                        match_parts_, [&](const std::string& p) { return p > video.original; });
+                    match_parts_.insert(later, video.original);
                 } else {
-                    std::erase(merge_parts_, video.original);
+                    std::erase(match_parts_, video.original);
                 }
             }
             ImGui::SetItemTooltip("%s", video.original.c_str());
             ImGui::PopID();
         }
         ImGui::EndDisabled();
-        if (!merge_parts_.empty()) {
-            draw_merge_order();
+        if (!match_parts_.empty()) {
+            draw_match_order();
         }
-        if (!merge_output_edited_) {
-            merge_output_ = merge_parts_.empty() ? std::string()
-                                                 : launcher::merged_name(merge_parts_.front());
+        if (!match_id_edited_) {
+            match_id_ = proposed_match_id(day);
         }
-        ImGui::SeparatorText("Merged video");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (input_text("##merged", merge_output_)) {
-            merge_output_edited_ = !merge_output_.empty();
-        }
-        ImGui::SetItemTooltip("A new file (an existing one is never replaced); proposed next to "
-                              "the first part. The video id is suggested from its name");
-        const CommandForm form = launcher::merge_form(merge_parts_, merge_output_);
-        const launcher::Invocation call = session_.invocation(form);
-        std::string line = launcher::command_line(call.program, call.arguments);
-        ImGui::TextColored(kMuted, "Command line:");
-        ImGui::SetNextItemWidth(-70);
-        input_text("##command", line, ImGuiInputTextFlags_ReadOnly);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Name (video id)");
         ImGui::SameLine();
-        if (ImGui::Button("Copy")) {
-            ImGui::SetClipboardText(line.c_str());
+        ImGui::SetNextItemWidth(320);
+        if (input_text("##match_id", match_id_)) {
+            match_id_edited_ = !match_id_.empty();
         }
-        ImGui::BeginDisabled(session_.running() || merge_parts_.size() < 2 ||
-                             merge_output_.empty());
-        if (ImGui::Button(std::format("Merge {} parts", merge_parts_.size()).c_str(), {160, 0})) {
-            try {
-                session_.run(form);
-                error_.clear();
-            } catch (const std::exception& error) {
-                error_ = error.what();
-            }
+        ImGui::SetItemTooltip("Proposed from what the parts' names have in common; letters, "
+                              "digits, - and _");
+        ImGui::BeginDisabled(session_.running() || match_parts_.size() < 2 || match_id_.empty());
+        const std::string join = std::format("Join {} videos as one match", match_parts_.size());
+        if (ImGui::Button(join.c_str())) {
+            change_matches([&] { session_.join_match(match_parts_, match_id_); });
+            match_parts_.clear();
+            match_id_edited_ = false;
         }
         ImGui::EndDisabled();
-        if (merge_parts_.size() < 2) {
+        if (match_parts_.size() < 2) {
             ImGui::SameLine();
-            ImGui::TextColored(kMuted, "Tick at least two parts");
+            ImGui::TextColored(kMuted, "Tick at least two videos");
         }
-        draw_cancel_and_error();
+        if (!error_.empty()) {
+            ImGui::TextColored(kError, "%s", error_.c_str());
+        }
     }
 
-    /// The ticked parts in the order they are appended, each movable up and down.
-    void draw_merge_order() {
+    template <typename Change> void change_matches(Change change) {
+        try {
+            change();
+            error_.clear();
+        } catch (const std::exception& error) {
+            error_ = error.what();
+        }
+    }
+
+    /// The id proposed for the ticked videos.
+    [[nodiscard]] std::string proposed_match_id(const std::string& day) const {
+        std::vector<std::string> ids;
+        std::vector<std::string> taken;
+        for (const VideoEntry& video : session_.workspace().videos) {
+            if (video.match_day != day) {
+                continue;
+            }
+            if (std::ranges::find(match_parts_, video.original) == match_parts_.end()) {
+                taken.push_back(video.video_id);
+            }
+        }
+        for (const std::string& part : match_parts_) {
+            const auto& videos = session_.workspace().videos;
+            const auto video = std::ranges::find(videos, part, &VideoEntry::original);
+            if (video != videos.end()) {
+                ids.push_back(video->video_id);
+            }
+        }
+        return launcher::propose_match_id(ids, taken);
+    }
+
+    /// The ticked videos in the order they are joined, each movable up and down.
+    void draw_match_order() {
         ImGui::SeparatorText("Order");
         ImGui::BeginDisabled(session_.running());
         const auto& videos = session_.workspace().videos;
         std::optional<std::pair<std::size_t, std::size_t>> swap;
-        for (std::size_t i = 0; i < merge_parts_.size(); ++i) {
+        for (std::size_t i = 0; i < match_parts_.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
             ImGui::BeginDisabled(i == 0);
             if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
@@ -1394,24 +1465,25 @@ class LauncherApp {
             }
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::BeginDisabled(i + 1 == merge_parts_.size());
+            ImGui::BeginDisabled(i + 1 == match_parts_.size());
             if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
                 swap = {i, i + 1};
             }
             ImGui::EndDisabled();
             ImGui::SameLine();
             ImGui::Text("%zu. %s", i + 1,
-                        std::filesystem::path(merge_parts_[i]).filename().string().c_str());
-            const auto video = std::ranges::find(videos, merge_parts_[i], &VideoEntry::original);
+                        std::filesystem::path(match_parts_[i]).filename().string().c_str());
+            const auto video = std::ranges::find(videos, match_parts_[i], &VideoEntry::original);
             if (video != videos.end() && has_results(*video)) {
                 ImGui::SameLine();
-                ImGui::TextColored(kPartly, "(has results already: they stay with the part)");
+                ImGui::TextColored(kPartly, "(has results: they stay with the file, the match "
+                                            "starts without)");
             }
             ImGui::PopID();
         }
         ImGui::EndDisabled();
         if (swap) {
-            std::swap(merge_parts_[swap->first], merge_parts_[swap->second]);
+            std::swap(match_parts_[swap->first], match_parts_[swap->second]);
         }
     }
 
@@ -1599,14 +1671,15 @@ class LauncherApp {
     launcher::LauncherSettings* settings_;
     launcher::SceneStore* scenes_;
     std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
+    std::unique_ptr<WhiteBalancePanel> white_balance_; ///< nullptr: not available
     bool highlights_shown_ = false; ///< the tab was shown in the last frame
     float log_share_ = kLogShare;   ///< of the right side's height taken by the output
     int fit_frames_ = 0; ///< frames left in which the output is fitted to the highlights player
     std::optional<std::string> shown_day_; ///< match day chosen as a whole when it was shown
-    std::string merge_day_;                ///< match day of the merge choice below
-    std::vector<std::string> merge_parts_; ///< originals ticked to merge, in their order
-    std::string merge_output_;
-    bool merge_output_edited_ = false; ///< else the output follows the first part
+    std::string match_day_;                ///< match day of the match choice below
+    std::vector<std::string> match_parts_; ///< originals ticked to join, in their order
+    std::string match_id_;
+    bool match_id_edited_ = false; ///< else the id follows the ticked videos
     std::string first_tab_;         ///< selected in the first frame, then empty
     /// The selection last saved as the last video; a change opens its match day.
     std::optional<std::size_t> remembered_;

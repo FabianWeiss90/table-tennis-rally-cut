@@ -46,6 +46,35 @@ Background video_background(VideoPreview& preview, const std::filesystem::path& 
     return background;
 }
 
+std::optional<media::VideoFrame> color_background(VideoPreview& preview,
+                                                  const std::filesystem::path& video,
+                                                  int height) {
+    std::vector<media::VideoFrame> frames;
+    for (int i = 0; i < kBackgroundFrames; ++i) {
+        const double fraction = (i + 0.5) / kBackgroundFrames;
+        if (auto frame = preview.frame_at(video, fraction, height)) {
+            frames.push_back(std::move(*frame));
+        }
+    }
+    if (frames.empty()) {
+        return std::nullopt;
+    }
+    media::VideoFrame background = frames.front();
+    std::erase_if(frames, [&](const media::VideoFrame& frame) {
+        return frame.planes.size() != background.planes.size();
+    });
+    std::vector<std::uint8_t> values(frames.size());
+    for (std::size_t b = 0; b < background.planes.size(); ++b) {
+        for (std::size_t f = 0; f < frames.size(); ++f) {
+            values[f] = frames[f].planes[b];
+        }
+        const auto middle = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+        std::ranges::nth_element(values, middle);
+        background.planes[b] = *middle;
+    }
+    return background;
+}
+
 std::vector<std::string> detect_scenes(VideoPreview& preview,
                                        const std::vector<std::filesystem::path>& videos) {
     std::vector<Background> backgrounds(videos.size());

@@ -45,7 +45,15 @@ std::string path_to_utf8(const std::filesystem::path& path) {
 FormatPtr open_input(const std::filesystem::path& path) {
     AVFormatContext* raw = nullptr;
     const std::string name = path_to_utf8(path);
-    const int result = avformat_open_input(&raw, name.c_str(), nullptr, nullptr);
+    // A match recorded in several files: a list of its parts read as one video
+    const bool parts = path.extension() == kPartListExtension;
+    AVDictionary* options = nullptr;
+    if (parts) {
+        av_dict_set(&options, "safe", "0", 0); // the parts are named relative to the list
+    }
+    const int result = avformat_open_input(
+        &raw, name.c_str(), parts ? av_find_input_format("concat") : nullptr, &options);
+    av_dict_free(&options);
     if (result < 0) {
         throw MediaError("cannot open " + path.string() + ": " + error_string(result));
     }
@@ -53,6 +61,13 @@ FormatPtr open_input(const std::filesystem::path& path) {
     check(avformat_find_stream_info(ctx.get(), nullptr),
           "cannot read stream information of " + path.string());
     return ctx;
+}
+
+int seek_before(AVFormatContext* format, const AVStream& stream, std::int64_t timestamp) {
+    const std::int64_t microseconds =
+        av_rescale_q_rnd(timestamp, stream.time_base, AV_TIME_BASE_Q, AV_ROUND_DOWN);
+    return avformat_seek_file(format, -1, std::numeric_limits<std::int64_t>::min(), microseconds,
+                              microseconds, 0);
 }
 
 FramePtr make_frame() {

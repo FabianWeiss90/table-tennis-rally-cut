@@ -13,7 +13,7 @@ inline constexpr std::string_view kWhiteBalanceFile = "white-balance.csv";
 
 /// White balance in <work dir>/white-balance.csv (columns file,left,top,right,bottom,red,green,
 /// blue: each file's area, empty if taken from the file before, and its gains) and the reference
-/// in <work dir>/white-balance-reference.csv (columns reference,temperature,tint,
+/// in <work dir>/white-balance-reference.csv (columns reference,temperature,tint,brightness,
 /// match_brightness). Columns are found by their names.
 class CsvWhiteBalanceStore final : public WhiteBalanceStore {
   public:

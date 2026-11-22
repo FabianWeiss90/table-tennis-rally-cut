@@ -130,13 +130,16 @@ RgbColor corrected(RgbColor color, RgbGains gains) {
     return {color.red * gains.red, color.green * gains.green, color.blue * gains.blue};
 }
 
-RgbGains temperature_tint_gains(double temperature, double tint, RgbColor measured) {
+RgbGains temperature_tint_gains(double temperature, double tint, double brightness,
+                                RgbColor measured) {
     const auto limited = [](double value) {
         return std::clamp(value, -kMaxAdjustment, kMaxAdjustment) * kAdjustmentStrength;
     };
     const double warm = limited(temperature);
     const double magenta = limited(tint);
-    return keeping_luma({1.0 + warm, 1.0 - magenta, 1.0 - warm}, measured);
+    const double light = 1.0 + limited(brightness);
+    const RgbGains balanced = keeping_luma({1.0 + warm, 1.0 - magenta, 1.0 - warm}, measured);
+    return {balanced.red * light, balanced.green * light, balanced.blue * light};
 }
 
 std::pair<double, double> neutral_temperature_tint(RgbColor measured) {
@@ -161,29 +164,38 @@ std::array<double, 9> yuv_matrix(RgbGains gains, YuvFormat format) {
 std::vector<std::optional<RelativeRect>>
 effective_areas(const std::vector<FileWhiteBalance>& files) {
     std::vector<std::optional<RelativeRect>> areas;
-    std::optional<RelativeRect> last;
-    for (const FileWhiteBalance& file : files) {
-        if (file.area) {
-            last = file.area;
+    if (files.empty() || !files.front().area) {
+        areas.resize(files.size());
+        return areas;
+    }
+    const RelativeRect first = *files.front().area;
+    const double width = first.right - first.left;
+    const double height = first.bottom - first.top;
+    RelativeRect last = first;
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        if (i > 0 && files[i].area) {
+            const double left = std::clamp(files[i].area->left, 0.0, 1.0 - width);
+            const double top = std::clamp(files[i].area->top, 0.0, 1.0 - height);
+            last = {left, top, left + width, top + height};
         }
-        areas.push_back(last);
+        areas.emplace_back(last);
     }
     return areas;
 }
 
 std::vector<RgbGains> balance_gains(const std::vector<std::optional<RgbColor>>& measured,
-                                    std::size_t reference, double temperature, double tint,
-                                    bool match_brightness) {
+                                    std::size_t reference, const WhiteBalanceSettings& settings) {
     std::vector<RgbGains> gains(measured.size());
     if (reference >= measured.size() || !measured[reference]) {
         return gains;
     }
     const RgbColor own = *measured[reference];
-    gains[reference] = temperature_tint_gains(temperature, tint, own);
+    gains[reference] =
+        temperature_tint_gains(settings.temperature, settings.tint, settings.brightness, own);
     const RgbColor target = corrected(own, gains[reference]);
     for (std::size_t i = 0; i < measured.size(); ++i) {
         if (i != reference && measured[i]) {
-            gains[i] = gains_towards(*measured[i], target, match_brightness);
+            gains[i] = gains_towards(*measured[i], target, settings.match_brightness);
         }
     }
     return gains;

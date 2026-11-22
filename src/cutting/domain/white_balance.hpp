@@ -61,8 +61,9 @@ inline constexpr double kMaxAdjustment = 1.0;
 
 /// Gains of a temperature (positive: warmer, more red and less blue) and a tint (positive:
 /// more magenta, less green), each -1 to 1 (at most half as much or 1.5 times a channel),
-/// scaled so that `measured` keeps its brightness.
-[[nodiscard]] RgbGains temperature_tint_gains(double temperature, double tint,
+/// scaled so that `measured` keeps its brightness, then brightened by `brightness` (-1 to 1: half
+/// as bright to 1.5 times as bright).
+[[nodiscard]] RgbGains temperature_tint_gains(double temperature, double tint, double brightness,
                                               RgbColor measured);
 
 /// The temperature and tint that make `measured` a neutral grey (within the sliders' range).
@@ -96,23 +97,25 @@ struct WhiteBalanceSettings {
     std::string reference; ///< file name; empty: none chosen
     double temperature = 0.0;
     double tint = 0.0;
+    double brightness = 0.0;
     bool match_brightness = false; ///< the other files also get the area's brightness
 
     friend bool operator==(const WhiteBalanceSettings&, const WhiteBalanceSettings&) = default;
 };
 
-/// The area of each file (same order): its own, else that of the nearest file before it with one;
-/// nullopt before the first area.
+/// The area of each file (same order). The first file's area sets the size for all; every other
+/// file has it where its own area lies (only moved, so only its position counts), else where it
+/// lies in the file before. None without an area in the first file.
 [[nodiscard]] std::vector<std::optional<RelativeRect>>
 effective_areas(const std::vector<FileWhiteBalance>& files);
 
 /// The gains of every file (same order) from the colours measured in their areas: the reference
-/// tuned with temperature and tint, every other file corrected so that its area looks like the
-/// reference's tuned area (in tint, with `match_brightness` also in brightness). Files without a
-/// colour, and all if the reference has none, stay as recorded.
+/// tuned with its settings' temperature, tint and brightness, every other file corrected so that
+/// its area looks like the reference's tuned area (in tint, with match_brightness also in
+/// brightness). Files without a colour, and all if the reference has none, stay as recorded.
 [[nodiscard]] std::vector<RgbGains>
 balance_gains(const std::vector<std::optional<RgbColor>>& measured, std::size_t reference,
-              double temperature, double tint, bool match_brightness);
+              const WhiteBalanceSettings& settings);
 
 /// A stretch of a video's timeline with the gains for its frames.
 struct ColorSpan {

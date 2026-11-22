@@ -28,11 +28,11 @@ using cutting::RelativeRect;
 using cutting::RgbColor;
 using cutting::RgbGains;
 
-constexpr int kPictureHeight = 270;         ///< lines of the pictures read
+constexpr int kPictureHeight = 540;         ///< lines of the pictures read
 constexpr double kPictureFraction = 0.5;    ///< where in a file its picture is taken
 constexpr unsigned kParallelFiles = 4;      ///< each decode uses several threads itself
-constexpr float kAreaCardWidth = 280.0F;    ///< a file's picture the area is dragged on
-constexpr float kReferenceWidth = 560.0F;   ///< the reference's picture
+constexpr float kAreaCardWidth = 640.0F;    ///< a file's picture the area is set on
+constexpr float kReferenceWidth = 640.0F;   ///< the reference's picture
 constexpr float kResultWidth = 200.0F;      ///< a corrected picture
 constexpr float kSliderWidth = 300.0F;
 constexpr float kSliderScale = 100.0F;      ///< the sliders show -100 to 100
@@ -184,6 +184,7 @@ struct WhiteBalancePanel::Impl {
     std::int64_t uploads = 0;           ///< a new texture content each time
     std::optional<std::string> dragging; ///< file whose area is being dragged
     ImVec2 drag_start{};
+    RelativeRect drag_origin{}; ///< the area moved, as it was when the drag began
     RelativeRect dragged{};
     std::string error;
 
@@ -275,8 +276,7 @@ struct WhiteBalancePanel::Impl {
             measured.push_back(frame == nullptr || !areas[i] ? std::nullopt
                                                              : color_in(*frame, *areas[i]));
         }
-        const auto gains = cutting::balance_gains(measured, reference_index(), settings.temperature,
-                                                  settings.tint, settings.match_brightness);
+        const auto gains = cutting::balance_gains(measured, reference_index(), settings);
         for (std::size_t i = 0; i < files.size(); ++i) {
             settings.files[i].gains = gains[i];
         }
@@ -334,12 +334,13 @@ struct WhiteBalancePanel::Impl {
         update(); // the pictures may have arrived
         ImGui::TextWrapped(
             "Correct the white balance of videos recorded with automatic white balance (each "
-            "part of a match on its own, since the camera may change between files). 1: in every "
-            "file, drag a rectangle over the same spot, one that should look the same in all of "
-            "them (a file without one takes the rectangle of the file before it). 2: tune one of "
-            "them, the reference, with temperature and tint. 3: every other file is corrected so "
-            "that its spot looks like the reference's. Cut and highlights apply it; labels, "
-            "features and detections keep the colours as recorded.");
+            "part of a match on its own, since the camera may change between files). 1: in the "
+            "first file, drag a rectangle over a spot that should look the same in all of them; "
+            "in the others it appears where it is in the file before and can be moved onto the "
+            "same spot. 2: tune one file, the reference, with temperature, tint and brightness. "
+            "3: every other file is corrected so that its spot looks like the reference's. Cut "
+            "and highlights apply it; labels, features and detections keep the colours as "
+            "recorded.");
         if (job.valid()) {
             ImGui::TextColored(kPartly, "Reading a picture from the middle of every file...");
         }
@@ -368,9 +369,11 @@ struct WhiteBalancePanel::Impl {
         }
     }
 
+    /// A file's picture with its area: drawn in the first file, only moved in the others.
     void draw_area_card(std::size_t i, const std::optional<RelativeRect>& area) {
         const BalancedFile& file = files[i];
         FileWhiteBalance& balance = settings.files[i];
+        const bool first = i == 0;
         ImGui::TextUnformatted(file.label.c_str());
         ImGui::SetItemTooltip("%s", file.path.string().c_str());
         SDL_Texture* texture = texture_of(file, "area", {});
@@ -387,15 +390,27 @@ struct WhiteBalancePanel::Impl {
             return ImVec2{std::clamp((point.x - origin.x) / extent.x, 0.0F, 1.0F),
                           std::clamp((point.y - origin.y) / extent.y, 0.0F, 1.0F)};
         };
-        if (ImGui::IsItemActivated()) {
+        const bool movable = first || area.has_value();
+        if (ImGui::IsItemActivated() && movable) {
             dragging = file.name;
             drag_start = relative(ImGui::GetIO().MousePos);
+            drag_origin = area.value_or(RelativeRect{});
         }
         const bool mine = dragging == file.name;
         if (mine) {
             const ImVec2 now = relative(ImGui::GetIO().MousePos);
-            dragged = {std::min(drag_start.x, now.x), std::min(drag_start.y, now.y),
-                       std::max(drag_start.x, now.x), std::max(drag_start.y, now.y)};
+            if (first) { // drawn anew
+                dragged = {std::min(drag_start.x, now.x), std::min(drag_start.y, now.y),
+                           std::max(drag_start.x, now.x), std::max(drag_start.y, now.y)};
+            } else { // moved, its size kept
+                const double width = drag_origin.right - drag_origin.left;
+                const double height = drag_origin.bottom - drag_origin.top;
+                const double left =
+                    std::clamp(drag_origin.left + now.x - drag_start.x, 0.0, 1.0 - width);
+                const double top =
+                    std::clamp(drag_origin.top + now.y - drag_start.y, 0.0, 1.0 - height);
+                dragged = {left, top, left + width, top + height};
+            }
         }
         if (mine && ImGui::IsItemDeactivated()) {
             dragging.reset();
@@ -404,7 +419,9 @@ struct WhiteBalancePanel::Impl {
                 save();
             }
         }
-        ImGui::SetItemTooltip("Drag a rectangle over the spot that looks the same in every file");
+        ImGui::SetItemTooltip("%s", first ? "Drag a rectangle over a spot that looks the same "
+                                            "in every file"
+                                          : "Drag to move the rectangle onto the same spot");
         const std::optional<RelativeRect> shown_area = mine ? std::optional(dragged) : area;
         if (shown_area) {
             const bool own = mine || balance.area.has_value();
@@ -415,15 +432,19 @@ struct WhiteBalancePanel::Impl {
                  origin.y + static_cast<float>(shown_area->bottom) * extent.y},
                 own ? kAreaColor : kTakenAreaColor, 0.0F, 0, 2.0F);
         }
-        if (balance.area) {
-            if (ImGui::SmallButton(i == 0 ? "Remove" : "Take the one before")) {
+        if (first) {
+            ImGui::TextColored(kMuted, "%s", area ? "Drag anew to change the rectangle"
+                                                  : "Drag a rectangle over the spot");
+        } else if (!area) {
+            ImGui::TextColored(kMuted, "Set the rectangle in the first file");
+        } else if (balance.area) {
+            if (ImGui::SmallButton("Back to the file before")) {
                 balance.area.reset();
                 save();
             }
-            ImGui::SetItemTooltip("Removes this file's own rectangle%s",
-                                  i == 0 ? "" : ": it takes the one of the file before it again");
+            ImGui::SetItemTooltip("Places the rectangle where it is in the file before");
         } else {
-            ImGui::TextColored(kMuted, "%s", area ? "Taken from the file before" : "No area yet");
+            ImGui::TextColored(kMuted, "Where it is in the file before: drag to move it");
         }
     }
 
@@ -472,6 +493,8 @@ struct WhiteBalancePanel::Impl {
         };
         slider("Temperature", settings.temperature, "Higher: warmer (more red, less blue)");
         slider("Tint", settings.tint, "Higher: more magenta, less green");
+        slider("Brightness", settings.brightness,
+               "Higher: brighter (up to 1.5 times), lower: darker (down to half)");
         if (ImGui::Button("Area neutral")) {
             const auto areas = cutting::effective_areas(settings.files);
             const media::VideoFrame* frame = picture_of(file);
@@ -489,6 +512,7 @@ struct WhiteBalancePanel::Impl {
         if (ImGui::Button("Reset")) {
             settings.temperature = 0;
             settings.tint = 0;
+            settings.brightness = 0;
             finished = true;
         }
         if (ImGui::Checkbox("Also match the brightness", &settings.match_brightness)) {

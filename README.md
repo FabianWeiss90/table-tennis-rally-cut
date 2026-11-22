@@ -386,12 +386,13 @@ Each file is constant in itself, so one correction per file is enough; each part
 corrected on its own, since the camera may change between files. In the launcher, choose the
 whole match day, then the **White balance** tab:
 
-1. **The same spot in every file:** each file shows a picture from its middle. Drag a rectangle
-   over a spot that should look the same in all files (e.g. the table, a wall, a banner). A file
-   without its own rectangle takes the one of the file before it (shown in orange); drag to
-   change it.
+1. **The same spot in every file:** each file shows a large picture from its middle. In the
+   first file, drag a rectangle over a spot that should look the same in all files (e.g. the
+   table, a wall, a banner). In every other file it appears with the same size where it is in
+   the file before (orange) and can only be moved, onto the same spot (then red); "Back to the
+   file before" undoes that.
 2. **Tune the reference:** choose one file and set its look with **Temperature** (warmer: more
-   red, less blue) and **Tint** (more magenta, less green). "Area neutral" sets them so that the
+   red, less blue), **Tint** (more magenta, less green) and **Brightness** (half to 1.5 times). "Area neutral" sets them so that the
    spot becomes grey (a start for white or grey spots), "Reset" returns to the recording.
 3. **Result:** every other file is corrected so that its spot looks like the reference's: in
    colour tone, and with **Also match the brightness** in brightness too (evens out exposure,

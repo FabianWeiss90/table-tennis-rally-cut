@@ -68,6 +68,7 @@ class MemoryWhiteBalance final : public cutting::WhiteBalanceStore {
         .reference = "Match_FHD.mp4",
         .temperature = 0.2,
         .tint = 0.0,
+        .brightness = 0.0,
         .match_brightness = false};
 };
 

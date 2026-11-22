@@ -182,6 +182,7 @@ TEST_CASE("the white balance chosen for a part corrects only that part's frames"
         .reference = "Warm-1.mp4",
         .temperature = -0.25,
         .tint = 0.125,
+        .brightness = -0.5,
         .match_brightness = true};
     cutting::CsvWhiteBalanceStore().save(work, settings);
     const cutting::WhiteBalanceSettings read = cutting::CsvWhiteBalanceStore().load(work);
@@ -193,6 +194,7 @@ TEST_CASE("the white balance chosen for a part corrects only that part's frames"
     CHECK(read.reference == "Warm-1.mp4");
     CHECK(read.temperature == Catch::Approx(-0.25));
     CHECK(read.tint == Catch::Approx(0.125));
+    CHECK(read.brightness == Catch::Approx(-0.5));
     CHECK(read.match_brightness);
     const auto spans = cutting::color_spans(list, work / "white-balance.csv");
     REQUIRE(spans.size() == 1); // the unchanged part needs none

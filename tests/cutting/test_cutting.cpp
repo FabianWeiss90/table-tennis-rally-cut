@@ -178,22 +178,27 @@ TEST_CASE("white balance: a reference tuned by temperature and tint, the others 
     // The sliders that make the area neutral
     const auto [temperature, tint] = neutral_temperature_tint(warm);
     CHECK(temperature < 0); // cooler
-    const RgbColor fixed = corrected(warm, temperature_tint_gains(temperature, tint, warm));
+    const RgbColor fixed = corrected(warm, temperature_tint_gains(temperature, tint, 0, warm));
     CHECK(fixed.red == Approx(fixed.green));
     CHECK(fixed.blue == Approx(fixed.green));
     CHECK(luma_of(fixed) == Approx(luma_of(warm)));
-    CHECK(temperature_tint_gains(0, 0, warm).identity());
-    const RgbGains warmer = temperature_tint_gains(0.5, 0, warm);
+    CHECK(temperature_tint_gains(0, 0, 0, warm).identity());
+    const RgbGains warmer = temperature_tint_gains(0.5, 0, 0, warm);
     CHECK(warmer.red > warmer.green);
     CHECK(warmer.blue < warmer.green);
-    const RgbGains magenta = temperature_tint_gains(0, 0.5, warm);
+    const RgbGains magenta = temperature_tint_gains(0, 0.5, 0, warm);
     CHECK(magenta.green < magenta.red);
+    // Brightness scales all channels: 1 makes it 1.5 times as bright
+    const RgbGains brighter = temperature_tint_gains(0, 0, 1, warm);
+    CHECK(luma_of(corrected(warm, brighter)) == Approx(1.5 * luma_of(warm)));
+    CHECK(brighter.red == Approx(brighter.blue));
 
     // The others look like the tuned reference: in tint, or in tint and brightness
     const RgbColor cool{150, 170, 200};
     const RgbColor dark{60, 50, 40};
-    const auto gains =
-        balance_gains({warm, cool, std::nullopt, dark}, 0, temperature, tint, false);
+    WhiteBalanceSettings settings{.files = {}, .reference = "", .temperature = temperature,
+                                  .tint = tint, .brightness = 0.0, .match_brightness = false};
+    const auto gains = balance_gains({warm, cool, std::nullopt, dark}, 0, settings);
     REQUIRE(gains.size() == 4);
     const RgbColor target = corrected(warm, gains[0]);
     const RgbColor other = corrected(cool, gains[1]);
@@ -201,29 +206,43 @@ TEST_CASE("white balance: a reference tuned by temperature and tint, the others 
     CHECK(other.blue / other.green == Approx(target.blue / target.green));
     CHECK(luma_of(other) == Approx(luma_of(cool))); // its own brightness
     CHECK(gains[2].identity());                     // no area
-    const auto bright = balance_gains({warm, cool, std::nullopt, dark}, 0, temperature, tint, true);
+    settings.match_brightness = true;
+    const auto bright = balance_gains({warm, cool, std::nullopt, dark}, 0, settings);
     const RgbColor lifted = corrected(dark, bright[3]);
     CHECK(lifted.red == Approx(target.red));
     CHECK(lifted.green == Approx(target.green));
     CHECK(lifted.blue == Approx(target.blue));
     // Without the reference's colour nothing is corrected
-    for (const RgbGains& none : balance_gains({std::nullopt, cool}, 0, 0.3, 0.1, false)) {
+    for (const RgbGains& none : balance_gains({std::nullopt, cool}, 0, settings)) {
         CHECK(none.identity());
     }
 }
 
-TEST_CASE("a file without its own area takes the area of the file before it") {
-    const RelativeRect first{0.1, 0.1, 0.2, 0.2};
-    const RelativeRect third{0.5, 0.5, 0.6, 0.6};
-    const auto areas = effective_areas(
-        {{"a", std::nullopt, {}}, {"b", first, {}}, {"c", std::nullopt, {}}, {"d", third, {}},
-         {"e", std::nullopt, {}}});
+TEST_CASE("the first file sets the area; the others only move it, else take the one before") {
+    const RelativeRect first{0.1, 0.1, 0.3, 0.2};
+    const RelativeRect moved{0.5, 0.6, 0.9, 0.99}; // only its position counts
+    const RelativeRect edge{0.95, 0.95, 1.0, 1.0}; // moved beyond the picture: kept inside
+    const auto areas = effective_areas({{"a", first, {}},
+                                        {"b", std::nullopt, {}},
+                                        {"c", moved, {}},
+                                        {"d", std::nullopt, {}},
+                                        {"e", edge, {}}});
     REQUIRE(areas.size() == 5);
-    CHECK_FALSE(areas[0]);
+    CHECK(areas[0] == first);
     CHECK(areas[1] == first);
-    CHECK(areas[2] == first);
-    CHECK(areas[3] == third);
-    CHECK(areas[4] == third);
+    REQUIRE(areas[2]);
+    CHECK(areas[2]->left == Approx(0.5));
+    CHECK(areas[2]->top == Approx(0.6));
+    CHECK(areas[2]->right == Approx(0.7)); // the first's size
+    CHECK(areas[2]->bottom == Approx(0.7));
+    CHECK(areas[3] == areas[2]);
+    REQUIRE(areas[4]);
+    CHECK(areas[4]->right == Approx(1.0));
+    CHECK(areas[4]->left == Approx(0.8));
+    // Without an area in the first file there is none
+    const auto none = effective_areas({{"a", std::nullopt, {}}, {"b", moved, {}}});
+    CHECK_FALSE(none[0]);
+    CHECK_FALSE(none[1]);
 }
 
 TEST_CASE("the white balance applies to YUV values as a matrix") {

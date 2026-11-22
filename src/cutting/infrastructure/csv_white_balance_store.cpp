@@ -76,6 +76,7 @@ WhiteBalanceSettings CsvWhiteBalanceStore::load(const fs::path& work_dir) {
         settings.reference = value(reference.front(), "reference");
         settings.temperature = number(value(reference.front(), "temperature"), 0);
         settings.tint = number(value(reference.front(), "tint"), 0);
+        settings.brightness = number(value(reference.front(), "brightness"), 0);
         settings.match_brightness = value(reference.front(), "match_brightness") == "1";
     }
     return settings;
@@ -95,9 +96,9 @@ void CsvWhiteBalanceStore::save(const fs::path& work_dir, const WhiteBalanceSett
     io::write_csv(work_dir / kWhiteBalanceFile,
                   {"file", "left", "top", "right", "bottom", "red", "green", "blue"}, files);
     io::write_csv(work_dir / kReferenceFile,
-                  {"reference", "temperature", "tint", "match_brightness"},
+                  {"reference", "temperature", "tint", "brightness", "match_brightness"},
                   {{settings.reference, written(settings.temperature), written(settings.tint),
-                    settings.match_brightness ? "1" : "0"}});
+                    written(settings.brightness), settings.match_brightness ? "1" : "0"}});
 }
 
 std::vector<ColorSpan> color_spans(const fs::path& video, const fs::path& white_balance) {

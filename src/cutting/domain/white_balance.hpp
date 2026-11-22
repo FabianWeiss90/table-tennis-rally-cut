@@ -80,26 +80,34 @@ struct RelativeRect {
     friend bool operator==(const RelativeRect&, const RelativeRect&) = default;
 };
 
-/// The white balance of one file (a video or a part of a match): the area of a spot that looks
-/// the same in every file of the match day, and the gains that correct the file.
+/// The area of one file (a video or a part of a match) over a spot that looks the same in every
+/// file of the match day.
 struct FileWhiteBalance {
     std::string file; ///< file name in the match day folder
-    std::optional<RelativeRect> area; ///< none: the area of the file before it is taken
-    RgbGains gains;
+    std::optional<RelativeRect> area; ///< none: where it is in the file before
 
     friend bool operator==(const FileWhiteBalance&, const FileWhiteBalance&) = default;
 };
 
-/// The white balance of a match day: every file's area, and the reference file tuned with
-/// temperature and tint, to whose look of the area the other files are corrected.
+/// The white balance of a match day: every file's area, and the reference rally, tuned with
+/// temperature, tint and brightness, towards which every rally is corrected when cutting.
 struct WhiteBalanceSettings {
-    std::vector<FileWhiteBalance> files;
-    std::string reference; ///< file name; empty: none chosen
+    std::vector<FileWhiteBalance> files; ///< in the order of the match day's list
+    /// The video of the reference rally: its path in the match day folder (a file, or a match's
+    /// part list under ttrally-data); empty: none chosen
+    std::string reference_video;
+    double reference_start_s = 0.0;
+    double reference_end_s = 0.0;
     double temperature = 0.0;
     double tint = 0.0;
     double brightness = 0.0;
-    bool match_brightness = false; ///< the other files also get the area's brightness
+    /// Brightness, contrast and colours of the whole picture matched by tone curves; else only
+    /// the area's colour tone
+    bool match_brightness = true;
 
+    [[nodiscard]] bool has_reference() const noexcept {
+        return !reference_video.empty() && reference_end_s > reference_start_s;
+    }
     friend bool operator==(const WhiteBalanceSettings&, const WhiteBalanceSettings&) = default;
 };
 
@@ -108,30 +116,5 @@ struct WhiteBalanceSettings {
 /// lies in the file before. None without an area in the first file.
 [[nodiscard]] std::vector<std::optional<RelativeRect>>
 effective_areas(const std::vector<FileWhiteBalance>& files);
-
-/// What is measured in a file's picture: the mean colour of its area and of the whole picture.
-struct MeasuredFile {
-    std::optional<RgbColor> area;    ///< none: no area or no picture
-    std::optional<RgbColor> picture; ///< none: no picture
-};
-
-/// The gains of every file (same order): the reference tuned with its settings' temperature,
-/// tint and brightness; every other file given the tint the reference's tuned area has, and
-/// with match_brightness also the brightness of the reference's whole tuned picture (its whole
-/// picture, not the area, so that the exposure matches). Files without an area colour, and all
-/// if the reference has none, stay as recorded.
-[[nodiscard]] std::vector<RgbGains> balance_gains(const std::vector<MeasuredFile>& measured,
-                                                  std::size_t reference,
-                                                  const WhiteBalanceSettings& settings);
-
-/// A stretch of a video's timeline with the gains for its frames.
-struct ColorSpan {
-    double start_s = 0.0;
-    double end_s = 0.0;
-    RgbGains gains;
-};
-
-/// The gains for the frame at `time_s`; identity gains outside every span.
-[[nodiscard]] RgbGains gains_at(const std::vector<ColorSpan>& spans, double time_s);
 
 } // namespace ttrally::cutting

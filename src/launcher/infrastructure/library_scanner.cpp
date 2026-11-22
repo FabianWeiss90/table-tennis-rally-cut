@@ -180,6 +180,9 @@ std::optional<VideoEntry> describe_match(const Match& match, const fs::path& mat
     for (const fs::path& part : parts) {
         entry.parts.push_back(part.string());
     }
+    for (const media::PartSpan& part : media::part_spans(list)) {
+        entry.part_starts_s.push_back(part.start_s);
+    }
     if (const auto it = chosen.find(match.id);
         it != chosen.end() && fs::is_regular_file(it->second)) {
         entry.cut_candidates.push_back(it->second.string());

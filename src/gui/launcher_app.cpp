@@ -267,7 +267,8 @@ class LauncherApp {
         }
         if (options.white_balance != nullptr) {
             white_balance_ =
-                std::make_unique<WhiteBalancePanel>(gui, preview, *options.white_balance);
+                std::make_unique<WhiteBalancePanel>(gui, preview, *options.white_balance,
+                                                    options.highlights);
         }
         restore_last_video();
     }

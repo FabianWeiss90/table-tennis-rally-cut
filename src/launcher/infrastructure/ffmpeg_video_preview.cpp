@@ -63,6 +63,17 @@ std::optional<media::VideoFrame> FfmpegVideoPreview::frame_at(const std::filesys
         const double target = info.video->start_time_s +
                               std::clamp(fraction, 0.0, 1.0) *
                                   (std::isnan(duration) ? 0.0 : std::max(0.0, duration - 1.0));
+        return frame_at_time(video, target, height);
+    } catch (const std::exception&) {
+        return std::nullopt; // the preview is optional; commands report real errors
+    }
+}
+
+std::optional<media::VideoFrame>
+FfmpegVideoPreview::frame_at_time(const std::filesystem::path& video, double seconds,
+                                  int height) {
+    try {
+        const double target = seconds;
         ff::VideoStream stream(video, media::DecodeBackend::Cpu);
         const double time_base = av_q2d(stream.time_base());
         stream.seek(static_cast<std::int64_t>(std::floor(target / time_base)));

@@ -64,12 +64,14 @@ class MemoryWhiteBalance final : public cutting::WhiteBalanceStore {
         saved = settings;
     }
     cutting::WhiteBalanceSettings saved{
-        .files = {{"Match_FHD.mp4", cutting::RelativeRect{0.2, 0.2, 0.4, 0.3}, {}}},
-        .reference = "Match_FHD.mp4",
+        .files = {{"Match_FHD.mp4", cutting::RelativeRect{0.2, 0.2, 0.4, 0.3}}},
+        .reference_video = "Match_FHD.mp4",
+        .reference_start_s = 120.0,
+        .reference_end_s = 126.0,
         .temperature = 0.2,
         .tint = 0.0,
         .brightness = 0.0,
-        .match_brightness = false};
+        .match_brightness = true};
 };
 
 /// Scenes in memory.
@@ -91,6 +93,10 @@ class IdleRunner final : public launcher::ProcessRunner {
 /// A grey frame of the requested height.
 class GreyPreview final : public launcher::VideoPreview {
   public:
+    std::optional<media::VideoFrame> frame_at_time(const std::filesystem::path& video,
+                                                   double seconds, int height) override {
+        return frame_at(video, seconds / 600.0, height);
+    }
     std::optional<media::VideoFrame> frame_at(const std::filesystem::path&, double fraction,
                                               int height) override {
         media::VideoFrame frame;

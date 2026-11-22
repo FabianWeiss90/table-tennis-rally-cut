@@ -40,6 +40,7 @@ struct VideoEntry {
     /// A match recorded in several files: its parts (absolute, recording order); `original` is
     /// then their part list, read as one video. Empty for a single file.
     std::vector<std::string> parts;
+    std::vector<double> part_starts_s; ///< where each part begins on the match's timeline
 
     /// Unique in the library: "<match day>/<video id>".
     [[nodiscard]] std::string key() const { return match_day + "/" + video_id; }

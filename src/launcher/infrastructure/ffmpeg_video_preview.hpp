@@ -12,6 +12,8 @@ class FfmpegVideoPreview final : public VideoPreview {
   public:
     [[nodiscard]] std::optional<media::VideoFrame>
     frame_at(const std::filesystem::path& video, double fraction, int height) override;
+    [[nodiscard]] std::optional<media::VideoFrame>
+    frame_at_time(const std::filesystem::path& video, double seconds, int height) override;
 };
 
 } // namespace ttrally::launcher

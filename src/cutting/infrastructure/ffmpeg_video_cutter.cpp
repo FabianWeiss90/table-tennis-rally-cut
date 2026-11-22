@@ -2,7 +2,7 @@
 
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
 
-#include "cutting/infrastructure/csv_white_balance_store.hpp"
+#include "cutting/infrastructure/rally_colors.hpp"
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 #include "media/application/media_error.hpp"
 
@@ -91,9 +91,15 @@ class ExactCut {
              const std::filesystem::path& output, const CutOptions& options,
              ProgressReporter& progress)
         : format_(ff::open_input(input)), map_(sections), output_(output), progress_(progress),
-          color_(color_spans(input, options.white_balance)) {
-        if (!color_.empty()) {
-            progress.report("White balance: corrected as chosen for the match day");
+          color_(sections.size()) {
+        RallyColors colors(options.white_balance);
+        if (colors.active()) {
+            progress.report(std::format("White balance: measuring the colours of {} sections",
+                                        sections.size()));
+            for (std::size_t i = 0; i < sections.size(); ++i) {
+                color_[i] = {sections[i].start_s, sections[i].end_s,
+                             colors.for_span(input, sections[i].start_s, sections[i].end_s)};
+            }
         }
         video_index_ = best_stream(format_.get(), AVMEDIA_TYPE_VIDEO);
         if (video_index_ < 0) {
@@ -204,7 +210,7 @@ class ExactCut {
         const std::int64_t pts = std::max(timestamp(*out, video_encoder_->context()->time_base),
                                           last_video_pts_ + 1);
         last_video_pts_ = pts;
-        video_encoder_->send(frame, pts, gains_at(color_, t));
+        video_encoder_->send(frame, pts, curves_at(t));
         video_encoder_->drain(video_out_, output_, false);
     }
 
@@ -241,7 +247,22 @@ class ExactCut {
     SectionMap map_;
     Output output_;
     ProgressReporter& progress_;
-    std::vector<ColorSpan> color_; ///< white balance on the input's timeline
+    /// The colour correction of a section, on the input's timeline.
+    struct SectionColor {
+        double start_s = 0.0;
+        double end_s = 0.0;
+        std::optional<ToneCurves> curves;
+    };
+    std::vector<SectionColor> color_; ///< per section (no curves: none)
+
+    [[nodiscard]] const ToneCurves* curves_at(double t) const {
+        for (const SectionColor& section : color_) {
+            if (section.curves && t >= section.start_s - kTimeEpsilon && t < section.end_s) {
+                return &*section.curves;
+            }
+        }
+        return nullptr;
+    }
     int video_index_ = -1;
     int audio_index_ = -1;
     AVStream* video_stream_ = nullptr;

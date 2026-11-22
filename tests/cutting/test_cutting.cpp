@@ -3,6 +3,7 @@
 // Cut planning and the CutVideo use case with in-memory fakes.
 
 #include "cutting/application/cut_video.hpp"
+#include "cutting/domain/color_match.hpp"
 #include "cutting/domain/resolution.hpp"
 #include "cutting/domain/white_balance.hpp"
 #include "support/fake_media.hpp"
@@ -193,50 +194,17 @@ TEST_CASE("white balance: a reference tuned by temperature and tint, the others 
     CHECK(luma_of(corrected(warm, brighter)) == Approx(1.5 * luma_of(warm)));
     CHECK(brighter.red == Approx(brighter.blue));
 
-    // The others look like the tuned reference: in tint by the area, in brightness by the
-    // whole picture
-    const RgbColor cool{150, 170, 200};
-    const RgbColor dark{60, 50, 40};
-    const RgbColor bright_picture{120, 120, 120}; // the reference's whole picture
-    const RgbColor dark_picture{40, 40, 40};      // a darker video
-    const std::vector<MeasuredFile> files{{warm, bright_picture},
-                                          {cool, bright_picture},
-                                          {std::nullopt, dark_picture},
-                                          {dark, dark_picture}};
-    WhiteBalanceSettings settings{.files = {}, .reference = "", .temperature = temperature,
-                                  .tint = tint, .brightness = 0.0, .match_brightness = false};
-    const auto gains = balance_gains(files, 0, settings);
-    REQUIRE(gains.size() == 4);
-    const RgbColor target = corrected(warm, gains[0]);
-    const RgbColor other = corrected(cool, gains[1]);
-    CHECK(other.red / other.green == Approx(target.red / target.green));
-    CHECK(other.blue / other.green == Approx(target.blue / target.green));
-    CHECK(luma_of(other) == Approx(luma_of(cool))); // its own brightness
-    CHECK(gains[2].identity());                     // no area
-    settings.match_brightness = true;
-    const auto matched = balance_gains(files, 0, settings);
-    const RgbColor lifted = corrected(dark, matched[3]);
-    CHECK(lifted.red / lifted.green == Approx(target.red / target.green)); // the tint
-    // The whole picture as bright as the reference's tuned whole picture, not the area
-    CHECK(luma_of(corrected(dark_picture, matched[3])) ==
-          Approx(luma_of(corrected(bright_picture, matched[0]))));
-    CHECK(luma_of(lifted) != Approx(luma_of(target)));
-    // Without the reference's area colour nothing is corrected
-    for (const RgbGains& none :
-         balance_gains({{std::nullopt, bright_picture}, {cool, bright_picture}}, 0, settings)) {
-        CHECK(none.identity());
-    }
 }
 
 TEST_CASE("the first file sets the area; the others only move it, else take the one before") {
     const RelativeRect first{0.1, 0.1, 0.3, 0.2};
     const RelativeRect moved{0.5, 0.6, 0.9, 0.99}; // only its position counts
     const RelativeRect edge{0.95, 0.95, 1.0, 1.0}; // moved beyond the picture: kept inside
-    const auto areas = effective_areas({{"a", first, {}},
-                                        {"b", std::nullopt, {}},
-                                        {"c", moved, {}},
-                                        {"d", std::nullopt, {}},
-                                        {"e", edge, {}}});
+    const auto areas = effective_areas({{"a", first},
+                                        {"b", std::nullopt},
+                                        {"c", moved},
+                                        {"d", std::nullopt},
+                                        {"e", edge}});
     REQUIRE(areas.size() == 5);
     CHECK(areas[0] == first);
     CHECK(areas[1] == first);
@@ -250,7 +218,7 @@ TEST_CASE("the first file sets the area; the others only move it, else take the 
     CHECK(areas[4]->right == Approx(1.0));
     CHECK(areas[4]->left == Approx(0.8));
     // Without an area in the first file there is none
-    const auto none = effective_areas({{"a", std::nullopt, {}}, {"b", moved, {}}});
+    const auto none = effective_areas({{"a", std::nullopt}, {"b", moved}});
     CHECK_FALSE(none[0]);
     CHECK_FALSE(none[1]);
 }
@@ -275,8 +243,81 @@ TEST_CASE("the white balance applies to YUV values as a matrix") {
     CHECK(identity[0] == Approx(1.0));
     CHECK(identity[4] == Approx(1.0));
     CHECK(identity[1] == Approx(0.0).margin(1e-12));
-    const std::vector<ColorSpan> spans{{0.0, 10.0, gains}, {10.0, 20.0, {}}};
-    CHECK(gains_at(spans, 5.0) == gains);
-    CHECK(gains_at(spans, 15.0).identity());
-    CHECK(gains_at(spans, 25.0).identity());
+}
+
+namespace {
+
+/// A picture whose left half has one colour and right half another.
+RgbImage two_tone(RgbColor left, RgbColor right, int width = 8, int height = 4) {
+    RgbImage picture{width, height, {}};
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const RgbColor c = x < width / 2 ? left : right;
+            picture.rgb.push_back(static_cast<std::uint8_t>(c.red));
+            picture.rgb.push_back(static_cast<std::uint8_t>(c.green));
+            picture.rgb.push_back(static_cast<std::uint8_t>(c.blue));
+        }
+    }
+    return picture;
+}
+
+} // namespace
+
+TEST_CASE("the median of pictures removes what is in only a few of them") {
+    const RgbImage hall = two_tone({100, 100, 100}, {200, 200, 200});
+    RgbImage player = hall;
+    player.rgb[0] = 255; // someone passing by in one picture
+    const std::vector<RgbImage> pictures{hall, player, hall};
+    CHECK(median_of(pictures).rgb == hall.rgb);
+    CHECK(median_of({}).empty());
+    const RgbColor left = mean_in(hall, {0.0, 0.0, 0.5, 1.0});
+    CHECK(left.red == Approx(100.0));
+    CHECK(mean_in(hall, {0, 0, 1, 1}).green == Approx(150.0));
+}
+
+TEST_CASE("tone curves give a picture the distribution of another") {
+    const RgbImage dark = two_tone({40, 50, 60}, {100, 110, 120});
+    const RgbImage bright = two_tone({80, 90, 100}, {200, 210, 220});
+    const ToneCurves curves = matching_curves(dark, bright);
+    const RgbColor lifted_low = curves.applied({40, 50, 60});
+    const RgbColor lifted_high = curves.applied({100, 110, 120});
+    CHECK(lifted_low.red == Approx(80.0));
+    CHECK(lifted_low.blue == Approx(100.0));
+    CHECK(lifted_high.green == Approx(210.0)); // contrast too, not just one factor
+    CHECK(matching_curves(dark, dark).is_identity());
+    CHECK(ToneCurves::identity().applied({12.5, 0, 255}).red == Approx(12.5));
+    const ToneCurves halved = scaled(ToneCurves::identity(), {0.5, 1.0, 1.0});
+    CHECK(halved.curve[0][200] == 100);
+    CHECK(halved.curve[1][200] == 200);
+}
+
+TEST_CASE("a rally is corrected towards the tuned reference rally") {
+    // The reference: a neutral wall (left) and a bright floor (right)
+    const RgbImage reference = two_tone({120, 120, 120}, {200, 200, 200});
+    const RelativeRect wall{0.0, 0.0, 0.5, 1.0};
+    WhiteBalanceSettings settings;
+    settings.match_brightness = true;
+    const ColorTarget target = tuned_target(reference, wall, settings);
+    CHECK(target.picture.rgb == reference.rgb); // nothing tuned
+    // A rally: darker and with a yellow cast
+    const RgbImage rally = two_tone({90, 85, 60}, {160, 150, 110});
+    const ToneCurves correction = rally_correction(rally, wall, target, settings);
+    const RgbColor corrected_wall = correction.applied(mean_in(rally, wall));
+    CHECK(corrected_wall.red == Approx(corrected_wall.blue).margin(1.5));
+    CHECK(corrected_wall.green == Approx(corrected_wall.blue).margin(1.5));
+    CHECK(luma_of(corrected_wall) == Approx(120.0).margin(2.0));
+    // Only the colour tone: the rally keeps its brightness
+    settings.match_brightness = false;
+    const ToneCurves tint = rally_correction(rally, wall, target, settings);
+    const RgbColor tinted = tint.applied(mean_in(rally, wall));
+    CHECK(tinted.red == Approx(tinted.blue).margin(1.5));
+    CHECK(luma_of(tinted) == Approx(luma_of(mean_in(rally, wall))).margin(1.5));
+    // Warmer reference: the target is warm
+    settings.temperature = 0.5;
+    const ColorTarget warm = tuned_target(reference, wall, settings);
+    const RgbColor warm_wall = mean_in(warm.picture, wall);
+    CHECK(warm_wall.red > warm_wall.blue);
+    // Nothing to measure: no change
+    CHECK(rally_correction({}, wall, target, settings).is_identity());
+    CHECK(rally_correction(rally, std::nullopt, target, settings).is_identity());
 }

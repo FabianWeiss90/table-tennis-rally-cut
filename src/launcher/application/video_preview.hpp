@@ -17,6 +17,9 @@ class VideoPreview {
     /// pixels (YUV 4:2:0); nullopt if the video cannot be read.
     [[nodiscard]] virtual std::optional<media::VideoFrame>
     frame_at(const std::filesystem::path& video, double fraction, int height) = 0;
+    /// The frame shown at `seconds` on the video's timeline; nullopt if it cannot be read.
+    [[nodiscard]] virtual std::optional<media::VideoFrame>
+    frame_at_time(const std::filesystem::path& video, double seconds, int height) = 0;
 };
 
 } // namespace ttrally::launcher

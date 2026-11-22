@@ -2,7 +2,6 @@
 
 #include "cutting/infrastructure/csv_white_balance_store.hpp"
 
-#include "media/infrastructure/part_list.hpp"
 #include "shared/io/csv.hpp"
 
 #include <algorithm>
@@ -61,9 +60,7 @@ WhiteBalanceSettings CsvWhiteBalanceStore::load(const fs::path& work_dir) {
         if (file.empty()) {
             continue;
         }
-        FileWhiteBalance balance{file, std::nullopt,
-                                 {number(value(row, "red"), 1), number(value(row, "green"), 1),
-                                  number(value(row, "blue"), 1)}};
+        FileWhiteBalance balance{file, std::nullopt};
         const RelativeRect area{number(value(row, "left"), 0), number(value(row, "top"), 0),
                                 number(value(row, "right"), 0), number(value(row, "bottom"), 0)};
         if (!area.empty()) {
@@ -73,11 +70,13 @@ WhiteBalanceSettings CsvWhiteBalanceStore::load(const fs::path& work_dir) {
     }
     const auto reference = named_rows(work_dir / kReferenceFile);
     if (!reference.empty()) {
-        settings.reference = value(reference.front(), "reference");
+        settings.reference_video = value(reference.front(), "reference_video");
+        settings.reference_start_s = number(value(reference.front(), "reference_start"), 0);
+        settings.reference_end_s = number(value(reference.front(), "reference_end"), 0);
         settings.temperature = number(value(reference.front(), "temperature"), 0);
         settings.tint = number(value(reference.front(), "tint"), 0);
         settings.brightness = number(value(reference.front(), "brightness"), 0);
-        settings.match_brightness = value(reference.front(), "match_brightness") == "1";
+        settings.match_brightness = value(reference.front(), "match_brightness") != "0";
     }
     return settings;
 }
@@ -90,31 +89,17 @@ void CsvWhiteBalanceStore::save(const fs::path& work_dir, const WhiteBalanceSett
         const bool has_area = file.area.has_value();
         files.push_back({file.file, has_area ? written(area.left) : "",
                          has_area ? written(area.top) : "", has_area ? written(area.right) : "",
-                         has_area ? written(area.bottom) : "", written(file.gains.red),
-                         written(file.gains.green), written(file.gains.blue)});
+                         has_area ? written(area.bottom) : ""});
     }
-    io::write_csv(work_dir / kWhiteBalanceFile,
-                  {"file", "left", "top", "right", "bottom", "red", "green", "blue"}, files);
+    io::write_csv(work_dir / kWhiteBalanceFile, {"file", "left", "top", "right", "bottom"}, files);
     io::write_csv(work_dir / kReferenceFile,
-                  {"reference", "temperature", "tint", "brightness", "match_brightness"},
-                  {{settings.reference, written(settings.temperature), written(settings.tint),
-                    written(settings.brightness), settings.match_brightness ? "1" : "0"}});
+                  {"reference_video", "reference_start", "reference_end", "temperature", "tint",
+                   "brightness", "match_brightness"},
+                  {{settings.reference_video, written(settings.reference_start_s),
+                    written(settings.reference_end_s), written(settings.temperature),
+                    written(settings.tint), written(settings.brightness),
+                    settings.match_brightness ? "1" : "0"}});
 }
 
-std::vector<ColorSpan> color_spans(const fs::path& video, const fs::path& white_balance) {
-    if (white_balance.empty() || !fs::exists(white_balance)) {
-        return {};
-    }
-    const WhiteBalanceSettings settings = CsvWhiteBalanceStore().load(white_balance.parent_path());
-    std::vector<ColorSpan> spans;
-    for (const media::PartSpan& part : media::part_spans(video)) {
-        const std::string name = part.file.filename().string();
-        const auto file = std::ranges::find(settings.files, name, &FileWhiteBalance::file);
-        if (file != settings.files.end() && !file->gains.identity()) {
-            spans.push_back({part.start_s, part.end_s, file->gains});
-        }
-    }
-    return spans;
-}
 
 } // namespace ttrally::cutting

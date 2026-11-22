@@ -3,6 +3,7 @@
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 
 #include "cutting/domain/resolution.hpp"
+#include "shared/kernel/parallel.hpp"
 #include "cutting/infrastructure/encoder_probe.hpp"
 #include "cutting/infrastructure/parameter_sets.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
@@ -375,12 +376,12 @@ std::optional<VideoEncoder> VideoEncoder::open(const std::string& name, const Vi
     return encoder;
 }
 
-void VideoEncoder::send(const AVFrame& frame, std::int64_t pts, RgbGains gains) {
+void VideoEncoder::send(const AVFrame& frame, std::int64_t pts, const ToneCurves* curves) {
     auto converted = convert(frame);
-    if (!gains.identity()) {
+    if (curves != nullptr && !curves->is_identity()) {
         YuvFormat format = yuv_format_of(frame);
         format.full_range = context_->color_range == AVCOL_RANGE_JPEG;
-        apply_white_balance(*converted, gains, format);
+        apply_curves(*converted, *curves, format);
     }
     if (frames_) {
         auto uploaded = ff::make_frame();
@@ -468,53 +469,68 @@ YuvFormat yuv_format_of(const AVFrame& frame) {
                           frame.format == AV_PIX_FMT_YUVJ420P};
 }
 
-void apply_white_balance(AVFrame& frame, RgbGains gains, YuvFormat format) {
+void apply_curves(AVFrame& frame, const ToneCurves& curves, YuvFormat format) {
     const bool nv12 = frame.format == AV_PIX_FMT_NV12;
     const bool planar = frame.format == AV_PIX_FMT_YUV420P || frame.format == AV_PIX_FMT_YUVJ420P;
-    if (gains.identity() || (!nv12 && !planar)) {
+    if (!nv12 && !planar) {
         return;
     }
     ff::check(av_frame_make_writable(&frame), "frame");
-    const std::array<double, 9> m = yuv_matrix(gains, format);
-    // In 1/65536: the matrix on (Y - black, U - 128, V - 128)
-    constexpr double kOne = 65536.0;
-    std::array<std::int64_t, 9> k{};
-    for (std::size_t i = 0; i < k.size(); ++i) {
-        k[i] = std::llround(m[i] * kOne);
-    }
-    const int black = format.full_range ? 0 : 16;
-    constexpr int kZero = 128;
-    const auto clamp = [](std::int64_t value) {
-        return static_cast<std::uint8_t>(std::clamp<std::int64_t>(value, 0, 255));
+    // YUV (stored values) <-> RGB 0-255, for this standard and range
+    const double kr = format.bt709 ? 0.2126 : 0.299;
+    const double kb = format.bt709 ? 0.0722 : 0.114;
+    const double kg = 1.0 - kr - kb;
+    const double black = format.full_range ? 0.0 : 16.0;
+    const double luma_scale = format.full_range ? 1.0 : 255.0 / 219.0;
+    const double chroma_scale = format.full_range ? 1.0 : 255.0 / 224.0;
+    constexpr double kZero = 128.0;
+    const auto clamp = [](double value) {
+        return static_cast<std::uint8_t>(std::clamp(std::lround(value), 0L, 255L));
     };
-    for (int cy = 0; cy < frame.height / 2; ++cy) {
-        const auto luma_row = [&](int y) {
-            return frame.data[0] + static_cast<std::ptrdiff_t>(y) * frame.linesize[0];
-        };
-        std::uint8_t* rows[2] = {luma_row(2 * cy), luma_row(2 * cy + 1)};
+    const auto through = [&](int channel, double value) {
+        return static_cast<double>(
+            curves.curve[static_cast<std::size_t>(channel)][clamp(value)]);
+    };
+    const int step = nv12 ? 2 : 1;
+    parallel_for(static_cast<std::size_t>(frame.height / 2), std::thread::hardware_concurrency(),
+                 [&](std::size_t row) {
+        const int cy = static_cast<int>(row);
+        std::uint8_t* lines[2] = {
+            frame.data[0] + static_cast<std::ptrdiff_t>(2 * cy) * frame.linesize[0],
+            frame.data[0] + static_cast<std::ptrdiff_t>(2 * cy + 1) * frame.linesize[0]};
         std::uint8_t* u_row = frame.data[1] + static_cast<std::ptrdiff_t>(cy) * frame.linesize[1];
         std::uint8_t* v_row =
             nv12 ? u_row + 1 : frame.data[2] + static_cast<std::ptrdiff_t>(cy) * frame.linesize[2];
-        const int step = nv12 ? 2 : 1;
         for (int cx = 0; cx < frame.width / 2; ++cx) {
             std::uint8_t& u_value = u_row[cx * step];
             std::uint8_t& v_value = v_row[cx * step];
-            const std::int64_t u = u_value - kZero;
-            const std::int64_t v = v_value - kZero;
-            std::int64_t luma_sum = 0;
-            for (std::uint8_t* row : rows) {
+            const double u = (u_value - kZero) * chroma_scale;
+            const double v = (v_value - kZero) * chroma_scale;
+            double red_sum = 0;
+            double green_sum = 0;
+            double blue_sum = 0;
+            for (std::uint8_t* line : lines) {
                 for (int dx = 0; dx < 2; ++dx) {
-                    std::uint8_t& y_value = row[2 * cx + dx];
-                    const std::int64_t y = y_value - black;
-                    luma_sum += y;
-                    y_value = clamp(((k[0] * y + k[1] * u + k[2] * v) >> 16) + black);
+                    std::uint8_t& y_value = line[2 * cx + dx];
+                    const double y = (y_value - black) * luma_scale;
+                    const double red = through(0, y + 2.0 * (1.0 - kr) * v);
+                    const double green = through(
+                        1, y - 2.0 * kb * (1.0 - kb) / kg * u - 2.0 * kr * (1.0 - kr) / kg * v);
+                    const double blue = through(2, y + 2.0 * (1.0 - kb) * u);
+                    red_sum += red;
+                    green_sum += green;
+                    blue_sum += blue;
+                    y_value = clamp((kr * red + kg * green + kb * blue) / luma_scale + black);
                 }
             }
-            const std::int64_t y = luma_sum / 4;
-            u_value = clamp(((k[3] * y + k[4] * u + k[5] * v) >> 16) + kZero);
-            v_value = clamp(((k[6] * y + k[7] * u + k[8] * v) >> 16) + kZero);
+            const double red = red_sum / 4;
+            const double green = green_sum / 4;
+            const double blue = blue_sum / 4;
+            const double luma = kr * red + kg * green + kb * blue;
+            u_value = clamp((blue - luma) / (2.0 * (1.0 - kb)) / chroma_scale + kZero);
+            v_value = clamp((red - luma) / (2.0 * (1.0 - kr)) / chroma_scale + kZero);
         }
-    }
+    });
 }
 
 VideoEncoder open_video_encoder(const CutOptions& options, const VideoFormat& format,

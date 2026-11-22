@@ -2,7 +2,7 @@
 
 #include "highlights/infrastructure/ffmpeg_highlight_renderer.hpp"
 
-#include "cutting/infrastructure/csv_white_balance_store.hpp"
+#include "cutting/infrastructure/rally_colors.hpp"
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 #include "highlights/infrastructure/svg_shape.hpp"
 #include "highlights/infrastructure/title_composer.hpp"
@@ -693,18 +693,10 @@ VideoFormat output_format(const Clip& first) {
 
 cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesystem::path& output,
                                 const RenderOptions& options, ProgressReporter& progress) {
-    std::map<std::filesystem::path, std::vector<cutting::ColorSpan>> spans;
-    const auto color_of = [&](const std::filesystem::path& video)
-        -> const std::vector<cutting::ColorSpan>& {
-        auto found = spans.find(video);
-        if (found == spans.end()) {
-            found = spans
-                        .emplace(video,
-                                 cutting::color_spans(video, options.encoding.white_balance))
-                        .first;
-        }
-        return found->second;
-    };
+    cutting::RallyColors colors(options.encoding.white_balance);
+    if (colors.active()) {
+        progress.report("White balance: every clip measured on its own frames");
+    }
     const VideoFormat format =
         cutting::limited_to(output_format(clips.front()), options.encoding.max_height);
     constexpr int kStandardDefinition = 576; ///< up to this height BT.601 is assumed
@@ -736,13 +728,12 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
             channel.assign(static_cast<std::size_t>(end_sample - first_sample), 0.0F);
         }
         ClipReader reader(clip, format, t.frames);
-        const std::vector<cutting::ColorSpan>& color = color_of(clip.video);
+        const cutting::ToneCurves curves = colors.for_span(clip.video, clip.start_s, clip.end_s);
         const ClipReader::PictureConsumer consume = [&](std::int64_t j, AVFrame& picture) {
             // The white balance first: the titles keep their colours
-            const double source_s =
-                clip.start_s + static_cast<double>(j) / av_q2d(format.frame_rate) /
-                                   (clip.slow ? clip.slow->factor : 1);
-            cutting::apply_white_balance(picture, cutting::gains_at(color, source_s), yuv);
+            if (!curves.is_identity()) {
+                cutting::apply_curves(picture, curves, yuv);
+            }
             for (const auto& [title, position] : painted) {
                 paint_title({.y = picture.data[0], .u = picture.data[1], .v = picture.data[2],
                              .y_stride = picture.linesize[0], .uv_stride = picture.linesize[1],

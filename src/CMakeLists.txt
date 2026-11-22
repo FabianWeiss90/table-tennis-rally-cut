@@ -150,6 +150,7 @@ ttrally_layer(ttrally_detection_infrastructure
 # Cutting context (phase 8: the video cut down to its rallies)
 ttrally_layer(ttrally_cutting_domain
     SOURCES cutting/domain/cut_plan.cpp cutting/domain/resolution.cpp
+        cutting/domain/color_match.cpp
         cutting/domain/white_balance.cpp
     DEPENDS ttrally_shared_kernel)
 
@@ -166,6 +167,7 @@ ttrally_layer(ttrally_cutting_infrastructure
         cutting/infrastructure/encoder_probe.cpp
         cutting/infrastructure/ffmpeg_encoding.cpp
         cutting/infrastructure/parameter_sets.cpp
+        cutting/infrastructure/rally_colors.cpp
         cutting/infrastructure/ffmpeg_video_cutter.cpp
         cutting/infrastructure/mp4_repair.cpp
     DEPENDS ttrally_cutting_application ttrally_media_infrastructure

@@ -762,6 +762,10 @@ TEST_CASE("the scenes of videos are detected from frames spread over them") {
             frame.planes[static_cast<std::size_t>(fraction * 31)] = 255;
             return frame;
         }
+        std::optional<ttrally::media::VideoFrame>
+        frame_at_time(const std::filesystem::path& video, double, int height) override {
+            return frame_at(video, 0.5, height);
+        }
     } halls;
     CHECK(video_background(halls, "broken.mp4").pixels.empty());
     CHECK(video_background(halls, "left-1.mp4").pixels.size() == 32);

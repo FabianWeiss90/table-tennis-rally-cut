@@ -7,6 +7,7 @@
 
 #include "cutting/infrastructure/csv_white_balance_store.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
+#include "cutting/infrastructure/rally_colors.hpp"
 #include "launcher/infrastructure/csv_match_store.hpp"
 #include "launcher/infrastructure/library_scanner.hpp"
 #include "media/infrastructure/part_list.hpp"
@@ -156,7 +157,7 @@ TEST_CASE("a match of several files is one video with one continuous timeline") 
     fs::remove_all(library);
 }
 
-TEST_CASE("the white balance chosen for a part corrects only that part's frames") {
+TEST_CASE("every rally is corrected towards the tuned reference rally") {
     if (!run("ffmpeg -hide_banner -version")) {
         SKIP("ffmpeg command-line tool not found");
     }
@@ -165,45 +166,50 @@ TEST_CASE("the white balance chosen for a part corrects only that part's frames"
     const fs::path day = fs::temp_directory_path() /
                          std::format("ttrally_white_balance_test_{:08x}", device());
     const fs::path work = day / "ttrally-data";
-    for (const char* part : {"Warm-1.mp4", "Warm-2.mp4"}) {
-        fs::create_directories(day);
+    fs::create_directories(day);
+    // Part 1 neutral grey (the reference), part 2 darker and yellowish
+    const std::vector<std::pair<const char*, const char*>> parts{{"Hall-1.mp4", "0x909090"},
+                                                                {"Hall-2.mp4", "0x6E6448"}};
+    for (const auto& [part, color] : parts) {
         REQUIRE(run(std::format("ffmpeg -hide_banner -y -f lavfi "
-                                "-i color=c=0xC8B496:size=160x90:rate=60 -f lavfi "
+                                "-i color=c={}:size=160x90:rate=60 -f lavfi "
                                 "-i sine=sample_rate=48000 -t 2 -c:v mpeg4 -q:v 2 -g 30 "
                                 "-c:a aac \"{}\"",
-                                (day / part).string())));
+                                color, (day / part).string())));
     }
-    launcher::CsvMatchStore().save(work, {{"warm", {"Warm-1.mp4", "Warm-2.mp4"}}});
-    const fs::path list = work / "matches" / "warm.ffconcat";
-    const cutting::RgbGains neutral = cutting::neutral_gains({200, 180, 150});
+    launcher::CsvMatchStore().save(work, {{"hall", {"Hall-1.mp4", "Hall-2.mp4"}}});
+    const fs::path list = work / "matches" / "hall.ffconcat";
     const cutting::WhiteBalanceSettings settings{
-        .files = {{"Warm-1.mp4", cutting::RelativeRect{0.1, 0.1, 0.9, 0.9}, neutral},
-                  {"Warm-2.mp4", std::nullopt, {}}},
-        .reference = "Warm-1.mp4",
-        .temperature = -0.25,
-        .tint = 0.125,
-        .brightness = -0.5,
+        .files = {{"Hall-1.mp4", cutting::RelativeRect{0.1, 0.1, 0.5, 0.5}},
+                  {"Hall-2.mp4", std::nullopt}},
+        .reference_video = "ttrally-data/matches/hall.ffconcat",
+        .reference_start_s = 0.5,
+        .reference_end_s = 1.5,
+        .temperature = 0.0,
+        .tint = 0.0,
+        .brightness = 0.0,
         .match_brightness = true};
     cutting::CsvWhiteBalanceStore().save(work, settings);
     const cutting::WhiteBalanceSettings read = cutting::CsvWhiteBalanceStore().load(work);
-    CHECK(read.files[0].file == "Warm-1.mp4");
+    REQUIRE(read.files.size() == 2);
     REQUIRE(read.files[0].area);
-    CHECK(read.files[0].area->right == Catch::Approx(0.9));
+    CHECK(read.files[0].area->right == Catch::Approx(0.5));
     CHECK_FALSE(read.files[1].area);
-    CHECK(read.files[0].gains.red == Catch::Approx(neutral.red).margin(1e-6));
-    CHECK(read.reference == "Warm-1.mp4");
-    CHECK(read.temperature == Catch::Approx(-0.25));
-    CHECK(read.tint == Catch::Approx(0.125));
-    CHECK(read.brightness == Catch::Approx(-0.5));
+    CHECK(read.reference_video == "ttrally-data/matches/hall.ffconcat");
+    CHECK(read.reference_end_s == Catch::Approx(1.5));
     CHECK(read.match_brightness);
-    const auto spans = cutting::color_spans(list, work / "white-balance.csv");
-    REQUIRE(spans.size() == 1); // the unchanged part needs none
-    CHECK(spans[0].start_s == 0.0);
-    CHECK(spans[0].end_s == Catch::Approx(2.0).margin(0.05));
+
+    cutting::RallyColors colors(work / "white-balance.csv");
+    REQUIRE(colors.active());
+    CHECK(colors.for_span(list, 0.5, 1.0).is_identity()); // the reference's own look
+    const cutting::ToneCurves curves = colors.for_span(list, 2.5, 3.0);
+    const cutting::RgbColor lifted = curves.applied({110, 100, 72});
+    CHECK(lifted.red == Catch::Approx(lifted.blue).margin(6.0));
+    CHECK(lifted.green == Catch::Approx(144.0).margin(8.0));
 
     cutting::FfmpegVideoCutter cutter;
     SilentProgressReporter progress;
-    const std::vector<cutting::CutSection> sections{{1.5, 2.5, 1}};
+    const std::vector<cutting::CutSection> sections{{0.5, 1.0, 1}, {2.5, 3.0, 1}};
     static_cast<void>(cutter.cut(list, sections, day / "cut.mp4",
                                  {.mode = cutting::CutMode::Exact,
                                   .encoder = "auto",
@@ -216,21 +222,29 @@ TEST_CASE("the white balance chosen for a part corrects only that part's frames"
     media::FfmpegFrameDecoderFactory factory;
     auto decoder =
         factory.open(day / "cut.mp4", timestamps, media::DecodeBackend::Cpu, {.height = 90});
-    // Mean chroma distance from neutral of a frame
-    const auto tint = [&](std::int64_t index) {
-        double distance = 0;
+    // Mean luma and chroma distance from neutral of a frame
+    const auto look = [&](std::int64_t index) {
+        double luma = 0;
+        double tint = 0;
         decoder->decode(index, index, [&](media::VideoFrame&& frame) {
+            for (const std::uint8_t y : frame.y()) {
+                luma += y;
+            }
+            luma /= static_cast<double>(frame.y().size());
             const auto u = frame.u();
             const auto v = frame.v();
             for (std::size_t i = 0; i < u.size(); ++i) {
-                distance += std::abs(u[i] - 128.0) + std::abs(v[i] - 128.0);
+                tint += std::abs(u[i] - 128.0) + std::abs(v[i] - 128.0);
             }
-            distance /= static_cast<double>(u.size());
+            tint /= static_cast<double>(u.size());
             return true;
         });
-        return distance;
+        return std::pair{luma, tint};
     };
-    CHECK(tint(10) < 3.0);  // part 1: corrected to grey
-    CHECK(tint(50) > 15.0); // part 2: as recorded
+    const auto [reference_luma, reference_tint] = look(10); // part 1
+    const auto [corrected_luma, corrected_tint] = look(45); // part 2, corrected
+    CHECK(reference_tint < 3.0);
+    CHECK(corrected_tint < 5.0);
+    CHECK(corrected_luma == Catch::Approx(reference_luma).margin(8.0));
     fs::remove_all(day);
 }

@@ -381,28 +381,35 @@ from what the names have in common, e.g. `Kaether-Baumgarten-1.MP4` and `-2.MP4`
 
 ### White balance
 
-Videos recorded with automatic white balance can differ in colour (more or less daylight).
-Each file is constant in itself, so one correction per file is enough; each part of a match is
-corrected on its own, since the camera may change between files. In the launcher, choose the
-whole match day, then the **White balance** tab:
+Videos recorded with automatic white balance and exposure differ in colour, brightness and
+contrast, also between rallies of one video (more or less daylight). Every rally is therefore
+corrected on its own towards one reference rally. In the launcher, choose the whole match day,
+then the **White balance** tab:
 
-1. **The same spot in every file:** each file shows a large picture from its middle. In the
-   first file, drag a rectangle over a spot that should look the same in all files (e.g. the
-   table, a wall, a banner). In every other file it appears with the same size where it is in
-   the file before (orange) and can only be moved, onto the same spot (then red); "Back to the
-   file before" undoes that.
-2. **Tune the reference:** choose one file and set its look with **Temperature** (warmer: more
-   red, less blue), **Tint** (more magenta, less green) and **Brightness** (half to 1.5 times). "Area neutral" sets them so that the
-   spot becomes grey (a start for white or grey spots), "Reset" returns to the recording.
-3. **Result:** every other file is corrected so that its spot looks like the reference's: in
-   colour tone, and with **Also match the brightness** each whole picture (not only the spot)
-   becomes as bright as the reference's tuned picture (evens out exposure, but may brighten a
-   dark video a lot). All files are shown corrected.
+1. **The same spot in every file:** each file (each part of a match on its own) shows a large
+   picture from its middle. In the first file, drag a rectangle over a spot that should look the
+   same in all files (e.g. the table, a wall, a banner). In every other file it appears with the
+   same size where it is in the file before (orange) and can only be moved, onto the same spot
+   (then red); "Back to the file before" undoes that.
+2. **The reference rally, tuned:** choose a video and one of its rallies (from its cut list) and
+   set its look with **Temperature** (warmer: more red, less blue), **Tint** (more magenta, less
+   green) and **Brightness** (half to 1.5 times). "Area neutral" sets temperature and tint so
+   that the spot becomes grey (a start for white or grey spots), "Reset" returns to the
+   recording.
+3. **Result:** a frame from each file's middle, corrected as its rallies will be.
 
-Stored in `<match day>/ttrally-data/white-balance.csv` (per file: its rectangle and the gains for
-red, green and blue) and `white-balance-reference.csv`. `cut` and `highlights` apply it with
-`--white-balance <that file>` (the launcher passes it); a fast cut cannot (it copies the video).
-Labels, features and detections keep the colours as recorded.
+When cutting (`cut`, `highlights`), every rally (every clip) is measured on its own: the median
+of 7 of its frames (the players mostly disappear), compared with the median of 9 frames of the
+tuned reference rally. With **Match brightness, contrast and colours** (default) tone curves give
+the rally the reference's distribution of brightness and colours per channel (histogram
+matching of the whole picture), then the spot's colour tone is made the reference spot's;
+without it only the spot's colour tone is corrected and each rally keeps its brightness. The
+curves are applied to every frame (red, green and blue through a curve each). Labels, features
+and detections keep the colours as recorded; a fast cut cannot correct (it copies the video).
+
+Stored in `<match day>/ttrally-data/white-balance.csv` (each file's rectangle) and
+`white-balance-reference.csv` (the reference rally and its tuning); `cut` and `highlights` use
+them with `--white-balance <white-balance.csv>` (the launcher passes it).
 
 ### `gui`
 

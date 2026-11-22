@@ -47,7 +47,11 @@ CutCommand::CutCommand(CLI::App& app)
     command_->add_option("--detections-dir", detections_dir_,
                          "Where the default looks for detections")
         ->capture_default_str();
-    command_->add_option("--out", out_, "Output video (default: data/cuts/<video-id>.mp4)");
+    command_->add_option("--out", out_,
+                         "Output video, used as given (default: <out-dir>/<video-id>-<height>p.mp4, "
+                         "e.g. game-1080p.mp4)");
+    command_->add_option("--out-dir", out_dir_, "Folder of the default output video")
+        ->capture_default_str();
     command_->add_option("--before", before_s_, "Seconds kept before each rally")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
@@ -93,8 +97,9 @@ int CutCommand::run() {
         throw std::invalid_argument("--fast copies the video and cannot change its resolution; "
                                     "leave out --fast or --resolution");
     }
-    if (out_.empty()) {
-        out_ = std::filesystem::path("data/cuts") / (video_id_ + ".mp4");
+    const bool default_name = out_.empty();
+    if (default_name) {
+        out_ = out_dir_ / (video_id_ + ".mp4"); // the height is added once it is known
     }
     media::FfmpegMediaProbe probe;
     media::FfmpegMediaReader ffmpeg_reader;
@@ -115,7 +120,8 @@ int CutCommand::run() {
                                                : cutting::VideoCodec::H265,
                      .encoder = encoder_,
                      .bitrate_mbps = bitrate_mbps_,
-                     .max_height = max_height_of(resolution_)}});
+                     .max_height = max_height_of(resolution_)},
+         .resolution_in_name = default_name});
     std::cout << std::format(
         "Done in {}: {} rallies, {} of video ({}).\n", io::format_elapsed(result.seconds), result.rallies,
         io::format_clock(result.cut.duration_s),
@@ -123,7 +129,7 @@ int CutCommand::run() {
             ? "copied, cuts at keyframes"
             : std::format("encoded with {} at {:.1f} Mbit/s", result.cut.video_encoder,
                           result.cut.bitrate_mbps));
-    std::cout << "Cut video: " << out_.string() << '\n';
+    std::cout << "Cut video: " << result.output.string() << '\n';
     return 0;
 }
 

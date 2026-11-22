@@ -4,6 +4,7 @@
 
 #include "cutting/application/cut_video.hpp"
 #include "cutting/application/merge_videos.hpp"
+#include "cutting/domain/resolution.hpp"
 #include "support/fake_media.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -56,11 +57,24 @@ struct Fixture {
         file.info.video = media::VideoStreamInfo{};
         file.info.video->index = 0;
         file.info.video->avg_frame_rate = {kFps, 1};
+        file.info.video->width = 3840;
+        file.info.video->height = 2160;
         file.timestamps.time_base = {1, kFps};
         for (int i = 0; i < kFrames; ++i) {
             file.timestamps.pts.push_back(i);
         }
         library.add("match.mp4", file);
+    }
+
+    CutVideoResult run_named(CutOptions options) {
+        cut_list.labels.rallies = {{100, 200, {}, false, ""}};
+        CutVideo cut(library, library, cut_list, cutter, progress);
+        return cut.execute({.video = "match.mp4",
+                            .video_id = "match",
+                            .output = "cuts/match.mp4",
+                            .margins = {},
+                            .options = options,
+                            .resolution_in_name = true});
     }
 
     CutVideoResult run(Margins margins = {}) {
@@ -74,6 +88,24 @@ struct Fixture {
 };
 
 } // namespace
+
+TEST_CASE("the written height is added to the file name") {
+    CHECK(output_height(2160, 0) == 2160);
+    CHECK(output_height(2160, 1080) == 1080);
+    CHECK(output_height(1080, 2160) == 1080); // never enlarged
+    CHECK(output_height(1081, 0) == 1080);    // even
+    CHECK(with_resolution("cuts/match.mp4", 1080) ==
+          std::filesystem::path("cuts") / "match-1080p.mp4");
+    Fixture fixture;
+    CHECK(fixture.run_named({.max_height = 1080}).output ==
+          std::filesystem::path("cuts") / "match-1080p.mp4");
+    CHECK(fixture.cutter.written == std::filesystem::path("cuts") / "match-1080p.mp4");
+    CHECK(fixture.run_named({}).output == std::filesystem::path("cuts") / "match-2160p.mp4");
+    // A fast cut copies the video: always the original's height
+    CHECK(fixture.run_named({.mode = CutMode::Fast, .max_height = 1080}).output ==
+          std::filesystem::path("cuts") / "match-2160p.mp4");
+    CHECK(fixture.run().output == "out.mp4"); // a given name stays as it is
+}
 
 TEST_CASE("rallies get their margins and stay inside the video") {
     const auto sections =

@@ -2,6 +2,7 @@
 
 #include "highlights/application/make_highlight_video.hpp"
 
+#include "cutting/domain/resolution.hpp"
 #include "cutting/application/section_planning.hpp"
 #include "media/application/media_error.hpp"
 
@@ -51,7 +52,15 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
     if (render.font.empty()) {
         render.font = store_.title_font();
     }
-    result.render = renderer_.render(clips, request.output, render, progress_);
+    result.output = request.output;
+    if (request.resolution_in_name) {
+        // The video takes the size of the first clip's video
+        const media::MediaInfo info = probe_.probe(clips.front().video);
+        result.output = cutting::with_resolution(
+            request.output, cutting::output_height(info.video ? info.video->height : 0,
+                                                   render.encoding.max_height));
+    }
+    result.render = renderer_.render(clips, result.output, render, progress_);
     result.seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     return result;

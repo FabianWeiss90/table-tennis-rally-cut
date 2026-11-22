@@ -9,6 +9,8 @@ namespace ttrally::launcher {
 
 namespace {
 
+constexpr std::string_view kOutputFlag = "--out";
+
 const Field* find(const CommandForm& form, const Field& like) {
     const auto it = std::ranges::find_if(form.fields, [&](const Field& field) {
         return field.flag == like.flag && field.label == like.label;
@@ -79,7 +81,9 @@ std::vector<bool> video_dependent_fields(std::string_view command, const VideoEn
     std::vector<bool> dependent;
     for (const Field& field : mine.fields) {
         const Field* same = find(theirs, field);
-        dependent.push_back(same == nullptr || same->value != field.value);
+        // One output file for every game would be overwritten by each: always the game's own
+        const bool own_output = field.flag == kOutputFlag;
+        dependent.push_back(same == nullptr || same->value != field.value || own_output);
     }
     return dependent;
 }

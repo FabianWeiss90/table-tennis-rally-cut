@@ -506,6 +506,7 @@ TEST_CASE("the match day's form leaves out the fields that follow from the video
     REQUIRE(dependent.size() == cut.fields.size());
     for (std::size_t i = 0; i < cut.fields.size(); ++i) {
         const Field& field = cut.fields[i];
+        // --out is empty, but one file for every game would be overwritten by each
         const bool own = field.flag.empty() || field.flag == "--rallies" ||
                          field.flag == "--out" || field.flag == "--video-id";
         INFO(field.label);

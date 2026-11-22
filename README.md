@@ -798,7 +798,8 @@ ttrally cut data/original.mp4 --video-id <video_id> --before 3 --after 1.5
   4 s).
 
 Options: `--rallies`, `--annotations-dir` and `--detections-dir` (where the default looks,
-`data/annotations` and `data/detections`), `--out` (default `data/cuts/<video_id>.mp4`), `--before`, `--after`,
+`data/annotations` and `data/detections`), `--out` (used as given; default `<out-dir>/<video_id>-<height>p.mp4`, e.g. `match-1080p.mp4`
+with the height actually written), `--out-dir` (default `data/cuts`), `--before`, `--after`,
 `--fast`, `--resolution`, `--codec` (`h265` or `h264`), `--bitrate` (Mbit/s), `--encoder` (e.g. `hevc_vaapi`,
 `libopenh264`; default: the first of the codec that works), `--cache-dir`. In the launcher the
 encoder is a drop-down list under "Advanced"; hovering an entry says what it runs on and what it
@@ -911,7 +912,8 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
   without its background.
 
 Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highlights`), `--out`
-(default `<video id>.mp4` or `<match day>-highlights.mp4` in the highlights directory; a bare
+(default `<video id>-<height>p.mp4` or `<match day>-highlights-<height>p.mp4` in the highlights
+directory, e.g. `-1080p`, with the height actually written; a bare
 name also goes there, and `.mp4` is added if it has no extension),
 `--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`,
 `--resolution`, `--codec`,

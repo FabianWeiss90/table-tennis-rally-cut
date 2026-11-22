@@ -24,9 +24,12 @@ struct MakeHighlightsRequest {
     /// Match day video: each clip shows the title of its game (a game video always shows it).
     bool rally_titles = false;
     RenderOptions render;
+    /// The height of the written video is added to the output's name ("game-1080p.mp4").
+    bool resolution_in_name = false;
 };
 
 struct MakeHighlightsResult {
+    std::filesystem::path output; ///< the written video
     std::size_t rallies = 0; ///< highlight rallies in the video
     std::size_t clips = 0;   ///< after merging rallies whose margins overlap
     std::vector<std::string> games; ///< video ids of the games in the video

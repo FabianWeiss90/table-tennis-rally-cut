@@ -78,8 +78,9 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_option("--out", out_,
                          "Output video; a bare name goes into --highlights-dir, \".mp4\" is added "
-                         "if there is no extension (default: <highlights-dir>/<video-id>.mp4, "
-                         "for a match day <highlights-dir>/<match day>-highlights.mp4)");
+                         "if there is no extension (default: <highlights-dir>/<video-id>-<height>p"
+                         ".mp4, for a match day <highlights-dir>/<match day>-highlights-<height>p"
+                         ".mp4, e.g. -1080p)");
     command_->add_option("--before", before_s_, "Seconds kept before each rally")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
@@ -119,7 +120,8 @@ int HighlightsCommand::run() {
     if (video_id_.empty() && !match_day_) {
         throw CLI::ValidationError("give --video-id for a game or --match-day");
     }
-    if (out_.empty()) {
+    const bool default_name = out_.empty();
+    if (default_name) { // the height is added once it is known
         out_ = match_day_ ? match_day_video(highlights_dir_)
                           : highlights_dir_ / (video_id_ + ".mp4");
     }
@@ -149,14 +151,15 @@ int HighlightsCommand::run() {
                                  .bitrate_mbps = bitrate_mbps_,
                                  .max_height = max_height_of(resolution_)},
                     .font = font_,
-                    .shapes = shapes_dir_}});
+                    .shapes = shapes_dir_},
+         .resolution_in_name = default_name});
     std::cout << std::format("Done in {}: {} rallies from {} game(s) in {} clips, {} of "
                              "video (encoded with {} at {:.1f} Mbit/s).\n",
                              io::format_elapsed(result.seconds), result.rallies,
                              result.games.size(), result.clips,
                              io::format_clock(result.render.duration_s),
                              result.render.video_encoder, result.render.bitrate_mbps);
-    std::cout << "Highlight video: " << out_.string() << '\n';
+    std::cout << "Highlight video: " << result.output.string() << '\n';
     return 0;
 }
 

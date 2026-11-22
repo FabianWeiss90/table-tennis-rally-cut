@@ -148,7 +148,7 @@ ttrally_layer(ttrally_detection_infrastructure
 
 # Cutting context (phase 8: the video cut down to its rallies)
 ttrally_layer(ttrally_cutting_domain
-    SOURCES cutting/domain/cut_plan.cpp
+    SOURCES cutting/domain/cut_plan.cpp cutting/domain/resolution.cpp
     DEPENDS ttrally_shared_kernel)
 
 ttrally_layer(ttrally_cutting_application

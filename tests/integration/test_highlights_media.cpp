@@ -188,13 +188,15 @@ TEST_CASE("highlight videos of a game and of a match day") {
         const auto out = day / "small.mp4";
         RenderOptions small = render;
         small.encoding.max_height = 180; // weiss-becker is 640x360, weiss-ohrstedt 320x180
-        (void)make.execute({.video_id = std::nullopt,
-                            .output = out,
-                            .match_day_name = "",
-                            .margins = margins,
-                            .rally_titles = true,
-                            .render = small});
-        CHECK(inspect(out).width == 320);
+        const auto result = make.execute({.video_id = std::nullopt,
+                                          .output = out,
+                                          .match_day_name = "",
+                                          .margins = margins,
+                                          .rally_titles = true,
+                                          .render = small,
+                                          .resolution_in_name = true});
+        CHECK(result.output == day / "small-180p.mp4");
+        CHECK(inspect(result.output).width == 320);
     }
     SECTION("hard cuts") {
         const auto out = day / "cuts.mp4";

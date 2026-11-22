@@ -2,6 +2,7 @@
 
 #include "cutting/infrastructure/ffmpeg_encoding.hpp"
 
+#include "cutting/domain/resolution.hpp"
 #include "cutting/infrastructure/encoder_probe.hpp"
 #include "cutting/infrastructure/parameter_sets.hpp"
 #include "cutting/infrastructure/ffmpeg_video_cutter.hpp"
@@ -318,9 +319,10 @@ VideoFormat limited_to(VideoFormat format, int max_height) {
     if (max_height <= 0 || format.height <= max_height) {
         return format;
     }
-    const double shrink = static_cast<double>(max_height) / format.height;
+    const int height = output_height(format.height, max_height);
+    const double shrink = static_cast<double>(height) / format.height;
     format.width = static_cast<int>(std::lround(format.width * shrink / 2)) * 2;
-    format.height = max_height & ~1;
+    format.height = height;
     return format;
 }
 

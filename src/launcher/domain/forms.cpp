@@ -357,8 +357,12 @@ CommandForm cut_form(const VideoEntry& video) {
                                               "Default: the annotations if complete, else the "
                                               "refined detections, else the detections")),
                               cut_lists),
-             option("--out", "Output video", FieldKind::File,
-                    in_work_dir(video, {"cuts", id + ".mp4"}), "", ""),
+             advanced(option("--out-dir", "Output folder", FieldKind::Directory,
+                             in_work_dir(video, {"cuts"}), "data/cuts",
+                             "The video is named <video id>-<height>p.mp4, e.g. -1080p")),
+             advanced(option("--out", "Output video", FieldKind::File, "", "",
+                             "Empty: <video id>-<height>p.mp4 in the output folder; a name "
+                             "given here is used as it is")),
              option("--before", "Seconds before each rally", FieldKind::Number, "1", "1", ""),
              option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
              resolution_field(),
@@ -403,9 +407,10 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
                              in_work_dir(video, {"highlights"}), "data/highlights",
                              "The marks of every game; the videos are written here")),
              advanced(option("--out", "Output video", FieldKind::File, "", "",
-                             "Empty: <video id>.mp4 or <match day>-highlights.mp4 in the "
-                             "highlights directory; a bare name also goes there, "
-                             "\".mp4\" is added if missing")),
+                             "Empty: <video id>-<height>p.mp4 or <match day>-highlights-"
+                             "<height>p.mp4 in the highlights directory (e.g. -1080p); a bare "
+                             "name given here goes there as it is, \".mp4\" is added if "
+                             "missing")),
              advanced(option("--font", "Title font", FieldKind::File, "", "",
                              "TrueType font; empty: a bold system font")),
              advanced(option("--shapes-dir", "Title shapes", FieldKind::Directory,

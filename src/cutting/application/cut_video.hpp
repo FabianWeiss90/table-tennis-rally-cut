@@ -19,9 +19,12 @@ struct CutVideoRequest {
     std::filesystem::path output;
     Margins margins;
     CutOptions options;
+    /// The height of the written video is added to the output's name ("game-1080p.mp4").
+    bool resolution_in_name = false;
 };
 
 struct CutVideoResult {
+    std::filesystem::path output; ///< the written video
     std::size_t rallies = 0;
     std::vector<CutSection> sections;
     CutResult cut;

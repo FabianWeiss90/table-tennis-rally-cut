@@ -2,6 +2,7 @@
 
 #include "cutting/application/cut_video.hpp"
 
+#include "cutting/domain/resolution.hpp"
 #include "cutting/application/section_planning.hpp"
 #include "media/application/media_error.hpp"
 
@@ -46,7 +47,14 @@ CutVideoResult CutVideo::execute(const CutVideoRequest& request) {
                                  result.rallies, result.sections.size(),
                                  total_duration_s(result.sections),
                                  static_cast<double>(frames) * frame_duration));
-    result.cut = cutter_.cut(request.video, result.sections, request.output, request.options,
+    result.output = request.output;
+    if (request.resolution_in_name) {
+        const int max_height =
+            request.options.mode == CutMode::Fast ? 0 : request.options.max_height;
+        result.output = with_resolution(request.output,
+                                        output_height(info.video->height, max_height));
+    }
+    result.cut = cutter_.cut(request.video, result.sections, result.output, request.options,
                              progress_);
     result.seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();

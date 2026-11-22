@@ -27,4 +27,23 @@ enum class HighlightVideo {
 /// of either clip, as the renderer does).
 [[nodiscard]] double joined_length(std::span<const double> clips, double crossfade_s);
 
+/// A game's marks with its frame rate, for fit_match_day.
+struct GameMarks {
+    HighlightSelection selection;
+    double fps = 0.0;
+};
+
+/// How many rallies every game gives to a match day video that should last at most `max_s`.
+struct DayFit {
+    std::size_t per_game = 0; ///< the longest rallies of each game (a game with fewer: all)
+    double length_s = 0.0;    ///< of the match day video then
+};
+
+/// The most rallies per game (the longest of each, the same number from every game) whose match
+/// day video, with the margins and cross-fades, lasts at most `max_s`. Time left over is not
+/// filled with further rallies of single games, so every game has as many as the others (unless
+/// it has fewer rallies at all).
+[[nodiscard]] DayFit fit_match_day(std::span<const GameMarks> games, double max_s,
+                                   cutting::Margins margins, double crossfade_s);
+
 } // namespace ttrally::highlights

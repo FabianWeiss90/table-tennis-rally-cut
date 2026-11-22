@@ -41,6 +41,10 @@ class HighlightSelection {
     /// Marks the `count` longest rallies (equal lengths: the earlier first) as game and match day
     /// highlights and removes all other marks.
     void preselect(std::size_t count);
+    /// Marks the `count` longest rallies (equal lengths: the earlier first) as match day
+    /// highlights and unmarks the others for the match day; game marks stay (while coupled, the
+    /// marked rallies become game highlights too).
+    void mark_longest_for_day(std::size_t count);
     /// Removes all marks.
     void clear();
 
@@ -48,6 +52,9 @@ class HighlightSelection {
     [[nodiscard]] std::size_t day_count() const noexcept;
 
   private:
+    /// Indices of the rallies from the longest down; equal lengths: the earlier first.
+    [[nodiscard]] std::vector<std::size_t> by_length() const;
+
     std::vector<HighlightRally> rallies_;
     bool coupled_ = true;
 };

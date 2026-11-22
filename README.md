@@ -838,6 +838,12 @@ its name, its number of rallies, the length of its game video and its marks):
   preselect again with the chosen number, "Clear" removes every mark of the game (for the whole
   match day: "of every game" and "Clear all"). Marks survive
   new detections or refining: they move to the rally that overlaps the marked one.
+- **Match day video of a given length** (whole match day): "Match day video at most" takes a
+  length (`mm:ss`, `h:mm:ss` or seconds, default 05:00); "Same number from every game" marks
+  the longest rallies of each game for the match day, as many from every game as fit with the
+  margins and cross-fade. Time left over is not filled with further rallies of single games;
+  every game has the same number (a game with fewer rallies gives all it has). Game marks stay.
+  The result can then be changed by hand.
 - **Length:** above the list, about how long the game video and the match day video will be
   with the current marks, margins and cross-fade (updated with every tick).
 - **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest

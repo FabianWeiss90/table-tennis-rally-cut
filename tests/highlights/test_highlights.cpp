@@ -5,6 +5,7 @@
 
 #include "highlights/application/game_highlights.hpp"
 #include "highlights/application/highlight_length.hpp"
+#include "highlights/domain/highlight_selection.hpp"
 #include "highlights/application/make_highlight_video.hpp"
 #include "support/fake_media.hpp"
 
@@ -187,6 +188,47 @@ TEST_CASE("the length of a highlight video follows the marks, margins and cross-
     CHECK(clip_lengths(rallies, HighlightVideo::Game, margins, 0.0).empty());
     const std::vector<HighlightRally> start{rally(0, 59, true)};
     CHECK(clip_lengths(start, HighlightVideo::Game, margins, kFps)[0] == Approx(2.5));
+}
+
+TEST_CASE("the longest rallies are marked for the match day, game marks stay") {
+    HighlightSelection selection({rally(0, 99, true), rally(200, 499), rally(600, 799, true, true),
+                                  rally(900, 1199)});
+    selection.mark_longest_for_day(2); // 300 frames twice: the earlier first, then 200
+    CHECK(selection.rallies()[1].day);
+    CHECK(selection.rallies()[3].day);
+    CHECK_FALSE(selection.rallies()[2].day); // unmarked for the match day ...
+    CHECK(selection.rallies()[2].game);      // ... but still a game highlight
+    CHECK(selection.rallies()[0].game);
+    CHECK(selection.rallies()[1].game); // coupled: a match day highlight is a game highlight
+    CHECK(selection.day_count() == 2);
+}
+
+TEST_CASE("the match day video takes as many rallies from every game as fit") {
+    const cutting::Margins margins{.before_s = 1.0, .after_s = 1.0};
+    // Rallies of 4, 3, 2 and 1 s, far apart: clips of 6, 5, 4 and 3 s
+    const auto game_of = [] {
+        HighlightSelection selection({rally(600, 839), rally(1600, 1779), rally(2600, 2719),
+                                      rally(3600, 3659)});
+        return GameMarks{selection, kFps};
+    };
+    const std::vector<GameMarks> games{game_of(), game_of(), game_of()};
+    // 1 per game: 3 x 6 s = 18 s; 2 per game: 3 x 11 s = 33 s; 3 per game: 45 s
+    DayFit fit = fit_match_day(games, 40.0, margins, 0.0);
+    CHECK(fit.per_game == 2);
+    CHECK(fit.length_s == Approx(33.0));
+    // 37 s left over would hold another rally of one game, but every game keeps two
+    fit = fit_match_day(games, 44.0, margins, 0.0);
+    CHECK(fit.per_game == 2);
+    // Cross-fades shorten the video: 6 clips with 5 fades of 0.5 s make 33 - 2.5 s
+    CHECK(fit_match_day(games, 30.5, margins, 0.5).per_game == 2);
+    CHECK(fit_match_day(games, 30.4, margins, 0.5).per_game == 1);
+    CHECK(fit_match_day(games, 10.0, margins, 0.0).per_game == 0);
+    // A game with fewer rallies gives all it has
+    std::vector<GameMarks> uneven = games;
+    uneven.push_back({HighlightSelection({rally(600, 839)}), kFps});
+    fit = fit_match_day(uneven, 59.0, margins, 0.0); // 4 per game: 3 x 18 + 6 = 60 s
+    CHECK(fit.per_game == 3);
+    CHECK(fit.length_s == Approx(3 * 15.0 + 6.0));
 }
 
 TEST_CASE("titles from file names") {

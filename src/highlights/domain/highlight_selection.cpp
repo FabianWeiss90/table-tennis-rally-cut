@@ -48,16 +48,28 @@ void HighlightSelection::set_day(std::size_t index, bool marked) {
     }
 }
 
-void HighlightSelection::preselect(std::size_t count) {
+std::vector<std::size_t> HighlightSelection::by_length() const {
     std::vector<std::size_t> order(rallies_.size());
     std::iota(order.begin(), order.end(), std::size_t{0});
     // Rallies are sorted by start, so a stable sort keeps the earlier of equal lengths first
     std::ranges::stable_sort(order, std::greater{},
                              [this](std::size_t i) { return rallies_[i].frame_count(); });
+    return order;
+}
+
+void HighlightSelection::preselect(std::size_t count) {
+    const std::vector<std::size_t> order = by_length();
     clear();
     for (std::size_t i = 0; i < std::min(count, order.size()); ++i) {
         rallies_[order[i]].game = true;
         rallies_[order[i]].day = true;
+    }
+}
+
+void HighlightSelection::mark_longest_for_day(std::size_t count) {
+    const std::vector<std::size_t> order = by_length();
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        set_day(order[i], i < count);
     }
 }
 

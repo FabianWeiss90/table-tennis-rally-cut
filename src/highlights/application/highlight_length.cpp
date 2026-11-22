@@ -39,4 +39,31 @@ double joined_length(std::span<const double> clips, double crossfade_s) {
     return total;
 }
 
+DayFit fit_match_day(std::span<const GameMarks> games, double max_s, cutting::Margins margins,
+                     double crossfade_s) {
+    std::size_t most = 0;
+    for (const GameMarks& game : games) {
+        most = std::max(most, game.selection.rallies().size());
+    }
+    DayFit fit;
+    // One more rally per game always makes the video longer, so the first count too long ends
+    // the search
+    for (std::size_t count = 1; count <= most; ++count) {
+        std::vector<double> clips;
+        for (const GameMarks& game : games) {
+            HighlightSelection trial = game.selection;
+            trial.mark_longest_for_day(count);
+            const std::vector<double> own =
+                clip_lengths(trial.rallies(), HighlightVideo::MatchDay, margins, game.fps);
+            clips.insert(clips.end(), own.begin(), own.end());
+        }
+        const double length = joined_length(clips, crossfade_s);
+        if (length > max_s) {
+            break;
+        }
+        fit = {count, length};
+    }
+    return fit;
+}
+
 } // namespace ttrally::highlights

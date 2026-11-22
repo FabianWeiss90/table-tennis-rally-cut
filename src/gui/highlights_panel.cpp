@@ -36,6 +36,7 @@ using highlights::TitlePosition;
 
 constexpr int kDefaultPreselect = 5;
 constexpr int kMaxPreselect = 100;
+constexpr const char* kDefaultDayLength = "05:00";
 constexpr int kPlayerHeight = 540;          ///< decoded size of the played frames
 constexpr std::size_t kPlayerFrames = 240;  ///< frames kept (about 0.8 MB each)
 constexpr double kBufferAheadSeconds = 2.0;
@@ -51,6 +52,22 @@ constexpr int kPreviewMatchDay = 1;
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
 const ImVec4 kError{1.0F, 0.45F, 0.4F, 1.0F};
 const ImVec4 kPlaying{0.45F, 0.75F, 1.0F, 1.0F};
+
+/// "05:00", "1:02:03" or "90" (seconds) in seconds; nullopt if it is none of these.
+std::optional<double> parse_length(const std::string& text) {
+    double total = 0.0;
+    int fields = 0;
+    std::istringstream in(text);
+    for (std::string field; std::getline(in, field, ':');) {
+        constexpr double kBase = 60.0;
+        if (field.empty() || field.find_first_not_of("0123456789") != std::string::npos ||
+            ++fields > 3) {
+            return std::nullopt;
+        }
+        total = total * kBase + std::stod(field);
+    }
+    return fields > 0 ? std::optional(total) : std::nullopt;
+}
 
 /// A video's length for the eye: "4:05" or "1:02:03".
 std::string length_text(double seconds) {
@@ -180,6 +197,20 @@ bool input_multiline(const char* id, std::string& value, ImVec2 size) {
     };
     return ImGui::InputTextMultiline(id, value.data(), value.capacity() + 1, size,
                                      ImGuiInputTextFlags_CallbackResize, resize, &value);
+}
+
+/// Single-line text input on a std::string.
+bool input_line(const char* id, std::string& value) {
+    auto resize = [](ImGuiInputTextCallbackData* data) {
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+            auto* text = static_cast<std::string*>(data->UserData);
+            text->resize(static_cast<std::size_t>(data->BufTextLen));
+            data->Buf = text->data();
+        }
+        return 0;
+    };
+    return ImGui::InputText(id, value.data(), value.capacity() + 1,
+                            ImGuiInputTextFlags_CallbackResize, resize, &value);
 }
 
 /// Titles over the shown picture, written in the chosen font and placed, sized and coloured as
@@ -554,6 +585,8 @@ struct HighlightsPanel::Impl {
     std::unique_ptr<highlights::HighlightStore> store;
     std::unique_ptr<highlights::RallySource> rallies;
     int preselect = kDefaultPreselect;
+    std::string max_day_length = kDefaultDayLength; ///< of the match day video, "mm:ss"
+    std::string fit_note;                           ///< what the last fitting chose
     std::filesystem::path shapes_dir; ///< the library's SVG shapes for title backdrops
     std::vector<std::string> svg_names; ///< in it, read when the shape list opens
     highlights::TitleLayout day_layout; ///< of the players' titles in the match day video
@@ -1203,6 +1236,57 @@ struct HighlightsPanel::Impl {
         ImGui::SetItemTooltip("Removes every mark of every game of the match day");
     }
 
+    /// The match day video fitted into a length: the same number of the longest rallies from
+    /// every game.
+    void draw_day_fit(cutting::Margins margins, double crossfade_s) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Match day video at most");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90);
+        input_line("##max_length", max_day_length);
+        ImGui::SetItemTooltip("mm:ss, h:mm:ss or seconds");
+        ImGui::SameLine();
+        const std::optional<double> max_s = parse_length(max_day_length);
+        ImGui::BeginDisabled(!max_s || *max_s <= 0);
+        if (ImGui::Button("Same number from every game")) {
+            fit_day(*max_s, margins, crossfade_s);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Marks the longest rallies of each game for the match day: as many "
+                              "from every game as fit into this length, with the margins and "
+                              "cross-fade below. Time left over stays free for your own choice; "
+                              "game marks stay");
+        if (!fit_note.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(kMuted, "%s", fit_note.c_str());
+        }
+    }
+
+    void fit_day(double max_s, cutting::Margins margins, double crossfade_s) {
+        std::vector<highlights::GameMarks> marks;
+        for (const Game& game : games) {
+            if (game.highlights) {
+                marks.push_back({game.highlights->selection,
+                                 game.highlights->fps > 0 ? game.highlights->fps : kFallbackFps});
+            }
+        }
+        const highlights::DayFit fit =
+            highlights::fit_match_day(marks, max_s, margins, crossfade_s);
+        if (fit.per_game == 0) {
+            fit_note = std::format("Not even one rally per game fits into {}; nothing changed",
+                                   length_text(max_s));
+            return;
+        }
+        for (Game& game : games) {
+            if (game.highlights) {
+                game.highlights->selection.mark_longest_for_day(fit.per_game);
+                save(*game.highlights);
+            }
+        }
+        fit_note = std::format("{} per game, about {} ({} left)", fit.per_game,
+                               length_text(fit.length_s), length_text(max_s - fit.length_s));
+    }
+
     /// The game whose rally is played, else the first with rallies.
     [[nodiscard]] Game* played_game() {
         Game* first = nullptr;
@@ -1429,6 +1513,7 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
     ImGui::SeparatorText("Match day highlights");
     self.draw_lengths(nullptr, margins, crossfade_s);
     self.draw_day_preselection();
+    self.draw_day_fit(margins, crossfade_s);
     if (ImGui::BeginTable("##layout", 2, ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("list", ImGuiTableColumnFlags_WidthStretch, kListShare);
         ImGui::TableSetupColumn("player", ImGuiTableColumnFlags_WidthStretch, 1.0F - kListShare);

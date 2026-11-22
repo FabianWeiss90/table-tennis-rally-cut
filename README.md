@@ -850,7 +850,8 @@ to copy it. `--check` only reports what is wrong.
 The best rallies of a game or of a whole match day as one video. They are chosen in the
 launcher's **Highlights** tab, for the game of the selected video, or for all games at once when
 the whole match day is chosen on the left (one long list, each game's rallies under a row with
-its name, its number of rallies, the length of its game video and its marks):
+its name, its number of rallies, the length of its game video and its marks; the games are
+collapsed at first, a click on a game's row opens or closes its rallies):
 
 - **The rallies** of the game, numbered, with start and length: those `cut` would use (complete
   labels, else the refined detections, else the detections).

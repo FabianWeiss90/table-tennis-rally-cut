@@ -894,8 +894,9 @@ struct HighlightsPanel::Impl {
         ImGui::EndTable();
     }
 
-    /// Every game's rallies in one list, each game under a row with its name; a click on a
-    /// column header sorts the rallies within each game (by time when unsorted).
+    /// Every game's rallies in one list, each game under a row with its name (collapsed at
+    /// first, opened by a click on the row); a click on a column header sorts the rallies within
+    /// each game (by time when unsorted).
     void draw_day_rallies(cutting::Margins margins, double crossfade_s, float bottom) {
         const float height = std::max(kMinListHeight, bottom - ImGui::GetCursorScreenPos().y);
         if (!ImGui::BeginTable("##day_rallies", kRallyColumns,
@@ -928,7 +929,11 @@ struct HighlightsPanel::Impl {
                 continue;
             }
             const highlights::HighlightSelection& selection = game.highlights->selection;
-            ImGui::TextUnformatted(game.video.video_id.c_str());
+            // Collapsed at first; a click on the row opens or closes the game's rallies
+            const bool open = ImGui::TreeNodeEx(
+                game.video.video_id.c_str(),
+                ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                    ImGuiTreeNodeFlags_AllowOverlap);
             ImGui::TableSetColumnIndex(kStartColumn);
             ImGui::TextColored(kMuted, "%zu rallies, avg %.1f s", selection.rallies().size(),
                                average_length(*game.highlights));
@@ -946,8 +951,10 @@ struct HighlightsPanel::Impl {
             ImGui::Text("%zu", selection.day_count());
             ImGui::SetItemTooltip("Match day highlights of this game");
             // Sorted within the game; the game rows keep their order
-            for (const std::size_t i : sorted_rallies(selection.rallies(), specs)) {
-                draw_rally_row(game, i, margins);
+            if (open) {
+                for (const std::size_t i : sorted_rallies(selection.rallies(), specs)) {
+                    draw_rally_row(game, i, margins);
+                }
             }
             ImGui::PopID();
         }

@@ -404,6 +404,9 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
              option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
              option("--crossfade", "Cross-fade (s)", FieldKind::Number, "0.5", "0.5",
                     "Seconds two clips fade into each other; 0: hard cuts"),
+             flag("--no-slow-motion", "Without slow motions",
+                  "Leave out the slow motions set for rallies (they are shown by default, each "
+                  "right after its rally)"),
              option("--rally-titles", "Players on each rally", FieldKind::Flag, "1", "",
                     "Match day video: each clip shows its game's title (the game video always "
                     "shows it)"),

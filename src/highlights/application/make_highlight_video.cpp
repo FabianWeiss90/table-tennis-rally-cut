@@ -104,8 +104,11 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
         for (const OrderedRally& rally : run) {
             rallies.push_back(rally.rally);
         }
-        const std::vector<Clip> own =
+        std::vector<Clip> own =
             clips_of(*run.front().game, rallies, timelines.at(id), layout, match, request);
+        if (request.slow_motions) {
+            own = with_slow_motions(std::move(own), rallies, timelines.at(id));
+        }
         clips.insert(clips.end(), own.begin(), own.end());
     }
     progress_.report(std::format("{} rallies of {} game(s) in {} clips", result.rallies,
@@ -126,6 +129,35 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
     result.render = renderer_.render(clips, result.output, render, progress_);
     result.seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    return result;
+}
+
+std::vector<Clip> MakeHighlightVideo::with_slow_motions(std::vector<Clip> clips,
+                                                        const std::vector<HighlightRally>& rallies,
+                                                        const GameTimeline& timeline) {
+    const double frame_duration = 1.0 / timeline.timeline.nominal_fps().value();
+    std::vector<Clip> result;
+    for (const Clip& clip : clips) {
+        result.push_back(clip);
+        for (const HighlightRally& rally : rallies) {
+            const double start = timeline.timeline.frame_to_time(rally.start_frame);
+            if (!rally.slow || start < clip.start_s || start >= clip.end_s) {
+                continue; // no slow motion, or another clip's rally
+            }
+            const SlowMotion& slow = *rally.slow;
+            const std::int64_t last = std::min(slow.end_frame, timeline.frames - 1);
+            const std::int64_t first = std::clamp<std::int64_t>(slow.start_frame, 0, last);
+            result.push_back({.video = clip.video,
+                              .start_s = timeline.timeline.frame_to_time(first),
+                              .end_s = timeline.timeline.frame_to_time(last) + frame_duration,
+                              .titles = {}, // no titles over a slow motion
+                              .slow = SlowPlayback{.factor = slow.factor,
+                                                   .left = slow.left,
+                                                   .top = slow.top,
+                                                   .size = slow.size,
+                                                   .sound = slow.sound}});
+        }
+    }
     return result;
 }
 

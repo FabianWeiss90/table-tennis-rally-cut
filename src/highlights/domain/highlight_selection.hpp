@@ -4,9 +4,31 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace ttrally::highlights {
+
+/// A short part of a rally shown again slowed down, right after the rally's clip, optionally
+/// zoomed into a section of the picture (cut from the full-size original, then fitted to the
+/// output). Frames of the original, end inclusive.
+struct SlowMotion {
+    static constexpr int kMinFactor = 2;
+    static constexpr int kMaxFactor = 4;
+
+    std::int64_t start_frame = 0;
+    std::int64_t end_frame = 0;
+    int factor = kMinFactor; ///< times slower; every frame is shown this many times
+    /// The section, as shares of the picture's width and height (the picture's shape): its left
+    /// and top edge and its size; size 1 is the whole picture.
+    double left = 0.0;
+    double top = 0.0;
+    double size = 1.0;
+    bool sound = false; ///< the sound stretched (same pitch); else silence
+
+    [[nodiscard]] std::int64_t frame_count() const noexcept { return end_frame - start_frame + 1; }
+    friend bool operator==(const SlowMotion&, const SlowMotion&) = default;
+};
 
 /// A rally of a game with its highlight marks; frames of the original, end inclusive.
 struct HighlightRally {
@@ -14,6 +36,7 @@ struct HighlightRally {
     std::int64_t end_frame = 0;
     bool game = false; ///< in the game's highlight video
     bool day = false;  ///< in the match day's highlight video
+    std::optional<SlowMotion> slow{}; ///< shown after the rally in both videos
 
     [[nodiscard]] std::int64_t frame_count() const noexcept { return end_frame - start_frame + 1; }
     friend bool operator==(const HighlightRally&, const HighlightRally&) = default;
@@ -37,6 +60,9 @@ class HighlightSelection {
     /// Throws std::out_of_range for an invalid index.
     void set_game(std::size_t index, bool marked);
     void set_day(std::size_t index, bool marked);
+
+    /// Gives a rally a slow motion (nullopt: none). Throws std::out_of_range for an invalid index.
+    void set_slow_motion(std::size_t index, std::optional<SlowMotion> slow);
 
     /// Marks the `count` longest rallies (equal lengths: the earlier first) as game and match day
     /// highlights and removes all other marks.

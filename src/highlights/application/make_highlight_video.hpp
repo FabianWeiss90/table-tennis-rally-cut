@@ -32,6 +32,8 @@ struct MakeHighlightsRequest {
     RenderOptions render;
     /// The height of the written video is added to the output's name ("game-1080p.mp4").
     bool resolution_in_name = false;
+    /// The slow motions of the rallies, each right after its rally's clip.
+    bool slow_motions = true;
 };
 
 struct MakeHighlightsResult {
@@ -60,6 +62,10 @@ class MakeHighlightVideo {
   private:
     /// The frame times of a game's video.
     [[nodiscard]] GameTimeline timeline_of(const StoredHighlights& game);
+    /// The clips with each rally's slow motion right after the clip that shows the rally.
+    [[nodiscard]] static std::vector<Clip>
+    with_slow_motions(std::vector<Clip> clips, const std::vector<HighlightRally>& rallies,
+                      const GameTimeline& timeline);
     /// Clips of rallies of a game (sorted by time; overlapping margins merged);
     /// `match_day`: the match day video's title layout; `match`: the match title.
     [[nodiscard]] std::vector<Clip> clips_of(const StoredHighlights& game,

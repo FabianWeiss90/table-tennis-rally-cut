@@ -93,6 +93,8 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_flag("--rally-titles", rally_titles_,
                        "Match day: show each game's title over its clips");
+    command_->add_flag("--no-slow-motion", no_slow_motion_,
+                       "Leave out the slow motions set for rallies in the launcher");
     command_->add_option("--font", font_,
                          "TrueType font for the titles (default: a bold system font)")
         ->check(CLI::ExistingFile);
@@ -156,7 +158,8 @@ int HighlightsCommand::run() {
                                  .max_height = max_height_of(resolution_)},
                     .font = font_,
                     .shapes = shapes_dir_},
-         .resolution_in_name = default_name});
+         .resolution_in_name = default_name,
+         .slow_motions = !no_slow_motion_});
     std::cout << std::format("Done in {}: {} rallies from {} game(s) in {} clips, {} of "
                              "video (encoded with {} at {:.1f} Mbit/s).\n",
                              io::format_elapsed(result.seconds), result.rallies,

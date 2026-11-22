@@ -33,9 +33,10 @@ struct TimedRally {
 
 /// Seconds of the clips of rallies in the order of a highlight video: rallies of one game that
 /// follow each other rising in time share clips where their margins overlap (as `ttrally
-/// highlights` cuts them).
+/// highlights` cuts them); with `slow_motions`, each rally's slow motion adds a clip.
 [[nodiscard]] std::vector<double> ordered_clip_lengths(const std::vector<TimedRally>& rallies,
-                                                       cutting::Margins margins);
+                                                       cutting::Margins margins,
+                                                       bool slow_motions = true);
 
 /// Seconds of a video of these clips, each fading into the next for `crossfade_s` (at most half
 /// of either clip, as the renderer does).

@@ -262,6 +262,26 @@ TEST_CASE("a chosen order of rallies, with newly marked ones placed by time") {
     CHECK(order == chronological);
 }
 
+TEST_CASE("a slow motion adds its slowed length and stays with changed rallies") {
+    HighlightRally slowed = rally(600, 839, true, true); // 4 s
+    slowed.slow = SlowMotion{.start_frame = 660, .end_frame = 719, .factor = 3}; // 1 s, 3 s shown
+    const cutting::Margins margins{.before_s = 1.0, .after_s = 1.0};
+    const std::vector<TimedRally> rallies{{"a", slowed, kFps}};
+    const auto with = ordered_clip_lengths(rallies, margins);
+    REQUIRE(with.size() == 2);
+    CHECK(with[0] == Approx(6.0));
+    CHECK(with[1] == Approx(3.0));
+    CHECK(ordered_clip_lengths(rallies, margins, false).size() == 1);
+    // Refined rallies keep the slow motion of the rally they overlap
+    const auto carried = carry_over_marks({rally(590, 850)}, {slowed});
+    REQUIRE(carried[0].slow);
+    CHECK(carried[0].slow->factor == 3);
+    HighlightSelection selection({slowed});
+    selection.set_slow_motion(0, std::nullopt);
+    CHECK_FALSE(selection.rallies()[0].slow);
+    CHECK_THROWS_AS(selection.set_slow_motion(3, std::nullopt), std::out_of_range);
+}
+
 TEST_CASE("titles from file names") {
     CHECK(title_from_file_name("Weiss-Ohrstedt") == "Weiss - Ohrstedt");
     CHECK(title_from_file_name("weiss-belger_greta") == "Weiss - Belger Greta");

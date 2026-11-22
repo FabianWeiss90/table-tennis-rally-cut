@@ -29,7 +29,7 @@ std::vector<double> clip_lengths(const std::vector<HighlightRally>& rallies, Hig
 }
 
 std::vector<double> ordered_clip_lengths(const std::vector<TimedRally>& rallies,
-                                         cutting::Margins margins) {
+                                         cutting::Margins margins, bool slow_motions) {
     std::vector<double> lengths;
     std::size_t begin = 0;
     while (begin < rallies.size()) {
@@ -46,6 +46,13 @@ std::vector<double> ordered_clip_lengths(const std::vector<TimedRally>& rallies,
         }
         const auto own = clip_lengths(run, HighlightVideo::Game, margins, rallies[begin].fps);
         lengths.insert(lengths.end(), own.begin(), own.end());
+        for (const HighlightRally& rally : run) {
+            if (slow_motions && rally.slow && rallies[begin].fps > 0) {
+                lengths.push_back(static_cast<double>(rally.slow->frame_count() *
+                                                      rally.slow->factor) /
+                                  rallies[begin].fps);
+            }
+        }
         begin = end;
     }
     return lengths;

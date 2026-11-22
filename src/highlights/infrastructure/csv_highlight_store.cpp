@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr std::string_view kSettingsSuffix = ".settings.csv";
+constexpr std::size_t kSlowColumns = 11; ///< of a rally row with its slow motion
+constexpr double kMinSlowSize = 0.05;    ///< the smallest section of a slow motion
 /// The chosen orders: per row the video (a game's id, empty for the match day video) and a
 /// rally (its game and first frame), in order.
 constexpr std::string_view kRallyOrderFile = "rally-order.csv";
@@ -42,6 +44,15 @@ std::map<std::string, std::string> read_settings(const fs::path& file) {
         }
     }
     return settings;
+}
+
+/// A number, or the fallback if the text is empty or none.
+double number_or(const std::string& text, double fallback) {
+    try {
+        return text.empty() ? fallback : std::stod(text);
+    } catch (const std::exception&) {
+        return fallback;
+    }
 }
 
 double parse_size(const std::string& text) {
@@ -240,10 +251,22 @@ std::optional<StoredHighlights> CsvHighlightStore::load(const std::string& video
         if (row.size() < 4) {
             continue;
         }
-        stored.rallies.push_back({.start_frame = parse_frame(row[0], rallies_file),
-                                  .end_frame = parse_frame(row[1], rallies_file),
-                                  .game = row[2] == "1",
-                                  .day = row[3] == "1"});
+        HighlightRally rally{.start_frame = parse_frame(row[0], rallies_file),
+                             .end_frame = parse_frame(row[1], rallies_file),
+                             .game = row[2] == "1",
+                             .day = row[3] == "1"};
+        if (row.size() >= kSlowColumns && !row[4].empty()) {
+            rally.slow = SlowMotion{
+                .start_frame = parse_frame(row[4], rallies_file),
+                .end_frame = parse_frame(row[5], rallies_file),
+                .factor = std::clamp(static_cast<int>(number_or(row[6], SlowMotion::kMinFactor)),
+                                     SlowMotion::kMinFactor, SlowMotion::kMaxFactor),
+                .left = std::clamp(number_or(row[7], 0.0), 0.0, 1.0),
+                .top = std::clamp(number_or(row[8], 0.0), 0.0, 1.0),
+                .size = std::clamp(number_or(row[9], 1.0), kMinSlowSize, 1.0),
+                .sound = row[10] == "1"};
+        }
+        stored.rallies.push_back(std::move(rally));
     }
     return stored;
 }
@@ -259,10 +282,23 @@ void CsvHighlightStore::save(const std::string& video_id, const StoredHighlights
     write_settings(directory_ / (video_id + std::string(kSettingsSuffix)), settings);
     std::vector<io::CsvRow> rows;
     for (const HighlightRally& rally : highlights.rallies) {
-        rows.push_back({std::to_string(rally.start_frame), std::to_string(rally.end_frame),
-                        yes_no(rally.game), yes_no(rally.day)});
+        io::CsvRow row{std::to_string(rally.start_frame), std::to_string(rally.end_frame),
+                       yes_no(rally.game), yes_no(rally.day)};
+        if (rally.slow) {
+            const SlowMotion& slow = *rally.slow;
+            row.insert(row.end(), {std::to_string(slow.start_frame),
+                                   std::to_string(slow.end_frame), std::to_string(slow.factor),
+                                   std::format("{:.6f}", slow.left),
+                                   std::format("{:.6f}", slow.top),
+                                   std::format("{:.6f}", slow.size), yes_no(slow.sound)});
+        } else {
+            row.resize(kSlowColumns);
+        }
+        rows.push_back(std::move(row));
     }
-    io::write_csv(directory_ / (video_id + ".csv"), {"start_frame", "end_frame", "game", "day"},
+    io::write_csv(directory_ / (video_id + ".csv"),
+                  {"start_frame", "end_frame", "game", "day", "slow_start", "slow_end",
+                   "slow_factor", "slow_left", "slow_top", "slow_size", "slow_sound"},
                   rows);
 }
 

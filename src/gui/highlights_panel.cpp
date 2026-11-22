@@ -38,6 +38,9 @@ constexpr int kDefaultPreselect = 5;
 constexpr int kMaxPreselect = 100;
 constexpr const char* kDefaultDayLength = "05:00";
 constexpr const char* kOrderWindow = "Order of the rallies";
+constexpr double kDefaultSlowSeconds = 1.5; ///< of a new slow motion, from the rally's start
+constexpr double kMinSection = 0.05;        ///< the smallest section of a slow motion
+const ImU32 kSectionColor = IM_COL32(255, 210, 60, 255);
 constexpr const char* kOrderPayload = "RALLY_ORDER";
 constexpr int kOrderColumns = 6;
 constexpr float kOrderWindowWidth = 620.0F;
@@ -398,6 +401,10 @@ class Player {
     }
 
     [[nodiscard]] const std::string& video() const noexcept { return video_; }
+    /// The frame of the video shown now.
+    [[nodiscard]] std::int64_t current_frame() const noexcept { return current_; }
+    /// With false, a click on the picture does not play or pause it (something is drawn on it).
+    void set_picture_clicks(bool on) noexcept { picture_clicks_ = on; }
 
   private:
     [[nodiscard]] float aspect() const {
@@ -420,10 +427,12 @@ class Player {
         if (shown && frames_ && error_.empty() && texture_.texture() != nullptr &&
             texture_.frame_index() >= 0) {
             ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture_.texture())), image);
-            if (ImGui::IsItemClicked()) {
+            if (picture_clicks_ && ImGui::IsItemClicked()) {
                 toggle();
             }
-            ImGui::SetItemTooltip("Click: play or pause");
+            if (picture_clicks_) {
+                ImGui::SetItemTooltip("Click: play or pause");
+            }
         } else {
             ImGui::Dummy(image);
             ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -566,6 +575,7 @@ class Player {
     std::int64_t current_ = 0;
     double clock_ = 0;
     bool playing_ = false;
+    bool picture_clicks_ = true; ///< a click on the picture plays or pauses
     bool enlarged_ = false;
 };
 
@@ -603,6 +613,9 @@ struct HighlightsPanel::Impl {
     /// The chosen orders: a game's id -> its game video's, "" -> the match day video's
     std::map<std::string, std::vector<highlights::RallyKey>> orders;
     std::string order_of; ///< the video of the order window (see orders)
+    bool editing_section = false; ///< the slow motion's section is drawn on the picture
+    std::optional<ImVec2> section_start; ///< where the drawing of the section began
+    std::optional<highlights::SlowMotion> drawn_section; ///< while it is drawn
     bool open_order = false;
     float player_height = 0.0F; ///< of the player with its controls, in the last frame
     /// Visible height below the player when it is not moved down (negative: hidden by the
@@ -1442,6 +1455,7 @@ struct HighlightsPanel::Impl {
         return [this, titles = previewed(game),
                 shown_font = hovered_font.value_or(font)](ImVec2 origin, ImVec2 size) {
             overlay.draw(titles, shown_font, origin, size);
+            section_overlay(origin, size);
         };
     }
 
@@ -1527,8 +1541,9 @@ struct HighlightsPanel::Impl {
                                length_text(fit.length_s), length_text(max_s - fit.length_s));
     }
 
-    /// Draws the player at the bottom of its column, whose height is that of the visible area
-    /// or of the player if it is higher; returns the bottom the list reaches down to.
+    /// Draws the player with the slow motion below it at the bottom of its column, whose height
+    /// is that of the visible area or of the player if it is higher; returns the bottom the list
+    /// reaches down to.
     float draw_player_at_bottom(const Overlay& overlay, bool shown) {
         const float top = ImGui::GetCursorScreenPos().y;
         const float fill = visible_bottom();
@@ -1538,10 +1553,187 @@ struct HighlightsPanel::Impl {
         }
         const float start = ImGui::GetCursorScreenPos().y;
         player.draw(overlay, shown);
+        draw_slow_motion(); // below the player, moved down with it
         const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
         player_height = bottom - start;
         spare_height = fill - (top + player_height);
         return std::max(bottom, fill);
+    }
+
+    /// The rally played last and its game; nullopt if none is.
+    [[nodiscard]] std::optional<std::pair<Game*, std::size_t>> played_rally() {
+        if (!playing) {
+            return std::nullopt;
+        }
+        for (Game& game : games) {
+            if (game.highlights && game.video.key() == playing->first &&
+                playing->second < game.highlights->selection.rallies().size()) {
+                return std::pair{&game, playing->second};
+            }
+        }
+        return std::nullopt;
+    }
+
+    void set_slow(Game& game, std::size_t index, std::optional<highlights::SlowMotion> slow) {
+        game.highlights->selection.set_slow_motion(index, slow);
+        save(*game.highlights);
+    }
+
+    /// The slow motion of the rally played: on or off, its part (set at the player's frame),
+    /// how slow, its sound and its section of the picture.
+    void draw_slow_motion() {
+        ImGui::SeparatorText("Slow motion");
+        const auto played = played_rally();
+        if (!played) {
+            ImGui::TextColored(kMuted, "Play a rally (>) to give it a slow motion");
+            editing_section = false;
+            player.set_picture_clicks(true);
+            return;
+        }
+        auto [game, index] = *played;
+        const GameHighlights& marks = *game->highlights;
+        const highlights::HighlightRally& rally = marks.selection.rallies()[index];
+        const double fps = marks.fps > 0 ? marks.fps : kFallbackFps;
+        ImGui::PushID("slow");
+        bool on = rally.slow.has_value();
+        if (ImGui::Checkbox(std::format("After rally {} of {}", index + 1, marks.video_id).c_str(),
+                            &on)) {
+            std::optional<highlights::SlowMotion> slow;
+            if (on) {
+                const auto length =
+                    static_cast<std::int64_t>(std::lround(kDefaultSlowSeconds * fps));
+                slow = highlights::SlowMotion{
+                    .start_frame = rally.start_frame,
+                    .end_frame = std::min(rally.end_frame, rally.start_frame + length - 1)};
+            }
+            set_slow(*game, index, slow);
+        }
+        ImGui::SetItemTooltip("Shows a part of the rally again, slowed down, right after it (in "
+                              "the game and the match day video; without titles)");
+        if (!rally.slow) {
+            editing_section = false;
+            player.set_picture_clicks(true);
+            ImGui::PopID();
+            return;
+        }
+        highlights::SlowMotion slow = *rally.slow;
+        const auto clock = [&](std::int64_t frame) {
+            return io::format_clock(static_cast<double>(frame) / fps);
+        };
+        ImGui::Text("%s to %s: %.1f s, %.1f s slowed down", clock(slow.start_frame).c_str(),
+                    clock(slow.end_frame).c_str(), static_cast<double>(slow.frame_count()) / fps,
+                    static_cast<double>(slow.frame_count() * slow.factor) / fps);
+        bool changed = false;
+        const std::int64_t now = player.current_frame();
+        if (ImGui::SmallButton("Start here")) {
+            slow.start_frame = now;
+            slow.end_frame = std::max(slow.end_frame, now);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("The slow motion begins at the frame the player shows (pause it "
+                              "there first)");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("End here")) {
+            slow.end_frame = now;
+            slow.start_frame = std::min(slow.start_frame, now);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("The slow motion ends at the frame the player shows");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Watch the part")) {
+            player.play(game->video, slow.start_frame, slow.end_frame, fps);
+        }
+        ImGui::SetItemTooltip("Plays the part (at normal speed)");
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Slower");
+        for (int factor = highlights::SlowMotion::kMinFactor;
+             factor <= highlights::SlowMotion::kMaxFactor; ++factor) {
+            ImGui::SameLine();
+            changed |= ImGui::RadioButton(std::format("{}x", factor).c_str(), &slow.factor, factor);
+        }
+        ImGui::SameLine(0, 20);
+        int sound = slow.sound ? 1 : 0;
+        if (ImGui::RadioButton("Silence", &sound, 0)) {
+            slow.sound = false;
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Sound, stretched", &sound, 1)) {
+            slow.sound = true;
+            changed = true;
+        }
+        ImGui::SetItemTooltip("The sound slowed down to the picture's pace at the same pitch");
+        ImGui::Checkbox("Draw the section on the picture", &editing_section);
+        ImGui::SetItemTooltip("Drag over the player's picture: the slow motion shows only this "
+                              "part, cut from the full-size video and enlarged to the output");
+        player.set_picture_clicks(!editing_section);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Whole picture")) {
+            slow.left = 0;
+            slow.top = 0;
+            slow.size = 1;
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(kMuted, "%.0f %% of the picture", slow.size * 100);
+        if (changed) {
+            set_slow(*game, index, slow);
+        }
+        ImGui::PopID();
+    }
+
+    /// Draws the slow motion's section over the player's picture and, while it is being edited,
+    /// lets it be dragged anew (in the picture's shape).
+    void section_overlay(ImVec2 origin, ImVec2 size) {
+        const auto played = played_rally();
+        if (!played) {
+            return;
+        }
+        auto [game, index] = *played;
+        const auto& stored = game->highlights->selection.rallies()[index].slow;
+        if (!stored) {
+            return;
+        }
+        if (editing_section) {
+            ImGui::SetCursorScreenPos(origin);
+            ImGui::InvisibleButton("##section", size);
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const ImVec2 at{std::clamp((mouse.x - origin.x) / size.x, 0.0F, 1.0F),
+                            std::clamp((mouse.y - origin.y) / size.y, 0.0F, 1.0F)};
+            if (ImGui::IsItemActivated()) {
+                section_start = at;
+            }
+            if (ImGui::IsItemActive() && section_start) {
+                // A square in shares is the picture's shape; it stays inside the picture
+                const double side = std::clamp(
+                    static_cast<double>(std::max(std::abs(at.x - section_start->x),
+                                                 std::abs(at.y - section_start->y))),
+                    kMinSection, 1.0);
+                highlights::SlowMotion drawn = *stored;
+                drawn.size = side;
+                const double from_x = section_start->x;
+                const double from_y = section_start->y;
+                drawn.left = std::clamp(at.x < from_x ? from_x - side : from_x, 0.0, 1.0 - side);
+                drawn.top = std::clamp(at.y < from_y ? from_y - side : from_y, 0.0, 1.0 - side);
+                drawn_section = drawn;
+            }
+            if (ImGui::IsItemDeactivated() && drawn_section) {
+                set_slow(*game, index, *drawn_section);
+                drawn_section.reset();
+                section_start.reset();
+            }
+            ImGui::SetItemTooltip("Drag the section of the slow motion");
+        }
+        const highlights::SlowMotion& shown = drawn_section ? *drawn_section : *stored;
+        if (shown.size >= 1.0 && !editing_section) {
+            return;
+        }
+        ImGui::GetWindowDrawList()->AddRect(
+            {origin.x + static_cast<float>(shown.left) * size.x,
+             origin.y + static_cast<float>(shown.top) * size.y},
+            {origin.x + static_cast<float>(shown.left + shown.size) * size.x,
+             origin.y + static_cast<float>(shown.top + shown.size) * size.y},
+            kSectionColor, 0.0F, 0, 2.0F);
     }
 
     /// The game whose rally is played, else the first with rallies.
@@ -1566,6 +1758,7 @@ struct HighlightsPanel::Impl {
         return [this, titles = std::vector<Title>{match, day_layout.applied_to(game.title)},
                 shown_font = hovered_font.value_or(font)](ImVec2 origin, ImVec2 size) {
             overlay.draw(titles, shown_font, origin, size);
+            section_overlay(origin, size);
         };
     }
 

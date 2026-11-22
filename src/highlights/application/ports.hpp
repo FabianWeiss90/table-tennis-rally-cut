@@ -65,12 +65,29 @@ class RallySource {
     [[nodiscard]] virtual std::optional<RallyList> rallies(const std::string& video_id) = 0;
 };
 
+/// How a slow motion clip is shown: every frame `factor` times, and only the section of the
+/// picture (shares of its width and height: left and top edge, size; cut from the full-size
+/// picture, then fitted to the output).
+struct SlowPlayback {
+    int factor = SlowMotion::kMinFactor;
+    double left = 0.0;
+    double top = 0.0;
+    double size = 1.0;
+    bool sound = false; ///< the sound stretched to the slower pace (same pitch); else silence
+};
+
 /// A part of a video that goes into a highlight video.
 struct Clip {
     std::filesystem::path video;
-    double start_s = 0.0;
+    double start_s = 0.0; ///< on the video's timeline
     double end_s = 0.0;
     std::vector<Title> titles; ///< drawn over the whole clip (those visible), in this order
+    std::optional<SlowPlayback> slow{}; ///< a slow motion clip; lasts `factor` times as long
+
+    /// Seconds the clip lasts in the highlight video.
+    [[nodiscard]] double shown_s() const noexcept {
+        return (end_s - start_s) * (slow ? slow->factor : 1);
+    }
 };
 
 struct RenderOptions {

@@ -10,7 +10,11 @@
 #include "media/application/media_error.hpp"
 
 extern "C" {
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include <algorithm>
@@ -19,6 +23,7 @@ extern "C" {
 #include <format>
 #include <functional>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <tuple>
@@ -72,7 +77,7 @@ std::vector<ClipTiming> plan_timing(std::span<const Clip> clips, AVRational rate
     for (const Clip& clip : clips) {
         timing.push_back({0,
                           std::max<std::int64_t>(
-                              1, std::llround((clip.end_s - clip.start_s) * av_q2d(rate))),
+                              1, std::llround(clip.shown_s() * av_q2d(rate))),
                           0, 0});
     }
     const auto wanted = static_cast<std::int64_t>(std::llround(crossfade_s * av_q2d(rate)));
@@ -183,6 +188,130 @@ class TitleCache {
     std::map<std::pair<std::string, int>, PaintableTitle> titles_;
 };
 
+/// A section of a decoded picture: its planes from the section's corner, and its size.
+struct Section {
+    std::array<const std::uint8_t*, AV_NUM_DATA_POINTERS> data{};
+    int width = 0;
+    int height = 0;
+};
+
+/// The slow motion's section of a picture at full size (corners on whole chroma samples).
+Section section_of(const AVFrame& frame, const SlowPlayback& slow) {
+    const AVPixFmtDescriptor* format =
+        av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame.format));
+    const int align_x = 1 << format->log2_chroma_w;
+    const int align_y = 1 << format->log2_chroma_h;
+    const auto aligned = [](double value, int step) {
+        return static_cast<int>(std::lround(value / step)) * step;
+    };
+    Section section;
+    section.width = std::max(align_x, aligned(slow.size * frame.width, align_x));
+    section.height = std::max(align_y, aligned(slow.size * frame.height, align_y));
+    const int x = std::clamp(aligned(slow.left * frame.width, align_x), 0,
+                             (frame.width - section.width) / align_x * align_x);
+    const int y = std::clamp(aligned(slow.top * frame.height, align_y), 0,
+                             (frame.height - section.height) / align_y * align_y);
+    for (int plane = 0; plane < AV_NUM_DATA_POINTERS && frame.data[plane] != nullptr; ++plane) {
+        // Bytes per pixel and subsampling of the plane, from its first component
+        int step = 1;
+        bool chroma = false;
+        for (int c = 0; c < format->nb_components; ++c) {
+            if (format->comp[c].plane == plane) {
+                step = format->comp[c].step;
+                chroma = (c == 1 || c == 2) && (format->flags & AV_PIX_FMT_FLAG_RGB) == 0;
+                break;
+            }
+        }
+        const int px = chroma ? x >> format->log2_chroma_w : x;
+        const int py = chroma ? y >> format->log2_chroma_h : y;
+        section.data[static_cast<std::size_t>(plane)] =
+            frame.data[plane] + static_cast<std::ptrdiff_t>(py) * frame.linesize[plane] +
+            static_cast<std::ptrdiff_t>(px) * step;
+    }
+    return section;
+}
+
+/// The sound stretched `factor` times longer at the same pitch (FFmpeg's atempo), written into
+/// `into` from its start (its size is kept).
+void stretch_sound(const AudioPlanes& sound, int factor, AudioPlanes& into) {
+    AVFilterGraph* raw = avfilter_graph_alloc();
+    if (raw == nullptr) {
+        throw MediaError("cannot stretch the sound");
+    }
+    const std::unique_ptr<AVFilterGraph, void (*)(AVFilterGraph*)> graph(
+        raw, [](AVFilterGraph* g) { avfilter_graph_free(&g); });
+    AVFilterContext* source = nullptr;
+    AVFilterContext* sink = nullptr;
+    const std::string arguments = std::format(
+        "time_base=1/{0}:sample_rate={0}:sample_fmt=fltp:channel_layout=stereo", kAudioRate);
+    ff::check(avfilter_graph_create_filter(&source, avfilter_get_by_name("abuffer"), "in",
+                                           arguments.c_str(), nullptr, graph.get()),
+              "sound filter");
+    ff::check(avfilter_graph_create_filter(&sink, avfilter_get_by_name("abuffersink"), "out",
+                                           nullptr, nullptr, graph.get()),
+              "sound filter");
+    // atempo slows down to half at most per instance: 2 = 0.5; 3 = 0.5 * 0.667; 4 = 0.5 * 0.5
+    AVFilterContext* previous = source;
+    double rest = 1.0 / factor;
+    for (int i = 0; rest < 1.0 - 1e-9; ++i) {
+        const double tempo = std::max(0.5, rest);
+        AVFilterContext* tempo_filter = nullptr;
+        ff::check(avfilter_graph_create_filter(&tempo_filter, avfilter_get_by_name("atempo"),
+                                               std::format("tempo{}", i).c_str(),
+                                               std::format("tempo={:.6f}", tempo).c_str(),
+                                               nullptr, graph.get()),
+                  "sound filter");
+        ff::check(avfilter_link(previous, 0, tempo_filter, 0), "sound filter");
+        previous = tempo_filter;
+        rest /= tempo;
+    }
+    // Back to planar float stereo, as the mix takes it
+    AVFilterContext* planar = nullptr;
+    ff::check(avfilter_graph_create_filter(&planar, avfilter_get_by_name("aformat"), "planar",
+                                           "sample_fmts=fltp:channel_layouts=stereo", nullptr,
+                                           graph.get()),
+              "sound filter");
+    ff::check(avfilter_link(previous, 0, planar, 0), "sound filter");
+    ff::check(avfilter_link(planar, 0, sink, 0), "sound filter");
+    ff::check(avfilter_graph_config(graph.get(), nullptr), "sound filter");
+
+    std::size_t written = 0;
+    const auto collect = [&] {
+        auto out = ff::make_frame();
+        while (av_buffersink_get_frame(sink, out.get()) >= 0) {
+            for (int k = 0; k < out->nb_samples && written < into[0].size(); ++k, ++written) {
+                for (int c = 0; c < kAudioChannels; ++c) {
+                    into[static_cast<std::size_t>(c)][written] =
+                        reinterpret_cast<const float*>(out->extended_data[c])[k];
+                }
+            }
+            av_frame_unref(out.get());
+        }
+    };
+    constexpr int kChunk = 1024;
+    const std::size_t total = sound[0].size();
+    for (std::size_t at = 0; at < total; at += kChunk) {
+        const int count = static_cast<int>(std::min<std::size_t>(kChunk, total - at));
+        auto frame = ff::make_frame();
+        frame->format = AV_SAMPLE_FMT_FLTP;
+        frame->sample_rate = kAudioRate;
+        frame->nb_samples = count;
+        frame->pts = static_cast<std::int64_t>(at);
+        AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+        ff::check(av_channel_layout_copy(&frame->ch_layout, &stereo), "channel layout");
+        ff::check(av_frame_get_buffer(frame.get(), 0), "sound buffer");
+        for (int c = 0; c < kAudioChannels; ++c) {
+            const auto& channel = sound[static_cast<std::size_t>(c)];
+            std::copy_n(channel.begin() + static_cast<std::ptrdiff_t>(at), count,
+                        reinterpret_cast<float*>(frame->extended_data[c]));
+        }
+        ff::check(av_buffersrc_add_frame(source, frame.get()), "sound filter");
+        collect();
+    }
+    ff::check(av_buffersrc_add_frame(source, nullptr), "sound filter");
+    collect();
+}
+
 /// Decodes one clip and hands out its pictures on the output's frame grid and its sound.
 class ClipReader {
   public:
@@ -222,6 +351,15 @@ class ClipReader {
     void read(const PictureConsumer& consume, AudioPlanes& audio) {
         consume_ = &consume;
         audio_ = &audio;
+        if (clip_.slow) {
+            // Silence, or the sound of the clip's time stretched to the slower pace afterwards
+            audio_done_ = !clip_.slow->sound;
+            const auto samples =
+                static_cast<std::size_t>(std::llround((clip_.end_s - clip_.start_s) * kAudioRate));
+            for (auto& channel : source_sound_) {
+                channel.assign(samples, 0.0F);
+            }
+        }
         seek();
         auto packet = ff::make_packet();
         while (!(next_ >= frames_ && audio_done())) {
@@ -247,10 +385,20 @@ class ClipReader {
             throw MediaError(std::format("{}: no picture at {:.2f} s", clip_.video.string(),
                                          clip_.start_s));
         }
+        if (clip_.slow && clip_.slow->sound) {
+            stretch_sound(source_sound_, clip_.slow->factor, audio);
+        }
     }
 
   private:
     [[nodiscard]] bool audio_done() const noexcept { return !audio_decoder_ || audio_done_; }
+
+    /// Time on the video of the clip's output frame `n` (a slow motion runs `factor` times
+    /// slower).
+    [[nodiscard]] double source_time(std::int64_t n) const {
+        const double factor = clip_.slow ? clip_.slow->factor : 1.0;
+        return clip_.start_s + frame_time(n, output_.frame_rate) / factor;
+    }
 
     void seek() {
         const auto target = static_cast<std::int64_t>(
@@ -294,8 +442,7 @@ class ClipReader {
         if (std::isnan(t)) {
             return;
         }
-        while (next_ < frames_ && clip_.start_s + frame_time(next_, output_.frame_rate) <
-                                      t - kTimeEpsilon) {
+        while (next_ < frames_ && source_time(next_) < t - kTimeEpsilon) {
             if (!last_) {
                 break; // the clip starts before the video's first picture: use this one
             }
@@ -331,6 +478,22 @@ class ClipReader {
         sws_setColorspaceDetails(scaler_.get(), sws_getCoefficients(decoded.colorspace),
                                  source_full ? 1 : 0, sws_getCoefficients(output_.colorspace),
                                  output_.full_range ? 1 : 0, 0, 1 << 16, 1 << 16);
+        if (clip_.slow && clip_.slow->size < 1.0) {
+            const Section section = section_of(decoded, *clip_.slow);
+            scaler_.reset(sws_getCachedContext(
+                scaler_.release(), section.width, section.height,
+                static_cast<AVPixelFormat>(decoded.format), output_.width, output_.height,
+                AV_PIX_FMT_YUV420P, SWS_BICUBIC, nullptr, nullptr, nullptr));
+            if (!scaler_) {
+                throw MediaError("cannot scale the section of " + clip_.video.string());
+            }
+            sws_setColorspaceDetails(scaler_.get(), sws_getCoefficients(decoded.colorspace),
+                                     source_full ? 1 : 0, sws_getCoefficients(output_.colorspace),
+                                     output_.full_range ? 1 : 0, 0, 1 << 16, 1 << 16);
+            sws_scale(scaler_.get(), section.data.data(), decoded.linesize, 0, section.height,
+                      picture->data, picture->linesize);
+            return picture;
+        }
         sws_scale(scaler_.get(), decoded.data, decoded.linesize, 0, decoded.height,
                   picture->data, picture->linesize);
         return picture;
@@ -341,7 +504,7 @@ class ClipReader {
         if (std::isnan(t)) {
             return;
         }
-        const double clip_end = clip_.start_s + frame_time(frames_, output_.frame_rate);
+        const double clip_end = source_time(frames_);
         if (t >= clip_end) {
             audio_done_ = true;
             return;
@@ -354,10 +517,11 @@ class ClipReader {
         ff::check(swr_convert_frame(resampler_.get(), converted.get(), &frame), "audio conversion");
         const auto first =
             static_cast<std::int64_t>(std::llround((t - clip_.start_s) * kAudioRate));
-        const auto size = static_cast<std::int64_t>((*audio_)[0].size());
+        AudioPlanes& target = clip_.slow ? source_sound_ : *audio_;
+        const auto size = static_cast<std::int64_t>(target[0].size());
         for (int c = 0; c < kAudioChannels; ++c) {
             const auto* samples = reinterpret_cast<const float*>(converted->extended_data[c]);
-            std::vector<float>& channel = (*audio_)[static_cast<std::size_t>(c)];
+            std::vector<float>& channel = target[static_cast<std::size_t>(c)];
             for (int k = 0; k < converted->nb_samples; ++k) {
                 const std::int64_t at = first + k;
                 if (at >= 0 && at < size) {
@@ -381,6 +545,7 @@ class ClipReader {
     ff::SwsPtr scaler_;
     const PictureConsumer* consume_ = nullptr;
     AudioPlanes* audio_ = nullptr;
+    AudioPlanes source_sound_; ///< a slow motion's sound before it is stretched
     ff::FramePtr last_;      ///< latest decoded picture
     ff::FramePtr converted_; ///< it in the output format, once needed
     std::int64_t next_ = 0;  ///< next output frame of the clip
@@ -575,7 +740,8 @@ cutting::CutResult render_clips(std::span<const Clip> clips, const std::filesyst
         const ClipReader::PictureConsumer consume = [&](std::int64_t j, AVFrame& picture) {
             // The white balance first: the titles keep their colours
             const double source_s =
-                clip.start_s + static_cast<double>(j) / av_q2d(format.frame_rate);
+                clip.start_s + static_cast<double>(j) / av_q2d(format.frame_rate) /
+                                   (clip.slow ? clip.slow->factor : 1);
             cutting::apply_white_balance(picture, cutting::gains_at(color, source_s), yuv);
             for (const auto& [title, position] : painted) {
                 paint_title({.y = picture.data[0], .u = picture.data[1], .v = picture.data[2],

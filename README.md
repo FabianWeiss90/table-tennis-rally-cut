@@ -867,6 +867,17 @@ its name, its number of rallies, the length of its game video and its marks):
   with the margins, rallies whose margins overlap as one clip, minus the cross-fades between
   clips, as `highlights` makes them. Only a clip at the very end of a recording may come out
   slightly shorter. Updated with every tick and every change of margins or cross-fade.
+- **Slow motion:** below the player, for the rally played last: "After rally n" gives it a slow
+  motion, shown right after the rally's clip in the game and the match day video, without
+  titles. Its part is set like in annotate: pause the player at a frame and press "Start here"
+  or "End here" ("Watch the part" plays it); by default the first 1.5 s of the rally. "Slower"
+  2x, 3x or 4x shows every frame that many times; the sound is silence or stretched to the
+  slower pace at the same pitch. "Draw the section on the picture" lets you drag a section in
+  the picture's shape over the player: the slow motion shows only that part, cut from the
+  full-size original and then fitted to the output (from a 4K video into a 1080p one, the
+  section keeps the 4K detail). "Whole picture" undoes it. The white balance of its video
+  applies. Cross-fades join it like any clip, so a very short slow motion is mostly fade. `ttrally
+  highlights --no-slow-motion` (in the launcher "Without slow motions") leaves them out.
 - **Order of the video:** by default the games in the order they were recorded (the videos'
   creation time from their metadata, else the file's time; a match of several files by its first
   file), each game's rallies by time. "Order..." next to a video's length opens a window with
@@ -955,7 +966,8 @@ Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highli
 (default `<video id>-<height>p.mp4` or `<match day>-highlights-<height>p.mp4` in the highlights
 directory, e.g. `-1080p`, with the height actually written; a bare
 name also goes there, and `.mp4` is added if it has no extension),
-`--before`, `--after`, `--crossfade`, `--rally-titles`, `--font`, `--shapes-dir`,
+`--before`, `--after`, `--crossfade`, `--rally-titles`, `--no-slow-motion`, `--font`,
+`--shapes-dir`,
 `--resolution`, `--white-balance`, `--codec`,
 `--bitrate`, `--encoder`, `--cache-dir`.
 

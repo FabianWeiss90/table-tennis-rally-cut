@@ -201,6 +201,37 @@ TEST_CASE("highlight videos of a game and of a match day") {
         CHECK(result.output == day / "small-180p.mp4");
         CHECK(inspect(result.output).width == 320);
     }
+    SECTION("a slow motion right after its rally, zoomed, with stretched sound") {
+        StoredHighlights game = *store.load("weiss-ohrstedt");
+        game.rallies[0].slow = SlowMotion{.start_frame = 60,
+                                          .end_frame = 89, // 0.5 s
+                                          .factor = 2,
+                                          .left = 0.25,
+                                          .top = 0.25,
+                                          .size = 0.5,
+                                          .sound = true};
+        store.save("weiss-ohrstedt", game);
+        REQUIRE(store.load("weiss-ohrstedt")->rallies[0].slow == game.rallies[0].slow);
+        const auto out = day / "slow.mp4";
+        const auto result = make.execute({.video_id = "weiss-ohrstedt",
+                                          .output = out,
+                                          .match_day_name = "",
+                                          .margins = margins,
+                                          .render = render});
+        CHECK(result.clips == 3);
+        // 2 s + 1 s (0.5 s twice as slow) + 2 s, minus two cross-fades of 0.5 s
+        CHECK(result.render.duration_s == Catch::Approx(4.0));
+        const Written video = inspect(out);
+        CHECK(video.frames == 240);
+        CHECK(video.audio_s == Catch::Approx(4.0).margin(0.05));
+        const auto without = make.execute({.video_id = "weiss-ohrstedt",
+                                           .output = day / "without.mp4",
+                                           .match_day_name = "",
+                                           .margins = margins,
+                                           .render = render,
+                                           .slow_motions = false});
+        CHECK(without.clips == 2);
+    }
     SECTION("the games in the order they were recorded, unless another order is chosen") {
         media::FfmpegMediaProbe probe;
         using namespace std::chrono;

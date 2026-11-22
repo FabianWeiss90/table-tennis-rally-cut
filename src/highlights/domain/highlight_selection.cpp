@@ -40,6 +40,10 @@ void HighlightSelection::set_game(std::size_t index, bool marked) {
     }
 }
 
+void HighlightSelection::set_slow_motion(std::size_t index, std::optional<SlowMotion> slow) {
+    rallies_.at(index).slow = slow;
+}
+
 void HighlightSelection::set_day(std::size_t index, bool marked) {
     HighlightRally& rally = rallies_.at(index);
     rally.day = marked;
@@ -104,6 +108,12 @@ std::vector<HighlightRally> carry_over_marks(std::vector<HighlightRally> rallies
             2 * best_shared >= std::min(rally.frame_count(), best->frame_count())) {
             rally.game = best->game;
             rally.day = best->day;
+            // A slow motion stays if it still lies in the rally (with a margin of a second
+            // or so either side, which the frames cannot tell; the rally itself is the limit)
+            if (best->slow && best->slow->end_frame > rally.start_frame &&
+                best->slow->start_frame < rally.end_frame) {
+                rally.slow = best->slow;
+            }
         } else {
             rally.game = false;
             rally.day = false;

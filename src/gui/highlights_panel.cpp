@@ -197,6 +197,15 @@ bool input_multiline(const char* id, std::string& value, ImVec2 size) {
                                      ImGuiInputTextFlags_CallbackResize, resize, &value);
 }
 
+/// Where the rally list may reach at least: the bottom of the tab's visible area, less a line
+/// that shows there are settings below, as if the tab were not scrolled (so that scrolling does
+/// not make the list longer).
+float visible_bottom() {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    return ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - style.WindowPadding.y -
+           ImGui::GetFrameHeightWithSpacing() - ImGui::GetScrollY();
+}
+
 /// Single-line text input on a std::string.
 bool input_line(const char* id, std::string& value) {
     auto resize = [](ImGuiInputTextCallbackData* data) {
@@ -585,6 +594,10 @@ struct HighlightsPanel::Impl {
     int preselect = kDefaultPreselect;
     std::string max_day_length = kDefaultDayLength; ///< of the match day video, "mm:ss"
     std::string fit_note;                           ///< what the last fitting chose
+    float player_height = 0.0F; ///< of the player with its controls, in the last frame
+    /// Visible height below the player when it is not moved down (negative: hidden by the
+    /// output below), in the last frame
+    float spare_height = 0.0F;
     std::filesystem::path shapes_dir; ///< the library's SVG shapes for title backdrops
     std::vector<std::string> svg_names; ///< in it, read when the shape list opens
     highlights::TitleLayout day_layout; ///< of the players' titles in the match day video
@@ -1302,6 +1315,23 @@ struct HighlightsPanel::Impl {
                                length_text(fit.length_s), length_text(max_s - fit.length_s));
     }
 
+    /// Draws the player at the bottom of its column, whose height is that of the visible area
+    /// or of the player if it is higher; returns the bottom the list reaches down to.
+    float draw_player_at_bottom(const Overlay& overlay, bool shown) {
+        const float top = ImGui::GetCursorScreenPos().y;
+        const float fill = visible_bottom();
+        // The player's height is known after drawing it: that of the last frame places it
+        if (const float space = fill - (top + player_height); space > 0) {
+            ImGui::Dummy({0, space - ImGui::GetStyle().ItemSpacing.y});
+        }
+        const float start = ImGui::GetCursorScreenPos().y;
+        player.draw(overlay, shown);
+        const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+        player_height = bottom - start;
+        spare_height = fill - (top + player_height);
+        return std::max(bottom, fill);
+    }
+
     /// The game whose rally is played, else the first with rallies.
     [[nodiscard]] Game* played_game() {
         Game* first = nullptr;
@@ -1478,12 +1508,10 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         ImGui::TableSetupColumn("list", ImGuiTableColumnFlags_WidthStretch, kListShare);
         ImGui::TableSetupColumn("player", ImGuiTableColumnFlags_WidthStretch, 1.0F - kListShare);
         ImGui::TableNextRow();
-        // The player first: its height decides how far down the list reaches.
+        // The player first: its height decides how far down the list reaches at least.
         ImGui::TableSetColumnIndex(1);
-        self.player.draw(self.overlay_for(*game->highlights),
-                         self.player.video() == game->video.original);
         const float player_bottom =
-            ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+            self.draw_player_at_bottom(self.overlay_for(*game->highlights), self.player.video() == game->video.original);
         ImGui::TableSetColumnIndex(0);
         self.draw_lengths(game, margins, crossfade_s);
         self.draw_rallies(*game, margins, player_bottom);
@@ -1533,10 +1561,8 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
         ImGui::TableSetupColumn("player", ImGuiTableColumnFlags_WidthStretch, 1.0F - kListShare);
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(1);
-        self.player.draw(self.day_overlay_for(*shown->highlights),
-                         self.player.video() == shown->video.original);
         const float player_bottom =
-            ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+            self.draw_player_at_bottom(self.day_overlay_for(*shown->highlights), self.player.video() == shown->video.original);
         ImGui::TableSetColumnIndex(0);
         self.draw_lengths(nullptr, margins, crossfade_s);
         self.draw_day_rallies(margins, crossfade_s, player_bottom);
@@ -1547,6 +1573,8 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
     self.draw_day_layout();
     self.save_pending(false);
 }
+
+float HighlightsPanel::spare_height() const { return impl_->spare_height; }
 
 HighlightCounts HighlightsPanel::counts() const {
     HighlightCounts counts;

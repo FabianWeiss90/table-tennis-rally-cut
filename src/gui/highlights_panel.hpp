@@ -48,6 +48,11 @@ class HighlightsPanel {
 
     [[nodiscard]] HighlightCounts counts() const;
 
+    /// The visible height of the tab below the player in the last drawn frame (negative: that
+    /// much of the player is hidden). Moving the output down by it makes the rally list exactly
+    /// as high as the player.
+    [[nodiscard]] float spare_height() const;
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

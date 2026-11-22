@@ -387,7 +387,8 @@ the window remembers it and the video selected last (in `~/.config/ttrally/`, on
   dialog. Every field starts with the value that would be used; an emptied field silently
   stands for that value again (shown greyed). The bit rate follows the codec (4 Mbit/s with
   H.265, 8 with H.264) until you enter your own. The tabs stay at the top while their content
-  scrolls.
+  scrolls. The bar between the tabs and the output can be dragged up or down to give either
+  more height (the share is kept when the window is resized; not remembered after closing).
 - **Run:** the command runs as its own process; its output appears below, and it can be
   cancelled. The exact command line is shown above the button and can be copied. The list of
   videos is updated when a command has finished.
@@ -854,7 +855,10 @@ its name, its number of rallies, the length of its game video and its marks):
   In the match day list the rallies are sorted within each game; the games keep their order.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to
   the list, with the title as it will appear. The row of the rally played last stays
-  highlighted while and after it plays.
+  highlighted while and after it plays. When the tab is opened, the bar above the output is
+  placed so that the list is exactly as high as the player. Dragged down, the list reaches to
+  the bottom of the visible area and the player stays at the bottom of its column; the player
+  grows with the width of its column (the border between list and player can be dragged).
 - **Match:** a second title over every clip of the game videos and the match day video, the
   same for all games of the match day: the teams from the folder name
   (`2026-11-14-WolmirstedtII-Bismark` → "WolmirstedtII - Bismark"; "From the folder name" fills

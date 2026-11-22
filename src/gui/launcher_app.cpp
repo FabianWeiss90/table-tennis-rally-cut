@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cmath>
 #include <condition_variable>
 #include <deque>
 #include <format>
@@ -45,7 +46,11 @@ constexpr float kLibraryButtonsWidth = 140.0F;
 constexpr std::array kSteps{"align", "labels", "features", "detect", "refine", "cut"};
 constexpr float kLabelWidth = 230.0F;
 constexpr std::size_t kNumberFieldDigits = 8; ///< width of a number field, e.g. "3072" or "1.5"
-constexpr float kLogShare = 0.38F; ///< of the right side's height
+constexpr float kLogShare = 0.38F; ///< of the right side's height, at first (dragged later)
+constexpr float kSplitterHeight = 8.0F;  ///< the bar between the tabs and the output
+constexpr float kMinPaneHeight = 80.0F;  ///< of the tabs and of the output when dragged
+constexpr float kMaxLogShare = 0.5F;     ///< limit of kMinPaneHeight's share in a tiny window
+constexpr int kFitFrames = 4; ///< frames to fit the output to the highlights player (layout)
 constexpr int kPreviewHeight = 360;  ///< decoded preview size (shown scaled to the sidebar)
 constexpr int kDefaultPreviewPercent = 20; ///< far enough in to be past the warm-up
 constexpr float kSelectedVideoHeight = 440.0F; ///< preview and details below the video list
@@ -279,16 +284,56 @@ class LauncherApp {
         ImGui::EndChild();
         ImGui::SameLine();
         ImGui::BeginChild("##commands", {0, 0});
-        const float log_height = ImGui::GetContentRegionAvail().y * kLogShare;
-        ImGui::BeginChild("##forms", {0, -log_height});
+        const float height = ImGui::GetContentRegionAvail().y;
+        ImGui::BeginChild("##forms", {0, std::floor(height * (1.0F - log_share_))});
         draw_forms();
         ImGui::EndChild();
+        fit_output_to_player(height);
+        draw_splitter(height);
         draw_log();
         ImGui::EndChild();
         ImGui::End();
     }
 
   private:
+    /// The bar between the tabs and the output: dragged up or down, it shares the height
+    /// between them (kept as a share, so both grow with the window).
+    void draw_splitter(float height) {
+        ImGui::InvisibleButton("##splitter", {-FLT_MIN, kSplitterHeight});
+        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+        }
+        if (ImGui::IsItemActive() && height > 0) {
+            set_log_share(log_share_ - ImGui::GetIO().MouseDelta.y / height, height);
+            fit_frames_ = 0; // the user's choice from now on
+        }
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const float middle = (min.y + max.y) / 2;
+        ImGui::GetWindowDrawList()->AddLine(
+            {min.x, middle}, {max.x, middle},
+            ImGui::GetColorU32(ImGui::IsItemActive() || ImGui::IsItemHovered()
+                                   ? ImGuiCol_SeparatorActive
+                                   : ImGuiCol_Separator),
+            2.0F);
+        ImGui::SetItemTooltip("Drag to share the height between the tabs and the output");
+    }
+
+    /// After the highlights were opened: moves the bar above the output so that the rally list
+    /// is exactly as high as the player (a few frames, until the layout has settled).
+    void fit_output_to_player(float height) {
+        if (fit_frames_ == 0 || !highlights_ || !highlights_shown_ || height <= 0) {
+            return;
+        }
+        --fit_frames_;
+        set_log_share(log_share_ + highlights_->spare_height() / height, height);
+    }
+
+    void set_log_share(float share, float height) {
+        const float lowest = std::min(kMinPaneHeight / height, kMaxLogShare);
+        log_share_ = std::clamp(share, lowest, 1.0F - lowest);
+    }
+
     // ------------------------------------------------------------------ videos
 
     /// Wide enough for a video's whole status line (every step), next to the list's scrollbar.
@@ -592,6 +637,9 @@ class LauncherApp {
                 // The tab's content scrolls below the tabs, which stay in place
                 ImGui::BeginChild("##tab", {0, 0});
                 const bool reopened = !highlights_shown_ || shown_day_ != day;
+                if (forms[f].name == kHighlightsForm && !highlights_shown_) {
+                    fit_frames_ = kFitFrames;
+                }
                 if (forms[f].name == kHighlightsForm) {
                     draw_highlights(forms[f], f, reopened);
                     highlights_shown = true;
@@ -1465,7 +1513,6 @@ class LauncherApp {
     // ------------------------------------------------------------------ output
 
     void draw_log() {
-        ImGui::Separator();
         const std::string& status = session_.status();
         const bool failed = status.find("failed") != std::string::npos;
         ImGui::TextColored(failed ? kError : (session_.running() ? kPartly : kDone), "%s",
@@ -1553,6 +1600,8 @@ class LauncherApp {
     launcher::SceneStore* scenes_;
     std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
     bool highlights_shown_ = false; ///< the tab was shown in the last frame
+    float log_share_ = kLogShare;   ///< of the right side's height taken by the output
+    int fit_frames_ = 0; ///< frames left in which the output is fitted to the highlights player
     std::optional<std::string> shown_day_; ///< match day chosen as a whole when it was shown
     std::string merge_day_;                ///< match day of the merge choice below
     std::vector<std::string> merge_parts_; ///< originals ticked to merge, in their order

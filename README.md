@@ -381,8 +381,8 @@ from what the names have in common, e.g. `Kaether-Baumgarten-1.MP4` and `-2.MP4`
 
 ### White balance
 
-Videos recorded with automatic white balance and exposure differ in colour, brightness and
-contrast, also between rallies of one video (more or less daylight). Every rally is therefore
+Videos recorded with automatic white balance and exposure differ in colour and brightness, also
+between rallies of one video (more or less daylight). Every rally is therefore
 corrected on its own towards one reference rally. In the launcher, choose the whole match day,
 then the **White balance** tab:
 
@@ -400,12 +400,10 @@ then the **White balance** tab:
 
 When cutting (`cut`, `highlights`), every rally (every clip) is measured on its own: the median
 of 7 of its frames (the players mostly disappear), compared with the median of 9 frames of the
-tuned reference rally. With **Match brightness, contrast and colours** (default) tone curves give
-the rally the reference's distribution of brightness and colours per channel (histogram
-matching of the whole picture), then the spot's colour tone is made the reference spot's;
-without it only the spot's colour tone is corrected and each rally keeps its brightness. The
-curves are applied to every frame (red, green and blue through a curve each). Labels, features
-and detections keep the colours as recorded; a fast cut cannot correct (it copies the video).
+tuned reference rally. The rally gets the colour tone the reference has in the spot (a factor
+per colour channel, keeping its brightness); with **Also match the brightness** its whole
+picture also becomes as bright on average as the reference's. Labels, features and detections
+keep the colours as recorded; a fast cut cannot correct (it copies the video).
 
 Stored in `<match day>/ttrally-data/white-balance.csv` (each file's rectangle) and
 `white-balance-reference.csv` (the reference rally and its tuning); `cut` and `highlights` use

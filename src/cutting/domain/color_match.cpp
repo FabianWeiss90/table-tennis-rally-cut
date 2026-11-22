@@ -18,25 +18,6 @@ std::uint8_t clamped(double value) {
     return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0, kMaxValue)));
 }
 
-/// The share of pixels at or below every value, per channel.
-std::array<std::array<double, kLevels>, kChannels> cumulative(const RgbImage& picture) {
-    std::array<std::array<double, kLevels>, kChannels> counts{};
-    const std::size_t pixels = picture.rgb.size() / kChannels;
-    for (std::size_t p = 0; p < pixels; ++p) {
-        for (int c = 0; c < kChannels; ++c) {
-            counts[c][picture.rgb[p * kChannels + static_cast<std::size_t>(c)]] += 1.0;
-        }
-    }
-    for (auto& channel : counts) {
-        double sum = 0.0;
-        for (double& count : channel) {
-            sum += count;
-            count = pixels > 0 ? sum / static_cast<double>(pixels) : 0.0;
-        }
-    }
-    return counts;
-}
-
 } // namespace
 
 RgbImage median_of(std::span<const RgbImage> pictures) {
@@ -122,53 +103,6 @@ RgbColor ToneCurves::applied(RgbColor color) const {
     return {through(0, color.red), through(1, color.green), through(2, color.blue)};
 }
 
-ToneCurves matching_curves(const RgbImage& from, const RgbImage& to) {
-    if (from.empty() || to.empty()) {
-        return ToneCurves::identity();
-    }
-    const auto source = cumulative(from);
-    const auto target = cumulative(to);
-    ToneCurves curves;
-    for (int c = 0; c < kChannels; ++c) {
-        // The target value for every value the source has (the lowest whose share reaches it)
-        std::vector<std::pair<int, double>> known;
-        int matched = 0;
-        double before = 0.0;
-        for (int v = 0; v < kLevels; ++v) {
-            const double share = source[c][v];
-            if (share <= before) {
-                continue; // a value the source does not have
-            }
-            while (matched < kLevels - 1 && target[c][matched] < share) {
-                ++matched;
-            }
-            known.emplace_back(v, matched);
-            before = share;
-        }
-        // Between them linearly; below the first and above the last shifted alike
-        auto& curve = curves.curve[static_cast<std::size_t>(c)];
-        std::size_t next = 0;
-        for (int v = 0; v < kLevels; ++v) {
-            while (next < known.size() && known[next].first < v) {
-                ++next;
-            }
-            double value = 0.0;
-            if (next == 0) {
-                value = v + known.front().second - known.front().first;
-            } else if (next == known.size()) {
-                value = v + known.back().second - known.back().first;
-            } else {
-                const auto& [low, low_value] = known[next - 1];
-                const auto& [high, high_value] = known[next];
-                const double share = static_cast<double>(v - low) / (high - low);
-                value = low_value + (high_value - low_value) * share;
-            }
-            curve[static_cast<std::size_t>(v)] = clamped(value);
-        }
-    }
-    return curves;
-}
-
 ToneCurves scaled(const ToneCurves& curves, RgbGains gains) {
     ToneCurves result = curves;
     const std::array<double, kChannels> factors{gains.red, gains.green, gains.blue};
@@ -190,18 +124,20 @@ ColorTarget tuned_target(const RgbImage& reference, std::optional<RelativeRect> 
 
 ToneCurves rally_correction(const RgbImage& rally, std::optional<RelativeRect> area,
                             const ColorTarget& target, const WhiteBalanceSettings& settings) {
-    if (rally.empty() || target.picture.empty()) {
+    if (rally.empty() || target.picture.empty() || !area || !target.area) {
         return ToneCurves::identity();
     }
-    ToneCurves curves = settings.match_brightness ? matching_curves(rally, target.picture)
-                                                  : ToneCurves::identity();
-    if (area && target.area) {
-        // The colour tone of the area after the curves made the target area's
-        const RgbColor now = curves.applied(mean_in(rally, *area));
-        const RgbColor wanted = mean_in(target.picture, *target.area);
-        curves = scaled(curves, gains_towards(now, wanted, false));
+    // The colour tone of the area made the target area's, keeping the rally's brightness
+    RgbGains gains =
+        gains_towards(mean_in(rally, *area), mean_in(target.picture, *target.area), false);
+    if (settings.match_brightness) {
+        // Then the whole picture as bright on average as the target's
+        const double now = luma_of(corrected(mean_in(rally, kWholePicture), gains));
+        const double wanted = luma_of(mean_in(target.picture, kWholePicture));
+        const double scale = now > 0 ? wanted / now : 1.0;
+        gains = {gains.red * scale, gains.green * scale, gains.blue * scale};
     }
-    return curves;
+    return scaled(ToneCurves::identity(), gains);
 }
 
 } // namespace ttrally::cutting

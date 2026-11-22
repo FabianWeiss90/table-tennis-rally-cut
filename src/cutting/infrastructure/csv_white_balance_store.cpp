@@ -76,7 +76,7 @@ WhiteBalanceSettings CsvWhiteBalanceStore::load(const fs::path& work_dir) {
         settings.temperature = number(value(reference.front(), "temperature"), 0);
         settings.tint = number(value(reference.front(), "tint"), 0);
         settings.brightness = number(value(reference.front(), "brightness"), 0);
-        settings.match_brightness = value(reference.front(), "match_brightness") != "0";
+        settings.match_brightness = value(reference.front(), "match_brightness") == "1";
     }
     return settings;
 }

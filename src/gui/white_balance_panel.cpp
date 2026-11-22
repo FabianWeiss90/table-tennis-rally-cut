@@ -142,7 +142,7 @@ cutting::RgbImage rgb_image_of(const media::VideoFrame& frame, int step = 4) {
     return picture;
 }
 
-/// The frame through the tone curves (limited range, BT.709), as the cut applies them.
+/// The frame through the curves (limited range, BT.709), as the cut applies them.
 media::VideoFrame curved(media::VideoFrame frame, const cutting::ToneCurves& curves) {
     if (curves.is_identity()) {
         return frame;
@@ -492,10 +492,10 @@ struct WhiteBalancePanel::Impl {
             "of them; in the others it appears where it is in the file before and can be moved "
             "onto the same spot (each part of a match on its own). 2: choose a reference rally "
             "and tune it with temperature, tint and brightness. When cutting, every rally is "
-            "measured on its own frames and corrected towards it: brightness, contrast and "
-            "colours of the whole picture by tone curves, then the spot's colour tone. 3 shows "
-            "the middle of each file corrected that way. Labels, features and detections keep "
-            "the colours as recorded.");
+            "measured on its own frames and corrected towards it: the spot's colour tone, and "
+            "if chosen the brightness of the whole picture. 3 shows the middle of each file "
+            "corrected that way. Labels, features and detections keep the colours as "
+            "recorded.");
         if (job.valid()) {
             ImGui::TextColored(kPartly, "Reading a picture from the middle of every file...");
         }
@@ -750,13 +750,12 @@ struct WhiteBalancePanel::Impl {
             settings.brightness = 0;
             finished = true;
         }
-        if (ImGui::Checkbox("Match brightness, contrast and colours", &settings.match_brightness)) {
+        if (ImGui::Checkbox("Also match the brightness", &settings.match_brightness)) {
             finished = true;
         }
-        ImGui::SetItemTooltip("On: tone curves give every rally the distribution of brightness "
-                              "and colours of the reference's whole picture, then the spot its "
-                              "colour tone. Off: only the spot's colour tone, each rally keeps "
-                              "its own brightness");
+        ImGui::SetItemTooltip("Off: every rally gets the spot's colour tone of the reference and "
+                              "keeps its own brightness. On: its whole picture also becomes as "
+                              "bright on average as the reference's (evens out exposure)");
         if (finished) {
             save();
         } else if (changed) {

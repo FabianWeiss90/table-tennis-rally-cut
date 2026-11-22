@@ -101,9 +101,9 @@ struct WhiteBalanceSettings {
     double temperature = 0.0;
     double tint = 0.0;
     double brightness = 0.0;
-    /// Brightness, contrast and colours of the whole picture matched by tone curves; else only
-    /// the area's colour tone
-    bool match_brightness = true;
+    /// Every rally's whole picture made as bright on average as the reference's; else only the
+    /// area's colour tone is matched
+    bool match_brightness = false;
 
     [[nodiscard]] bool has_reference() const noexcept {
         return !reference_video.empty() && reference_end_s > reference_start_s;

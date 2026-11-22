@@ -31,7 +31,8 @@ struct RgbImage {
 /// The mean colour of an area of the picture (whole picture: {0, 0, 1, 1}).
 [[nodiscard]] RgbColor mean_in(const RgbImage& picture, RelativeRect area);
 
-/// A tone curve per channel: the new value of every value 0-255 of red, green and blue.
+/// A curve per channel: the new value of every value 0-255 of red, green and blue (a correction
+/// by gains is a straight curve per channel).
 struct ToneCurves {
     std::array<std::array<std::uint8_t, 256>, 3> curve{};
 
@@ -42,10 +43,6 @@ struct ToneCurves {
     [[nodiscard]] RgbColor applied(RgbColor color) const;
     friend bool operator==(const ToneCurves&, const ToneCurves&) = default;
 };
-
-/// Curves that give `from` the distribution of values per channel that `to` has (histogram
-/// matching): brightness, contrast and colour cast of the whole picture.
-[[nodiscard]] ToneCurves matching_curves(const RgbImage& from, const RgbImage& to);
 
 /// The curves with every channel scaled by its gain afterwards (clipped at 255).
 [[nodiscard]] ToneCurves scaled(const ToneCurves& curves, RgbGains gains);
@@ -63,9 +60,9 @@ struct ColorTarget {
                                        const WhiteBalanceSettings& settings);
 
 /// The correction of a rally (the median of its frames, with its file's area) towards the
-/// target: with settings.match_brightness the tone curves of the whole picture (brightness,
-/// contrast, colour), then the colour tone of the area made the target area's; without it only
-/// the area's colour tone. Identity if nothing can be measured.
+/// target, as gains per channel: the area's colour tone made the target area's, and with
+/// settings.match_brightness the whole picture as bright on average as the target's. Identity if
+/// nothing can be measured.
 [[nodiscard]] ToneCurves rally_correction(const RgbImage& rally, std::optional<RelativeRect> area,
                                           const ColorTarget& target,
                                           const WhiteBalanceSettings& settings);

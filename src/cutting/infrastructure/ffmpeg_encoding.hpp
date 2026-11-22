@@ -133,8 +133,8 @@ inline constexpr int kEncoderHangExitCode = 3;
                                               const std::filesystem::path& output,
                                               ProgressReporter& progress);
 
-/// Corrects the colours of an 8-bit YUV 4:2:0 frame (planar or NV12) in place by tone curves
-/// on red, green and blue; other formats are left as they are. `format` describes its YUV
+/// Corrects the colours of an 8-bit YUV 4:2:0 frame (planar or NV12) in place by curves on red,
+/// green and blue; other formats are left as they are. `format` describes its YUV
 /// values.
 void apply_curves(AVFrame& frame, const ToneCurves& curves, YuvFormat format);
 

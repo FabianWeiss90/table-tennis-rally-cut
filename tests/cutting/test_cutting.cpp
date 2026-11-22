@@ -275,20 +275,13 @@ TEST_CASE("the median of pictures removes what is in only a few of them") {
     CHECK(mean_in(hall, {0, 0, 1, 1}).green == Approx(150.0));
 }
 
-TEST_CASE("tone curves give a picture the distribution of another") {
-    const RgbImage dark = two_tone({40, 50, 60}, {100, 110, 120});
-    const RgbImage bright = two_tone({80, 90, 100}, {200, 210, 220});
-    const ToneCurves curves = matching_curves(dark, bright);
-    const RgbColor lifted_low = curves.applied({40, 50, 60});
-    const RgbColor lifted_high = curves.applied({100, 110, 120});
-    CHECK(lifted_low.red == Approx(80.0));
-    CHECK(lifted_low.blue == Approx(100.0));
-    CHECK(lifted_high.green == Approx(210.0)); // contrast too, not just one factor
-    CHECK(matching_curves(dark, dark).is_identity());
+TEST_CASE("curves carry gains per channel") {
+    CHECK(ToneCurves::identity().is_identity());
     CHECK(ToneCurves::identity().applied({12.5, 0, 255}).red == Approx(12.5));
     const ToneCurves halved = scaled(ToneCurves::identity(), {0.5, 1.0, 1.0});
     CHECK(halved.curve[0][200] == 100);
     CHECK(halved.curve[1][200] == 200);
+    CHECK(halved.applied({200, 200, 200}).red == Approx(100.0));
 }
 
 TEST_CASE("a rally is corrected towards the tuned reference rally") {
@@ -296,22 +289,23 @@ TEST_CASE("a rally is corrected towards the tuned reference rally") {
     const RgbImage reference = two_tone({120, 120, 120}, {200, 200, 200});
     const RelativeRect wall{0.0, 0.0, 0.5, 1.0};
     WhiteBalanceSettings settings;
-    settings.match_brightness = true;
     const ColorTarget target = tuned_target(reference, wall, settings);
     CHECK(target.picture.rgb == reference.rgb); // nothing tuned
     // A rally: darker and with a yellow cast
     const RgbImage rally = two_tone({90, 85, 60}, {160, 150, 110});
-    const ToneCurves correction = rally_correction(rally, wall, target, settings);
-    const RgbColor corrected_wall = correction.applied(mean_in(rally, wall));
-    CHECK(corrected_wall.red == Approx(corrected_wall.blue).margin(1.5));
-    CHECK(corrected_wall.green == Approx(corrected_wall.blue).margin(1.5));
-    CHECK(luma_of(corrected_wall) == Approx(120.0).margin(2.0));
-    // Only the colour tone: the rally keeps its brightness
-    settings.match_brightness = false;
+    // Only the colour tone: the wall neutral, the rally keeps its brightness
     const ToneCurves tint = rally_correction(rally, wall, target, settings);
     const RgbColor tinted = tint.applied(mean_in(rally, wall));
     CHECK(tinted.red == Approx(tinted.blue).margin(1.5));
+    CHECK(tinted.green == Approx(tinted.blue).margin(1.5));
     CHECK(luma_of(tinted) == Approx(luma_of(mean_in(rally, wall))).margin(1.5));
+    // With the brightness: the whole picture as bright on average as the reference's
+    settings.match_brightness = true;
+    const ToneCurves bright = rally_correction(rally, wall, target, settings);
+    const RgbColor whole = bright.applied(mean_in(rally, {0, 0, 1, 1}));
+    CHECK(luma_of(whole) == Approx(160.0).margin(2.0));
+    const RgbColor wall_now = bright.applied(mean_in(rally, wall));
+    CHECK(wall_now.red == Approx(wall_now.blue).margin(1.5)); // still neutral
     // Warmer reference: the target is warm
     settings.temperature = 0.5;
     const ColorTarget warm = tuned_target(reference, wall, settings);

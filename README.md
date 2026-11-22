@@ -853,7 +853,8 @@ its name, its number of rallies, the length of its game video and its marks):
   first), a second click reverses the order; the number stays the rally's number in the game.
   In the match day list the rallies are sorted within each game; the games keep their order.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to
-  the list, with the title as it will appear.
+  the list, with the title as it will appear. The row of the rally played last stays
+  highlighted while and after it plays.
 - **Match:** a second title over every clip of the game videos and the match day video, the
   same for all games of the match day: the teams from the folder name
   (`2026-11-14-WolmirstedtII-Bismark` → "WolmirstedtII - Bismark"; "From the folder name" fills

@@ -56,6 +56,7 @@ constexpr int kPreviewMatchDay = 1;
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
 const ImVec4 kError{1.0F, 0.45F, 0.4F, 1.0F};
 const ImVec4 kPlaying{0.45F, 0.75F, 1.0F, 1.0F};
+const ImVec4 kPlayingRow{0.45F, 0.75F, 1.0F, 0.28F}; ///< behind the row of the rally played
 
 /// "05:00", "1:02:03" or "90" (seconds) in seconds; nullopt if it is none of these.
 std::optional<double> parse_length(const std::string& text) {
@@ -766,6 +767,9 @@ struct HighlightsPanel::Impl {
         ImGui::TableNextRow();
         const bool is_playing = playing && playing->first == game.video.key() &&
                                 playing->second == i;
+        if (is_playing) { // the rally played last, while and after it plays
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, ImGui::GetColorU32(kPlayingRow));
+        }
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
         if (is_playing) {

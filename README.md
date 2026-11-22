@@ -844,8 +844,11 @@ its name, its number of rallies, the length of its game video and its marks):
   margins and cross-fade. Time left over is not filled with further rallies of single games;
   every game has the same number (a game with fewer rallies gives all it has). Game marks stay.
   The result can then be changed by hand.
-- **Length:** above the list, about how long the game video and the match day video will be
-  with the current marks, margins and cross-fade (updated with every tick).
+- **Length:** directly above the list, how long the game video and the match day video are
+  with the current marks (hh:mm:ss, with the number of rallies and clips): each marked rally
+  with the margins, rallies whose margins overlap as one clip, minus the cross-fades between
+  clips, as `highlights` makes them. Only a clip at the very end of a recording may come out
+  slightly shorter. Updated with every tick and every change of margins or cross-fade.
 - **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest
   first), a second click reverses the order; the number stays the rally's number in the game.
   In the match day list the rallies are sorted within each game; the games keep their order.

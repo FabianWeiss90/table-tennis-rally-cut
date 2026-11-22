@@ -37,6 +37,10 @@ using highlights::TitlePosition;
 constexpr int kDefaultPreselect = 5;
 constexpr int kMaxPreselect = 100;
 constexpr const char* kDefaultDayLength = "05:00";
+constexpr const char* kLengthHelp =
+    "Length of the video as it will be made: every marked rally with the margins before and "
+    "after (rallies whose margins overlap become one clip), minus the cross-fades between the "
+    "clips. Only a clip at the very end of a recording may come out slightly shorter.";
 constexpr int kPlayerHeight = 540;          ///< decoded size of the played frames
 constexpr std::size_t kPlayerFrames = 240;  ///< frames kept (about 0.8 MB each)
 constexpr double kBufferAheadSeconds = 2.0;
@@ -69,15 +73,8 @@ std::optional<double> parse_length(const std::string& text) {
     return fields > 0 ? std::optional(total) : std::nullopt;
 }
 
-/// A video's length for the eye: "4:05" or "1:02:03".
-std::string length_text(double seconds) {
-    const auto total = static_cast<long long>(std::llround(std::max(0.0, seconds)));
-    constexpr long long kHour = 3600;
-    constexpr long long kMinute = 60;
-    return total >= kHour ? std::format("{}:{:02}:{:02}", total / kHour, total / kMinute % kMinute,
-                                        total % kMinute)
-                          : std::format("{}:{:02}", total / kMinute, total % kMinute);
-}
+/// A video's length as hh:mm:ss, e.g. "00:04:05".
+std::string length_text(double seconds) { return io::format_elapsed(seconds); }
 
 const char* position_label(TitlePosition position) {
     switch (position) {
@@ -900,20 +897,34 @@ struct HighlightsPanel::Impl {
         return highlights::joined_length(clips, crossfade_s);
     }
 
-    /// How long the highlight videos will be with the current marks; `game`: also its video.
+    /// What a highlight video holds: "00:04:41 (17 rallies in 15 clips)".
+    static std::string contents_text(double seconds, std::size_t rallies, std::size_t clips) {
+        return std::format("{} ({} rall{} in {} clip{})", length_text(seconds), rallies,
+                           rallies == 1 ? "y" : "ies", clips, clips == 1 ? "" : "s");
+    }
+
+    /// How long the highlight videos are with the current marks, margins and cross-fades;
+    /// `game`: also its game video.
     void draw_lengths(const Game* game, cutting::Margins margins, double crossfade_s) const {
         if (game != nullptr && game->highlights) {
-            ImGui::Text("Game video: about %s",
-                        length_text(video_length(*game, highlights::HighlightVideo::Game,
-                                                 margins, crossfade_s))
+            const auto clips = clips_of(*game, highlights::HighlightVideo::Game, margins);
+            ImGui::Text("Game video: %s",
+                        contents_text(highlights::joined_length(clips, crossfade_s),
+                                      game->highlights->selection.game_count(), clips.size())
                             .c_str());
-            ImGui::SetItemTooltip("With the margins and cross-fades set below");
-            ImGui::SameLine(0, 30);
+            ImGui::SetItemTooltip("%s", kLengthHelp);
         }
-        ImGui::Text("Match day video: about %s",
-                    length_text(day_length(margins, crossfade_s)).c_str());
-        ImGui::SetItemTooltip("The match day highlights of all games, with the margins and "
-                              "cross-fades set below");
+        std::size_t rallies = 0;
+        std::size_t clips = 0;
+        for (const Game& each : games) {
+            if (each.highlights) {
+                rallies += each.highlights->selection.day_count();
+                clips += clips_of(each, highlights::HighlightVideo::MatchDay, margins).size();
+            }
+        }
+        ImGui::Text("Match day video: %s",
+                    contents_text(day_length(margins, crossfade_s), rallies, clips).c_str());
+        ImGui::SetItemTooltip("All games' match day highlights. %s", kLengthHelp);
     }
 
     /// Size, position, colours and decoration of a title; true if one changed.
@@ -1458,7 +1469,6 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         return;
     }
     ImGui::SeparatorText(std::format("Game {}", video.video_id).c_str());
-    self.draw_lengths(game, margins, crossfade_s);
     self.draw_preselection(*game->highlights);
     if (ImGui::BeginTable("##layout", 2, ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("list", ImGuiTableColumnFlags_WidthStretch, kListShare);
@@ -1471,6 +1481,7 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         const float player_bottom =
             ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
         ImGui::TableSetColumnIndex(0);
+        self.draw_lengths(game, margins, crossfade_s);
         self.draw_rallies(*game, margins, player_bottom);
         ImGui::EndTable();
     }
@@ -1511,7 +1522,6 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
         return;
     }
     ImGui::SeparatorText("Match day highlights");
-    self.draw_lengths(nullptr, margins, crossfade_s);
     self.draw_day_preselection();
     self.draw_day_fit(margins, crossfade_s);
     if (ImGui::BeginTable("##layout", 2, ImGuiTableFlags_Resizable)) {
@@ -1524,6 +1534,7 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
         const float player_bottom =
             ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
         ImGui::TableSetColumnIndex(0);
+        self.draw_lengths(nullptr, margins, crossfade_s);
         self.draw_day_rallies(margins, crossfade_s, player_bottom);
         ImGui::EndTable();
     }

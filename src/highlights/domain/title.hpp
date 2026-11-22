@@ -178,7 +178,9 @@ struct TitleLayout {
 /// "weiss-belger_greta" -> "Weiss - Belger Greta". Names are split at the first "-", or at a
 /// word "vs" if there is one; "_" becomes a space, a number at the end (e.g. the second game,
 /// "Kroekel2") is dropped and every word starts with a capital letter. Empty if the name does
-/// not hold two parts (e.g. a camera's file name).
+/// not hold two parts (e.g. a camera's file name). Doubles videos start with "Doppel" or
+/// "Doubles" (any case): "Doppel-Weiss_Becker-Mueller_Schmidt" -> "Weiss/Becker -
+/// Mueller/Schmidt", the players of a pair split at "_".
 [[nodiscard]] std::string title_from_file_name(std::string_view stem);
 
 /// The match of a match day folder: "2026-11-14-WolmirstedtII-Bismark" -> "WolmirstedtII -

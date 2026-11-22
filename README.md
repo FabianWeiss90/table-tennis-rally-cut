@@ -848,7 +848,10 @@ its name, its number of rallies, the length of its game video and its marks):
   (`2026-11-14-WolmirstedtII-Bismark` → "WolmirstedtII - Bismark"; "From the folder name" fills
   it in again), editable and with several lines (e.g. the final score), by default top centre.
 - **Players:** the players from the file name (`Weiss-Ohrstedt.MP4` → "Weiss - Ohrstedt"; nothing
-  for camera names such as `2X6A4730.MP4`), editable and with several lines, "Swap players".
+  for camera names such as `2X6A4730.MP4`). Doubles start with `Doppel` or `Doubles` (any case),
+  the two players of a pair joined by `_`: `Doppel-Weiss_Becker-Mueller_Schmidt.MP4` →
+  "Weiss/Becker - Mueller/Schmidt". The title is proposed when a game's highlights are opened
+  the first time; a title saved before stays as it is. Editable and with several lines, "Swap players".
   Size, position (top or bottom; left, centre or right; by default bottom centre), the colour
   of the letters (white by default) and an optional border in a colour of its own (off by
   default; the same for the match) are set per game for its game video,

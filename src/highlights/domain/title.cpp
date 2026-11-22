@@ -3,6 +3,7 @@
 #include "highlights/domain/title.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <cctype>
 #include <charconv>
 #include <format>
@@ -87,6 +88,50 @@ std::string player_name(const std::vector<std::string>& parts) {
         name.pop_back();
     }
     return name;
+}
+
+/// "Doppel", "doubles", "Doppel2", ...: the first part of a doubles video's file name.
+bool is_doubles_mark(std::string_view part) {
+    std::string lower;
+    for (const char c : part) {
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    for (const std::string_view mark : {"doppel", "doubles"}) {
+        if (lower.starts_with(mark) &&
+            std::ranges::all_of(lower.substr(mark.size()), [](char c) {
+                return std::isdigit(static_cast<unsigned char>(c)) != 0;
+            })) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// "weiss_becker" -> "Weiss/Becker": the players of a pair, split at "_".
+std::string pair_name(std::string_view pair) {
+    std::string name;
+    for (const std::string& player : split(pair, '_')) {
+        const std::string one = player_name({player});
+        if (!one.empty()) {
+            name += (name.empty() ? "" : "/") + one;
+        }
+    }
+    return name;
+}
+
+/// The pairs of a doubles video's file name ("Doppel-A_B-C_D" -> "A/B - C/D"); nullopt if the
+/// name does not start with a doubles mark.
+std::optional<std::string> doubles_title(const std::vector<std::string>& parts) {
+    if (parts.size() < 3 || !is_doubles_mark(parts.front())) {
+        return std::nullopt;
+    }
+    std::string second;
+    for (std::size_t i = 2; i < parts.size(); ++i) {
+        second += (second.empty() ? "" : "_") + parts[i];
+    }
+    const std::string a = pair_name(parts[1]);
+    const std::string b = pair_name(second);
+    return a.empty() || b.empty() ? std::string() : a + std::string(kSeparator) + b;
 }
 
 } // namespace
@@ -242,6 +287,9 @@ Title default_match_title(std::string_view folder) {
 
 std::string title_from_file_name(std::string_view stem) {
     const std::vector<std::string> parts = split(stem, '-');
+    if (const std::optional<std::string> doubles = doubles_title(parts)) {
+        return *doubles;
+    }
     const auto versus = std::ranges::find_if(parts.rbegin(), parts.rend(), is_versus);
     std::vector<std::string> left;
     std::vector<std::string> right;

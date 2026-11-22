@@ -198,6 +198,21 @@ TEST_CASE("titles from file names") {
     CHECK(title_from_file_name("").empty());
 }
 
+TEST_CASE("titles of doubles from file names") {
+    CHECK(title_from_file_name("Doppel-Weiss_Becker-Mueller_Schmidt") ==
+          "Weiss/Becker - Mueller/Schmidt");
+    CHECK(title_from_file_name("doppel-weiss_becker-mueller_schmidt") ==
+          "Weiss/Becker - Mueller/Schmidt");
+    CHECK(title_from_file_name("Doubles-Weiss_Becker-Mueller_Schmidt2") ==
+          "Weiss/Becker - Mueller/Schmidt");
+    CHECK(title_from_file_name("doubles-A_B-C_D") == "A/B - C/D");
+    CHECK(title_from_file_name("Doppel2-A_B-C_D") == "A/B - C/D");
+    CHECK(swap_players("Weiss/Becker - Mueller/Schmidt") == "Mueller/Schmidt - Weiss/Becker");
+    // Not a doubles mark: read as singles
+    CHECK(title_from_file_name("Doppler-Weiss") == "Doppler - Weiss");
+    CHECK(title_from_file_name("Doppel-Weiss") == "Doppel - Weiss"); // no pairs: as singles
+}
+
 TEST_CASE("swapping the players of a title") {
     CHECK(swap_players("Weiss - Ohrstedt") == "Ohrstedt - Weiss");
     CHECK(swap_players("Weiss - Ohrstedt\nKreisliga") == "Ohrstedt - Weiss\nKreisliga");

@@ -395,8 +395,9 @@ whole match day, then the **White balance** tab:
    red, less blue), **Tint** (more magenta, less green) and **Brightness** (half to 1.5 times). "Area neutral" sets them so that the
    spot becomes grey (a start for white or grey spots), "Reset" returns to the recording.
 3. **Result:** every other file is corrected so that its spot looks like the reference's: in
-   colour tone, and with **Also match the brightness** in brightness too (evens out exposure,
-   but may brighten a dark video a lot). All files are shown corrected.
+   colour tone, and with **Also match the brightness** each whole picture (not only the spot)
+   becomes as bright as the reference's tuned picture (evens out exposure, but may brighten a
+   dark video a lot). All files are shown corrected.
 
 Stored in `<match day>/ttrally-data/white-balance.csv` (per file: its rectangle and the gains for
 red, green and blue) and `white-balance-reference.csv`. `cut` and `highlights` apply it with

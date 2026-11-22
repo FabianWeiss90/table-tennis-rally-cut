@@ -193,12 +193,19 @@ TEST_CASE("white balance: a reference tuned by temperature and tint, the others 
     CHECK(luma_of(corrected(warm, brighter)) == Approx(1.5 * luma_of(warm)));
     CHECK(brighter.red == Approx(brighter.blue));
 
-    // The others look like the tuned reference: in tint, or in tint and brightness
+    // The others look like the tuned reference: in tint by the area, in brightness by the
+    // whole picture
     const RgbColor cool{150, 170, 200};
     const RgbColor dark{60, 50, 40};
+    const RgbColor bright_picture{120, 120, 120}; // the reference's whole picture
+    const RgbColor dark_picture{40, 40, 40};      // a darker video
+    const std::vector<MeasuredFile> files{{warm, bright_picture},
+                                          {cool, bright_picture},
+                                          {std::nullopt, dark_picture},
+                                          {dark, dark_picture}};
     WhiteBalanceSettings settings{.files = {}, .reference = "", .temperature = temperature,
                                   .tint = tint, .brightness = 0.0, .match_brightness = false};
-    const auto gains = balance_gains({warm, cool, std::nullopt, dark}, 0, settings);
+    const auto gains = balance_gains(files, 0, settings);
     REQUIRE(gains.size() == 4);
     const RgbColor target = corrected(warm, gains[0]);
     const RgbColor other = corrected(cool, gains[1]);
@@ -207,13 +214,16 @@ TEST_CASE("white balance: a reference tuned by temperature and tint, the others 
     CHECK(luma_of(other) == Approx(luma_of(cool))); // its own brightness
     CHECK(gains[2].identity());                     // no area
     settings.match_brightness = true;
-    const auto bright = balance_gains({warm, cool, std::nullopt, dark}, 0, settings);
-    const RgbColor lifted = corrected(dark, bright[3]);
-    CHECK(lifted.red == Approx(target.red));
-    CHECK(lifted.green == Approx(target.green));
-    CHECK(lifted.blue == Approx(target.blue));
-    // Without the reference's colour nothing is corrected
-    for (const RgbGains& none : balance_gains({std::nullopt, cool}, 0, settings)) {
+    const auto matched = balance_gains(files, 0, settings);
+    const RgbColor lifted = corrected(dark, matched[3]);
+    CHECK(lifted.red / lifted.green == Approx(target.red / target.green)); // the tint
+    // The whole picture as bright as the reference's tuned whole picture, not the area
+    CHECK(luma_of(corrected(dark_picture, matched[3])) ==
+          Approx(luma_of(corrected(bright_picture, matched[0]))));
+    CHECK(luma_of(lifted) != Approx(luma_of(target)));
+    // Without the reference's area colour nothing is corrected
+    for (const RgbGains& none :
+         balance_gains({{std::nullopt, bright_picture}, {cool, bright_picture}}, 0, settings)) {
         CHECK(none.identity());
     }
 }

@@ -183,19 +183,29 @@ effective_areas(const std::vector<FileWhiteBalance>& files) {
     return areas;
 }
 
-std::vector<RgbGains> balance_gains(const std::vector<std::optional<RgbColor>>& measured,
+std::vector<RgbGains> balance_gains(const std::vector<MeasuredFile>& measured,
                                     std::size_t reference, const WhiteBalanceSettings& settings) {
     std::vector<RgbGains> gains(measured.size());
-    if (reference >= measured.size() || !measured[reference]) {
+    if (reference >= measured.size() || !measured[reference].area) {
         return gains;
     }
-    const RgbColor own = *measured[reference];
+    const MeasuredFile& own = measured[reference];
     gains[reference] =
-        temperature_tint_gains(settings.temperature, settings.tint, settings.brightness, own);
-    const RgbColor target = corrected(own, gains[reference]);
+        temperature_tint_gains(settings.temperature, settings.tint, settings.brightness, *own.area);
+    const RgbColor target = corrected(*own.area, gains[reference]);
+    const std::optional<double> target_brightness =
+        own.picture ? std::optional(luma_of(corrected(*own.picture, gains[reference])))
+                    : std::nullopt;
     for (std::size_t i = 0; i < measured.size(); ++i) {
-        if (i != reference && measured[i]) {
-            gains[i] = gains_towards(*measured[i], target, settings.match_brightness);
+        if (i == reference || !measured[i].area) {
+            continue;
+        }
+        gains[i] = gains_towards(*measured[i].area, target, false); // the tint
+        if (settings.match_brightness && target_brightness && measured[i].picture) {
+            const double brightness =
+                luma_of(corrected(*measured[i].picture, gains[i]));
+            const double scale = *target_brightness / std::max(kMinChannel, brightness);
+            gains[i] = {gains[i].red * scale, gains[i].green * scale, gains[i].blue * scale};
         }
     }
     return gains;

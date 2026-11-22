@@ -109,13 +109,20 @@ struct WhiteBalanceSettings {
 [[nodiscard]] std::vector<std::optional<RelativeRect>>
 effective_areas(const std::vector<FileWhiteBalance>& files);
 
-/// The gains of every file (same order) from the colours measured in their areas: the reference
-/// tuned with its settings' temperature, tint and brightness, every other file corrected so that
-/// its area looks like the reference's tuned area (in tint, with match_brightness also in
-/// brightness). Files without a colour, and all if the reference has none, stay as recorded.
-[[nodiscard]] std::vector<RgbGains>
-balance_gains(const std::vector<std::optional<RgbColor>>& measured, std::size_t reference,
-              const WhiteBalanceSettings& settings);
+/// What is measured in a file's picture: the mean colour of its area and of the whole picture.
+struct MeasuredFile {
+    std::optional<RgbColor> area;    ///< none: no area or no picture
+    std::optional<RgbColor> picture; ///< none: no picture
+};
+
+/// The gains of every file (same order): the reference tuned with its settings' temperature,
+/// tint and brightness; every other file given the tint the reference's tuned area has, and
+/// with match_brightness also the brightness of the reference's whole tuned picture (its whole
+/// picture, not the area, so that the exposure matches). Files without an area colour, and all
+/// if the reference has none, stay as recorded.
+[[nodiscard]] std::vector<RgbGains> balance_gains(const std::vector<MeasuredFile>& measured,
+                                                  std::size_t reference,
+                                                  const WhiteBalanceSettings& settings);
 
 /// A stretch of a video's timeline with the gains for its frames.
 struct ColorSpan {

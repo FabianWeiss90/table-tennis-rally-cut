@@ -270,11 +270,17 @@ struct WhiteBalancePanel::Impl {
             const auto index = static_cast<std::size_t>(first - areas.begin());
             settings.reference = first == areas.end() ? std::string() : files[index].name;
         }
-        std::vector<std::optional<RgbColor>> measured;
+        std::vector<cutting::MeasuredFile> measured;
         for (std::size_t i = 0; i < files.size(); ++i) {
             const media::VideoFrame* frame = picture_of(files[i]);
-            measured.push_back(frame == nullptr || !areas[i] ? std::nullopt
-                                                             : color_in(*frame, *areas[i]));
+            cutting::MeasuredFile file;
+            if (frame != nullptr) {
+                file.picture = color_in(*frame, RelativeRect{0.0, 0.0, 1.0, 1.0});
+                if (areas[i]) {
+                    file.area = color_in(*frame, *areas[i]);
+                }
+            }
+            measured.push_back(file);
         }
         const auto gains = cutting::balance_gains(measured, reference_index(), settings);
         for (std::size_t i = 0; i < files.size(); ++i) {
@@ -519,8 +525,9 @@ struct WhiteBalancePanel::Impl {
             finished = true;
         }
         ImGui::SetItemTooltip("Off: the other files get the spot's colour tone and keep their "
-                              "own brightness. On: also its brightness (evens out exposure, but "
-                              "may brighten a dark video a lot)");
+                              "own brightness. On: each also gets the brightness of the "
+                              "reference's whole picture (evens out exposure, but may brighten "
+                              "a dark video a lot)");
         ImGui::EndGroup();
         if (finished) {
             save();

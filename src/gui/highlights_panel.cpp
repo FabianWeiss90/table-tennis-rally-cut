@@ -37,6 +37,11 @@ using highlights::TitlePosition;
 constexpr int kDefaultPreselect = 5;
 constexpr int kMaxPreselect = 100;
 constexpr const char* kDefaultDayLength = "05:00";
+constexpr const char* kOrderWindow = "Order of the rallies";
+constexpr const char* kOrderPayload = "RALLY_ORDER";
+constexpr int kOrderColumns = 6;
+constexpr float kOrderWindowWidth = 620.0F;
+constexpr float kOrderWindowHeight = 560.0F;
 constexpr const char* kLengthHelp =
     "Length of the video as it will be made: every marked rally with the margins before and "
     "after (rallies whose margins overlap become one clip), minus the cross-fades between the "
@@ -594,6 +599,11 @@ struct HighlightsPanel::Impl {
     int preselect = kDefaultPreselect;
     std::string max_day_length = kDefaultDayLength; ///< of the match day video, "mm:ss"
     std::string fit_note;                           ///< what the last fitting chose
+    std::map<std::string, std::int64_t> recorded; ///< when each game was recorded, by video key
+    /// The chosen orders: a game's id -> its game video's, "" -> the match day video's
+    std::map<std::string, std::vector<highlights::RallyKey>> orders;
+    std::string order_of; ///< the video of the order window (see orders)
+    bool open_order = false;
     float player_height = 0.0F; ///< of the player with its controls, in the last frame
     /// Visible height below the player when it is not moved down (negative: hidden by the
     /// output below), in the last frame
@@ -621,6 +631,8 @@ struct HighlightsPanel::Impl {
         save_pending(true);
         day = video.match_day;
         games.clear();
+        recorded.clear();
+        orders.clear();
         playing.reset();
         error.clear();
         store = days.store(video.work_dir);
@@ -629,6 +641,7 @@ struct HighlightsPanel::Impl {
             day_layout = store->match_day_layout();
             match = store->match_title().value_or(highlights::default_match_title(day));
             font = store->title_font();
+            orders[""] = store->rally_order("");
         } catch (const std::exception& failure) {
             error = std::format("Match day title: {}", failure.what());
         }
@@ -643,6 +656,14 @@ struct HighlightsPanel::Impl {
                     static_cast<std::size_t>(preselect));
             } catch (const std::exception& failure) {
                 error = std::format("{}: {}", entry.video_id, failure.what());
+            }
+            if (game.highlights) {
+                recorded[entry.key()] = days.recorded_at(entry.original);
+                try {
+                    orders[entry.video_id] = store->rally_order(entry.video_id);
+                } catch (const std::exception& failure) {
+                    error = std::format("{}: {}", entry.video_id, failure.what());
+                }
             }
             games.push_back(std::move(game));
         }
@@ -849,7 +870,17 @@ struct HighlightsPanel::Impl {
         }
         setup_rally_columns();
         const ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs();
+        // The games in the order they were recorded, as in the match day video
+        std::vector<Game*> by_time;
         for (Game& game : games) {
+            by_time.push_back(&game);
+        }
+        std::ranges::stable_sort(by_time, {}, [&](const Game* game) {
+            const auto found = recorded.find(game->video.key());
+            return found == recorded.end() ? 0 : found->second;
+        });
+        for (Game* each : by_time) {
+            Game& game = *each;
             ImGui::PushID(game.video.key().c_str());
             ImGui::TableNextRow();
             ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImGuiCol_Header));
@@ -868,8 +899,7 @@ struct HighlightsPanel::Impl {
             ImGui::TextColored(kMuted, "%zu rallies", selection.rallies().size());
             ImGui::TableSetColumnIndex(kLengthColumn);
             ImGui::TextColored(kMuted, "%s",
-                               length_text(video_length(game, highlights::HighlightVideo::Game,
-                                                        margins, crossfade_s))
+                               length_text(video_length(game, margins, crossfade_s))
                                    .c_str());
             ImGui::SetItemTooltip("Length of this game's highlight video");
             ImGui::TableSetColumnIndex(kGameColumn);
@@ -887,31 +917,69 @@ struct HighlightsPanel::Impl {
         ImGui::EndTable();
     }
 
-    /// The clips a game adds to a highlight video, in seconds.
-    static std::vector<double> clips_of(const Game& game, highlights::HighlightVideo video,
-                                        cutting::Margins margins) {
-        if (!game.highlights) {
-            return {};
+    /// A rally of a highlight video: its game and its index in the game's rallies.
+    using Entry = std::pair<const Game*, std::size_t>;
+
+    /// The rallies of a highlight video in its order: `only`'s game video, or with nullptr the
+    /// match day video (the games in the order they were recorded); by time unless the user
+    /// chose another order.
+    [[nodiscard]] std::vector<Entry> in_order(const Game* only) const {
+        std::vector<const Game*> chosen;
+        if (only != nullptr) {
+            chosen.push_back(only);
+        } else {
+            for (const Game& game : games) {
+                if (game.highlights) {
+                    chosen.push_back(&game);
+                }
+            }
+            std::ranges::stable_sort(chosen, {}, [&](const Game* game) {
+                const auto found = recorded.find(game->video.key());
+                return found == recorded.end() ? 0 : found->second;
+            });
         }
-        return highlights::clip_lengths(game.highlights->selection.rallies(), video, margins,
-                                        game.highlights->fps > 0 ? game.highlights->fps
-                                                                 : kFallbackFps);
+        std::vector<highlights::RallyKey> chronological;
+        std::map<std::pair<std::string, std::int64_t>, Entry> where;
+        for (const Game* game : chosen) {
+            const auto& rallies = game->highlights->selection.rallies();
+            for (std::size_t i = 0; i < rallies.size(); ++i) {
+                if (only != nullptr ? rallies[i].game : rallies[i].day) {
+                    const std::string& id = game->highlights->video_id;
+                    chronological.push_back({id, rallies[i].start_frame});
+                    where[{id, rallies[i].start_frame}] = {game, i};
+                }
+            }
+        }
+        const auto custom = orders.find(only != nullptr ? only->highlights->video_id : "");
+        std::vector<Entry> entries;
+        for (const highlights::RallyKey& key : highlights::apply_order(
+                 chronological, custom == orders.end() ? std::vector<highlights::RallyKey>()
+                                                       : custom->second)) {
+            entries.push_back(where.at({key.game, key.start_frame}));
+        }
+        return entries;
     }
 
-    static double video_length(const Game& game, highlights::HighlightVideo video,
-                               cutting::Margins margins, double crossfade_s) {
-        return highlights::joined_length(clips_of(game, video, margins), crossfade_s);
+    /// The clips of a highlight video in its order, in seconds (see in_order).
+    [[nodiscard]] std::vector<double> clips_in_order(const Game* only,
+                                                     cutting::Margins margins) const {
+        std::vector<highlights::TimedRally> timed;
+        for (const auto& [game, index] : in_order(only)) {
+            const GameHighlights& marks = *game->highlights;
+            timed.push_back({marks.video_id, marks.selection.rallies()[index],
+                             marks.fps > 0 ? marks.fps : kFallbackFps});
+        }
+        return highlights::ordered_clip_lengths(timed, margins);
     }
 
-    /// The match day video: the match day highlights of every game, one after another.
+    [[nodiscard]] double video_length(const Game& game, cutting::Margins margins,
+                                      double crossfade_s) const {
+        return highlights::joined_length(clips_in_order(&game, margins), crossfade_s);
+    }
+
+    /// The match day video: the match day highlights of every game, in its order.
     [[nodiscard]] double day_length(cutting::Margins margins, double crossfade_s) const {
-        std::vector<double> clips;
-        for (const Game& game : games) {
-            const std::vector<double> own =
-                clips_of(game, highlights::HighlightVideo::MatchDay, margins);
-            clips.insert(clips.end(), own.begin(), own.end());
-        }
-        return highlights::joined_length(clips, crossfade_s);
+        return highlights::joined_length(clips_in_order(nullptr, margins), crossfade_s);
     }
 
     /// What a highlight video holds: "00:04:41 (17 rallies in 15 clips)".
@@ -922,26 +990,170 @@ struct HighlightsPanel::Impl {
 
     /// How long the highlight videos are with the current marks, margins and cross-fades;
     /// `game`: also its game video.
-    void draw_lengths(const Game* game, cutting::Margins margins, double crossfade_s) const {
+    void draw_lengths(const Game* game, cutting::Margins margins, double crossfade_s) {
         if (game != nullptr && game->highlights) {
-            const auto clips = clips_of(*game, highlights::HighlightVideo::Game, margins);
+            const auto clips = clips_in_order(game, margins);
+            ImGui::AlignTextToFramePadding();
             ImGui::Text("Game video: %s",
                         contents_text(highlights::joined_length(clips, crossfade_s),
                                       game->highlights->selection.game_count(), clips.size())
                             .c_str());
             ImGui::SetItemTooltip("%s", kLengthHelp);
+            ImGui::SameLine();
+            order_button(game->highlights->video_id, "game");
         }
         std::size_t rallies = 0;
-        std::size_t clips = 0;
         for (const Game& each : games) {
             if (each.highlights) {
                 rallies += each.highlights->selection.day_count();
-                clips += clips_of(each, highlights::HighlightVideo::MatchDay, margins).size();
             }
         }
+        const auto clips = clips_in_order(nullptr, margins);
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("Match day video: %s",
-                    contents_text(day_length(margins, crossfade_s), rallies, clips).c_str());
+                    contents_text(highlights::joined_length(clips, crossfade_s), rallies,
+                                  clips.size())
+                        .c_str());
         ImGui::SetItemTooltip("All games' match day highlights. %s", kLengthHelp);
+        ImGui::SameLine();
+        order_button("", "day");
+    }
+
+    /// "Order...": opens the window to put the rallies of a video (a game's id, empty for the
+    /// match day video) in order.
+    void order_button(const std::string& video, const char* id) {
+        ImGui::PushID(id);
+        if (ImGui::SmallButton("Order...")) {
+            order_of = video;
+            open_order = true;
+        }
+        ImGui::SetItemTooltip("Put the marked rallies of this video in your own order (by drag "
+                              "and drop); by default the games in the order they were "
+                              "recorded, each game's rallies by time");
+        ImGui::PopID();
+    }
+
+    /// The window with the marked rallies of one highlight video, dragged into order.
+    void draw_order_window(cutting::Margins margins) {
+        if (open_order) {
+            ImGui::OpenPopup(kOrderWindow);
+            open_order = false;
+        }
+        ImGui::SetNextWindowSize({kOrderWindowWidth, kOrderWindowHeight}, ImGuiCond_Appearing);
+        if (!ImGui::BeginPopupModal(kOrderWindow, nullptr)) {
+            return;
+        }
+        const Game* only = nullptr;
+        if (!order_of.empty()) {
+            const auto found = std::ranges::find_if(games, [&](const Game& game) {
+                return game.highlights && game.highlights->video_id == order_of;
+            });
+            only = found == games.end() ? nullptr : &*found;
+        }
+        const std::vector<Entry> entries = in_order(only);
+        ImGui::TextUnformatted(only != nullptr
+                                   ? std::format("Game video of {}", order_of).c_str()
+                                   : "Match day video");
+        ImGui::TextColored(kMuted, "Drag a row onto another to move it there. Rallies marked "
+                                   "later are placed by time.");
+        std::optional<std::pair<std::size_t, std::size_t>> moved;
+        constexpr ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                                          ImGuiTableFlags_BordersInnerV |
+                                          ImGuiTableFlags_SizingFixedFit;
+        const float buttons = ImGui::GetFrameHeightWithSpacing() * 1.5F;
+        if (ImGui::BeginTable("##order", kOrderColumns, flags, {0, -buttons})) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("");
+            ImGui::TableSetupColumn("Game");
+            ImGui::TableSetupColumn("#");
+            ImGui::TableSetupColumn("Start");
+            ImGui::TableSetupColumn("Length");
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            for (std::size_t k = 0; k < entries.size(); ++k) {
+                if (const auto drop = draw_order_row(entries[k], k, margins)) {
+                    moved = {*drop, k};
+                }
+            }
+            ImGui::EndTable();
+        }
+        if (moved) {
+            std::vector<highlights::RallyKey> keys;
+            for (const auto& [game, index] : entries) {
+                keys.push_back({game->highlights->video_id,
+                                game->highlights->selection.rallies()[index].start_frame});
+            }
+            highlights::move_entry(keys, moved->first, moved->second);
+            save_order(keys);
+        }
+        if (ImGui::Button("By time")) {
+            save_order({});
+        }
+        ImGui::SetItemTooltip("Back to the default: the games in the order they were recorded, "
+                              "each game's rallies by time");
+        ImGui::SameLine();
+        if (ImGui::Button("Close", {100, 0})) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    /// One row of the order window, dragged and a target to drop on; returns the index of a row
+    /// dropped on it.
+    std::optional<std::size_t> draw_order_row(Entry entry, std::size_t k,
+                                              cutting::Margins margins) {
+        const auto& [game, index] = entry;
+        const GameHighlights& marks = *game->highlights;
+        const highlights::HighlightRally& rally = marks.selection.rallies()[index];
+        const double fps = marks.fps > 0 ? marks.fps : kFallbackFps;
+        std::optional<std::size_t> dropped;
+        ImGui::PushID(static_cast<int>(k));
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        const bool is_playing = playing && playing->first == game->video.key() &&
+                                playing->second == index;
+        ImGui::Selectable(std::format("{}", k + 1).c_str(), is_playing,
+                          ImGuiSelectableFlags_SpanAllColumns |
+                              ImGuiSelectableFlags_AllowOverlap);
+        if (ImGui::BeginDragDropSource()) {
+            ImGui::SetDragDropPayload(kOrderPayload, &k, sizeof(k));
+            ImGui::Text("%s #%zu", marks.video_id.c_str(), index + 1);
+            ImGui::EndDragDropSource();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kOrderPayload)) {
+                dropped = *static_cast<const std::size_t*>(payload->Data);
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(marks.video_id.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%zu", index + 1);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(
+            io::format_clock(static_cast<double>(rally.start_frame) / fps).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f s", static_cast<double>(rally.frame_count()) / fps);
+        ImGui::TableNextColumn();
+        if (ImGui::SmallButton(">")) {
+            playing = {game->video.key(), index};
+            const auto before = static_cast<std::int64_t>(std::lround(margins.before_s * fps));
+            const auto after = static_cast<std::int64_t>(std::lround(margins.after_s * fps));
+            player.play(game->video, rally.start_frame - before, rally.end_frame + after, fps);
+        }
+        ImGui::SetItemTooltip("Watch it in the player");
+        ImGui::PopID();
+        return dropped;
+    }
+
+    void save_order(const std::vector<highlights::RallyKey>& keys) {
+        orders[order_of] = keys;
+        try {
+            store->save_rally_order(order_of, keys);
+        } catch (const std::exception& failure) {
+            error = std::format("Saving the order: {}", failure.what());
+        }
     }
 
     /// Size, position, colours and decoration of a title; true if one changed.
@@ -1517,6 +1729,7 @@ void HighlightsPanel::draw(const launcher::WorkspaceSnapshot& workspace,
         self.draw_rallies(*game, margins, player_bottom);
         ImGui::EndTable();
     }
+    self.draw_order_window(margins);
     self.draw_font();
     self.draw_match();
     self.draw_title(*game->highlights);
@@ -1568,6 +1781,7 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
         self.draw_day_rallies(margins, crossfade_s, player_bottom);
         ImGui::EndTable();
     }
+    self.draw_order_window(margins);
     self.draw_font();
     self.draw_match();
     self.draw_day_layout();

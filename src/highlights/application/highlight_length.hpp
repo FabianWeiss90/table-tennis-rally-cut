@@ -6,6 +6,7 @@
 #include "highlights/domain/highlight_selection.hpp"
 
 #include <span>
+#include <string>
 #include <vector>
 
 namespace ttrally::highlights {
@@ -22,6 +23,19 @@ enum class HighlightVideo {
 [[nodiscard]] std::vector<double> clip_lengths(const std::vector<HighlightRally>& rallies,
                                                HighlightVideo video, cutting::Margins margins,
                                                double fps);
+
+/// A marked rally in the order of a highlight video, with the frame rate of its game.
+struct TimedRally {
+    std::string game; ///< video id
+    HighlightRally rally;
+    double fps = 0.0;
+};
+
+/// Seconds of the clips of rallies in the order of a highlight video: rallies of one game that
+/// follow each other rising in time share clips where their margins overlap (as `ttrally
+/// highlights` cuts them).
+[[nodiscard]] std::vector<double> ordered_clip_lengths(const std::vector<TimedRally>& rallies,
+                                                       cutting::Margins margins);
 
 /// Seconds of a video of these clips, each fading into the next for `crossfade_s` (at most half
 /// of either clip, as the renderer does).

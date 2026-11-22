@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
+#include <chrono>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -76,11 +77,13 @@ TEST_CASE("highlight videos of a game and of a match day") {
     const auto b = day / "Weiss-Becker.mp4";
     REQUIRE(run(std::format("ffmpeg -hide_banner -y -f lavfi -i testsrc2=size=320x180:rate=60 "
                             "-f lavfi -i sine=frequency=440:sample_rate=48000 -ac 2 -t 8 "
-                            "-c:v mpeg4 -q:v 4 -g 60 -c:a aac \"{}\"",
+                            "-c:v mpeg4 -q:v 4 -g 60 -c:a aac "
+                            "-metadata creation_time=2026-11-21T16:30:00Z \"{}\"",
                             a.string())));
     REQUIRE(run(std::format("ffmpeg -hide_banner -y -f lavfi -i testsrc2=size=640x360:rate=30 "
                             "-f lavfi -i sine=frequency=880:sample_rate=44100 -t 6 "
-                            "-c:v mpeg4 -q:v 4 -g 30 -c:a aac \"{}\"",
+                            "-c:v mpeg4 -q:v 4 -g 30 -c:a aac "
+                            "-metadata creation_time=2026-11-21T14:00:00Z \"{}\"",
                             b.string())));
     CsvHighlightStore store(highlights_dir);
     const bool font = !default_title_font().empty();
@@ -180,7 +183,7 @@ TEST_CASE("highlight videos of a game and of a match day") {
                                           .render = render});
         CHECK(result.games == std::vector<std::string>{"weiss-becker", "weiss-ohrstedt"});
         const Written video = inspect(out);
-        CHECK(video.width == 640); // weiss-becker comes first
+        CHECK(video.width == 640); // weiss-becker comes first: recorded first
         CHECK(video.frames == 105); // 30 fps: 60 + 60 - 15
         CHECK(video.audio_s == Catch::Approx(3.5).margin(0.05));
     }
@@ -197,6 +200,31 @@ TEST_CASE("highlight videos of a game and of a match day") {
                                           .resolution_in_name = true});
         CHECK(result.output == day / "small-180p.mp4");
         CHECK(inspect(result.output).width == 320);
+    }
+    SECTION("the games in the order they were recorded, unless another order is chosen") {
+        media::FfmpegMediaProbe probe;
+        using namespace std::chrono;
+        const auto at = [](int hour, int minute) {
+            return duration_cast<seconds>(
+                       (sys_days{year{2026} / 11 / 21} + hours{hour} + minutes{minute})
+                           .time_since_epoch())
+                .count();
+        };
+        CHECK(probe.probe(a).recorded_at_s == at(16, 30));
+        CHECK(probe.probe(b).recorded_at_s == at(14, 0));
+        store.save_rally_order("", {{"weiss-ohrstedt", 60}, {"weiss-becker", 30}});
+        CHECK(store.rally_order("") ==
+              std::vector<RallyKey>{{"weiss-ohrstedt", 60}, {"weiss-becker", 30}});
+        CHECK(store.rally_order("weiss-ohrstedt").empty());
+        const auto out = day / "ordered.mp4";
+        const auto result = make.execute({.video_id = std::nullopt,
+                                          .output = out,
+                                          .match_day_name = "",
+                                          .margins = margins,
+                                          .rally_titles = true,
+                                          .render = render});
+        CHECK(result.games == std::vector<std::string>{"weiss-ohrstedt", "weiss-becker"});
+        CHECK(inspect(out).width == 320); // weiss-ohrstedt chosen first
     }
     SECTION("hard cuts") {
         const auto out = day / "cuts.mp4";

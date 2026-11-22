@@ -44,6 +44,9 @@ struct MediaInfo {
     std::uintmax_t file_size = 0;
     std::string container;
     double duration_s = 0.0; ///< NaN if unknown
+    /// When the recording began, in seconds since 1970 (UTC): the container's creation time,
+    /// else the file's modification time; for a part list, its first part's
+    std::int64_t recorded_at_s = 0;
     std::optional<VideoStreamInfo> video;
     std::optional<AudioStreamInfo> audio;
 };

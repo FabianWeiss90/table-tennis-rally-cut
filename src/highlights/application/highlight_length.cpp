@@ -28,6 +28,29 @@ std::vector<double> clip_lengths(const std::vector<HighlightRally>& rallies, Hig
     return lengths;
 }
 
+std::vector<double> ordered_clip_lengths(const std::vector<TimedRally>& rallies,
+                                         cutting::Margins margins) {
+    std::vector<double> lengths;
+    std::size_t begin = 0;
+    while (begin < rallies.size()) {
+        std::size_t end = begin + 1;
+        while (end < rallies.size() && rallies[end].game == rallies[begin].game &&
+               rallies[end].rally.start_frame > rallies[end - 1].rally.start_frame) {
+            ++end;
+        }
+        std::vector<HighlightRally> run;
+        for (std::size_t i = begin; i < end; ++i) {
+            HighlightRally rally = rallies[i].rally;
+            rally.game = rally.day = true; // all of the run count
+            run.push_back(rally);
+        }
+        const auto own = clip_lengths(run, HighlightVideo::Game, margins, rallies[begin].fps);
+        lengths.insert(lengths.end(), own.begin(), own.end());
+        begin = end;
+    }
+    return lengths;
+}
+
 double joined_length(std::span<const double> clips, double crossfade_s) {
     double total = 0.0;
     for (std::size_t i = 0; i < clips.size(); ++i) {

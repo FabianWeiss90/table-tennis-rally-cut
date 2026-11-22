@@ -867,6 +867,14 @@ its name, its number of rallies, the length of its game video and its marks):
   with the margins, rallies whose margins overlap as one clip, minus the cross-fades between
   clips, as `highlights` makes them. Only a clip at the very end of a recording may come out
   slightly shorter. Updated with every tick and every change of margins or cross-fade.
+- **Order of the video:** by default the games in the order they were recorded (the videos'
+  creation time from their metadata, else the file's time; a match of several files by its first
+  file), each game's rallies by time. "Order..." next to a video's length opens a window with
+  its marked rallies (for the match day video only the match day highlights); drag a row onto
+  another to move it there, ">" plays it, "By time" returns to the default. Rallies marked later
+  are placed after the rally before them by time. Rallies of one game that follow each other in
+  time share a clip where their margins overlap; out of time order each gets its own clip.
+  Stored in `rally-order.csv` in the highlights folder.
 - **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest
   first), a second click reverses the order; the number stays the rally's number in the game.
   In the match day list the rallies are sorted within each game; the games keep their order.
@@ -929,8 +937,8 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
 ```
 
 - **Clips:** each marked rally with `--before` and `--after` (default 1 and 1.5 s); rallies whose
-  margins overlap become one clip, as in `cut`. The match day video has the games in the order
-  of their video ids.
+  margins overlap become one clip, as in `cut`. The order is the one chosen in the launcher,
+  else the games in the order they were recorded and each game's rallies by time.
 - **Cross-fade:** `--crossfade` seconds (default 0.5, 0 for hard cuts) in which picture and sound
   of one clip fade into the next.
 - **Format:** size and frame rate of the first clip's video (or smaller with `--resolution`, as

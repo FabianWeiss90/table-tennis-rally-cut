@@ -176,7 +176,10 @@ find_package(Stb REQUIRED)
 find_package(NanoSVG CONFIG REQUIRED)
 
 ttrally_layer(ttrally_highlights_domain
-    SOURCES highlights/domain/highlight_selection.cpp highlights/domain/title.cpp)
+    SOURCES
+        highlights/domain/highlight_order.cpp
+        highlights/domain/highlight_selection.cpp
+        highlights/domain/title.cpp)
 
 ttrally_layer(ttrally_highlights_application
     SOURCES

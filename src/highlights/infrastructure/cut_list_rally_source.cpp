@@ -2,6 +2,8 @@
 
 #include "highlights/infrastructure/cut_list_rally_source.hpp"
 
+#include "media/infrastructure/ffmpeg_media_probe.hpp"
+
 #include "annotation/infrastructure/csv_annotation_repository.hpp"
 #include "cutting/infrastructure/cut_list_choice.hpp"
 #include "highlights/infrastructure/csv_highlight_store.hpp"
@@ -65,6 +67,14 @@ FileMatchDayHighlights::store(const std::filesystem::path& work_dir) {
 std::unique_ptr<RallySource>
 FileMatchDayHighlights::rallies(const std::filesystem::path& work_dir) {
     return std::make_unique<CutListRallySource>(work_dir);
+}
+
+std::int64_t FileMatchDayHighlights::recorded_at(const std::filesystem::path& video) {
+    try {
+        return media::FfmpegMediaProbe().probe(video).recorded_at_s;
+    } catch (const std::exception&) {
+        return 0; // unreadable: first
+    }
 }
 
 } // namespace ttrally::highlights

@@ -26,6 +26,8 @@ class CsvHighlightStore final : public HighlightStore {
     void save_match_title(const Title& title) override;
     [[nodiscard]] std::filesystem::path title_font() override;
     void save_title_font(const std::filesystem::path& font) override;
+    [[nodiscard]] std::vector<RallyKey> rally_order(const std::string& game) override;
+    void save_rally_order(const std::string& game, const std::vector<RallyKey>& order) override;
 
   private:
     [[nodiscard]] std::filesystem::path match_day() const;

@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,6 +43,8 @@ class MatchDayHighlights {
     store(const std::filesystem::path& work_dir) = 0;
     [[nodiscard]] virtual std::unique_ptr<RallySource>
     rallies(const std::filesystem::path& work_dir) = 0;
+    /// When a video was recorded (seconds since 1970): its creation time, else the file's time.
+    [[nodiscard]] virtual std::int64_t recorded_at(const std::filesystem::path& video) = 0;
 };
 
 } // namespace ttrally::highlights

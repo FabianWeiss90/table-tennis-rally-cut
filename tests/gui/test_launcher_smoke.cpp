@@ -121,6 +121,9 @@ class MemoryHighlights final : public highlights::MatchDayHighlights {
         void save_match_title(const highlights::Title&) override {}
         std::filesystem::path title_font() override { return {}; }
         void save_title_font(const std::filesystem::path&) override {}
+        std::vector<highlights::RallyKey> rally_order(const std::string&) override { return {}; }
+        void save_rally_order(const std::string&,
+                              const std::vector<highlights::RallyKey>&) override {}
         std::optional<highlights::StoredHighlights> saved;
     };
     class Rallies final : public highlights::RallySource {
@@ -141,6 +144,9 @@ class MemoryHighlights final : public highlights::MatchDayHighlights {
     }
     std::unique_ptr<highlights::RallySource> rallies(const std::filesystem::path&) override {
         return std::make_unique<Rallies>();
+    }
+    std::int64_t recorded_at(const std::filesystem::path& video) override {
+        return static_cast<std::int64_t>(video.string().size()); // any fixed order
     }
 };
 

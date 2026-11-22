@@ -17,6 +17,9 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr std::string_view kSettingsSuffix = ".settings.csv";
+/// The chosen orders: per row the video (a game's id, empty for the match day video) and a
+/// rally (its game and first frame), in order.
+constexpr std::string_view kRallyOrderFile = "rally-order.csv";
 constexpr std::string_view kMatchDayTitleFile = "match-day-title.csv";
 
 std::int64_t parse_frame(const std::string& text, const fs::path& file) {
@@ -317,6 +320,44 @@ void CsvHighlightStore::save_match_title(const Title& title) {
     Settings settings = fs::exists(file) ? read_settings(file) : Settings{};
     put_title(settings, std::string(kMatchPrefix), title);
     write_settings(file, settings);
+}
+
+std::vector<RallyKey> CsvHighlightStore::rally_order(const std::string& game) {
+    std::vector<RallyKey> order;
+    const fs::path file = directory_ / kRallyOrderFile;
+    if (!fs::exists(file)) {
+        return order;
+    }
+    const auto rows = io::read_csv(file);
+    for (std::size_t r = 1; r < rows.size(); ++r) { // row 0 is the header
+        if (rows[r].size() >= 3 && rows[r][0] == game) {
+            try {
+                order.push_back({rows[r][1], std::stoll(rows[r][2])});
+            } catch (const std::exception&) {
+                // an unreadable row is left out
+            }
+        }
+    }
+    return order;
+}
+
+void CsvHighlightStore::save_rally_order(const std::string& game,
+                                         const std::vector<RallyKey>& order) {
+    const fs::path file = directory_ / kRallyOrderFile;
+    std::vector<io::CsvRow> rows;
+    if (fs::exists(file)) {
+        const auto stored = io::read_csv(file);
+        for (std::size_t r = 1; r < stored.size(); ++r) {
+            if (!stored[r].empty() && stored[r][0] != game) {
+                rows.push_back(stored[r]); // the orders of the other videos stay
+            }
+        }
+    }
+    for (const RallyKey& key : order) {
+        rows.push_back({game, key.game, std::to_string(key.start_frame)});
+    }
+    fs::create_directories(directory_);
+    io::write_csv(file, {"video", "game", "start_frame"}, rows);
 }
 
 } // namespace ttrally::highlights

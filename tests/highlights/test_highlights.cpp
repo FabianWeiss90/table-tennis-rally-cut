@@ -5,6 +5,7 @@
 
 #include "highlights/application/game_highlights.hpp"
 #include "highlights/application/highlight_length.hpp"
+#include "highlights/domain/highlight_order.hpp"
 #include "highlights/domain/highlight_selection.hpp"
 #include "highlights/application/make_highlight_video.hpp"
 #include "support/fake_media.hpp"
@@ -49,6 +50,11 @@ class MemoryStore final : public HighlightStore {
     void save_match_title(const Title& changed) override { match = changed; }
     std::filesystem::path title_font() override { return font; }
     void save_title_font(const std::filesystem::path& changed) override { font = changed; }
+    std::vector<RallyKey> rally_order(const std::string& game) override { return orders[game]; }
+    void save_rally_order(const std::string& game, const std::vector<RallyKey>& order) override {
+        orders[game] = order;
+    }
+    std::map<std::string, std::vector<RallyKey>> orders;
     std::filesystem::path font;
     std::map<std::string, StoredHighlights> saved;
     TitleLayout layout;
@@ -229,6 +235,31 @@ TEST_CASE("the match day video takes as many rallies from every game as fit") {
     fit = fit_match_day(uneven, 59.0, margins, 0.0); // 4 per game: 3 x 18 + 6 = 60 s
     CHECK(fit.per_game == 3);
     CHECK(fit.length_s == Approx(3 * 15.0 + 6.0));
+}
+
+TEST_CASE("a chosen order of rallies, with newly marked ones placed by time") {
+    const RallyKey a1{"a", 100};
+    const RallyKey a2{"a", 500};
+    const RallyKey b1{"b", 50};
+    const RallyKey b2{"b", 900};
+    const std::vector<RallyKey> chronological{a1, a2, b1, b2};
+    CHECK(apply_order(chronological, {}) == chronological);
+    // Chosen: b2 first, then a2, a1, b1
+    const std::vector<RallyKey> custom{b2, a2, a1, b1};
+    CHECK(apply_order(chronological, custom) == custom);
+    // a2 unmarked: dropped; a new rally b1b after b1 (its predecessor by time)
+    const RallyKey b1b{"b", 300};
+    CHECK(apply_order({a1, b1, b1b, b2}, custom) == std::vector<RallyKey>{b2, a1, b1, b1b});
+    // A new first rally goes first
+    const RallyKey a0{"a", 10};
+    CHECK(apply_order({a0, a1, a2, b1, b2}, custom).front() == a0);
+    std::vector<RallyKey> order = chronological;
+    move_entry(order, 3, 0);
+    CHECK(order == std::vector<RallyKey>{b2, a1, a2, b1});
+    move_entry(order, 0, 3);
+    CHECK(order == chronological);
+    move_entry(order, 7, 0); // ignored
+    CHECK(order == chronological);
 }
 
 TEST_CASE("titles from file names") {

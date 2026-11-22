@@ -5,6 +5,7 @@
 #include "highlights/application/ports.hpp"
 #include "media/application/media_probe.hpp"
 #include "media/application/media_reader.hpp"
+#include "shared/kernel/frame_timeline.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -13,9 +14,14 @@
 
 namespace ttrally::highlights {
 
+/// The frame times of a game's video.
+struct GameTimeline {
+    FrameTimeline timeline;
+    std::int64_t frames = 0;
+};
+
 struct MakeHighlightsRequest {
-    /// One game: its highlights. None: the match day highlights of every game in the store, in
-    /// the order of their video ids.
+    /// One game: its highlights. None: the match day highlights of every game in the store.
     std::optional<std::string> video_id;
     std::filesystem::path output;
     /// Name of the match day folder, for the match title if none was saved.
@@ -38,7 +44,8 @@ struct MakeHighlightsResult {
 };
 
 /// Use case behind `ttrally highlights`: the marked rallies of one game (game highlights) or of
-/// all games of a match day (match day highlights), each with the margins, as one video with
+/// all games of a match day (match day highlights; the games in the order they were recorded),
+/// in the order chosen in the launcher (else by time), each with the margins, as one video with
 /// cross-fades and titles: the match over every clip, and the players (always in a game video,
 /// on request in the match day video, there with the match day's size, position and colours).
 class MakeHighlightVideo {
@@ -51,13 +58,16 @@ class MakeHighlightVideo {
     [[nodiscard]] MakeHighlightsResult execute(const MakeHighlightsRequest& request);
 
   private:
-    /// Clips of a game's marked rallies; `match_day`: the match day video's title layout;
-    /// `match`: the match title.
+    /// The frame times of a game's video.
+    [[nodiscard]] GameTimeline timeline_of(const StoredHighlights& game);
+    /// Clips of rallies of a game (sorted by time; overlapping margins merged);
+    /// `match_day`: the match day video's title layout; `match`: the match title.
     [[nodiscard]] std::vector<Clip> clips_of(const StoredHighlights& game,
+                                             const std::vector<HighlightRally>& rallies,
+                                             const GameTimeline& timeline,
                                              const std::optional<TitleLayout>& match_day,
                                              const Title& match,
-                                             const MakeHighlightsRequest& request,
-                                             std::size_t& rallies);
+                                             const MakeHighlightsRequest& request);
 
     media::MediaProbe& probe_;
     media::MediaReader& reader_;

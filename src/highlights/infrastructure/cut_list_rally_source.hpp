@@ -26,6 +26,7 @@ class FileMatchDayHighlights final : public MatchDayHighlights {
     store(const std::filesystem::path& work_dir) override;
     [[nodiscard]] std::unique_ptr<RallySource>
     rallies(const std::filesystem::path& work_dir) override;
+    [[nodiscard]] std::int64_t recorded_at(const std::filesystem::path& video) override;
 };
 
 } // namespace ttrally::highlights

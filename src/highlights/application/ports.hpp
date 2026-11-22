@@ -3,6 +3,7 @@
 #pragma once
 
 #include "cutting/application/video_cutter.hpp"
+#include "highlights/domain/highlight_order.hpp"
 #include "highlights/domain/highlight_selection.hpp"
 #include "highlights/domain/title.hpp"
 #include "shared/application/progress_reporter.hpp"
@@ -42,6 +43,10 @@ class HighlightStore {
     /// The font of all titles of the match day; empty: the default font.
     [[nodiscard]] virtual std::filesystem::path title_font() = 0;
     virtual void save_title_font(const std::filesystem::path& font) = 0;
+    /// The order of the rallies chosen for a highlight video: `game` is the game's video id for
+    /// its game video, empty for the match day video. Empty if none was chosen (time order).
+    [[nodiscard]] virtual std::vector<RallyKey> rally_order(const std::string& game) = 0;
+    virtual void save_rally_order(const std::string& game, const std::vector<RallyKey>& order) = 0;
 };
 
 /// The rallies a game's highlights are chosen from.

@@ -903,7 +903,11 @@ collapsed at first, a click on a game's row opens or closes its rallies):
   first), a second click reverses the order; the number stays the rally's number in the game.
   In the match day list the rallies are sorted within each game; the games keep their order.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to
-  the list, with the title as it will appear. The row of the rally played last stays
+  the list, with the title as it will appear. The player reads the frames at 540, 720 or 1080
+  lines, whichever is the smallest at least as high as the picture is shown (also in the
+  enlarged window), so that it is not blown up more than needed; when the shown size needs
+  another height for half a second, the video is read again at it (the frames kept are fewer
+  at larger sizes, about 450 MB at most). The row of the rally played last stays
   highlighted while and after it plays. When the tab is opened, the bar above the output is
   placed so that the list is exactly as high as the player. Dragged down, the list reaches to
   the bottom of the visible area and the player stays at the bottom of its column; the player

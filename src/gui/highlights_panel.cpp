@@ -50,8 +50,13 @@ constexpr const char* kLengthHelp =
     "Length of the video as it will be made: every marked rally with the margins before and "
     "after (rallies whose margins overlap become one clip), minus the cross-fades between the "
     "clips. Only a clip at the very end of a recording may come out slightly shorter.";
-constexpr int kPlayerHeight = 540;          ///< decoded size of the played frames
-constexpr std::size_t kPlayerFrames = 240;  ///< frames kept (about 0.8 MB each)
+/// Heights the played frames are read at: the smallest at least as high as the picture is
+/// shown (the highest if it is shown larger), so that it is not enlarged more than needed.
+constexpr std::array<int, 3> kPlayerHeights{540, 720, 1080};
+constexpr std::size_t kMaxPlayerFrames = 240;  ///< frames kept at most
+constexpr std::size_t kMinPlayerFrames = 90;   ///< and at least
+constexpr double kPlayerMemory = 450e6;        ///< bytes for the frames kept
+constexpr int kSettleFrames = 30; ///< frames the shown size must stay before the height changes
 constexpr double kBufferAheadSeconds = 2.0;
 constexpr double kFallbackFps = 30.0;
 constexpr float kListShare = 0.45F;         ///< of the width, next to the player
@@ -367,13 +372,10 @@ class Player {
               double fps) {
         if (video.original != video_) {
             video_ = video.original;
-            frames_.reset();
+            cache_ = std::filesystem::path(video.work_dir) / "cache";
             error_.clear();
-            opening_ = std::async(std::launch::async,
-                                  [&source = source_, path = std::filesystem::path(video.original),
-                                   cache = std::filesystem::path(video.work_dir) / "cache"] {
-                                      return source.open(path, cache, kPlayerHeight);
-                                  });
+            reopening_ = false;
+            open();
         }
         fps_ = fps > 0 ? fps : kFallbackFps;
         first_ = std::max<std::int64_t>(0, first);
@@ -393,12 +395,14 @@ class Player {
             playing_ = false;
         }
         advance();
+        shown_height_ = 0;
         const float width = ImGui::GetContentRegionAvail().x;
         draw_picture(overlay, {width, width / aspect()}, shown);
         draw_controls(shown);
         if (enlarged_) {
             draw_enlarged(overlay, shown);
         }
+        follow_shown_size();
     }
 
     [[nodiscard]] const std::string& video() const noexcept { return video_; }
@@ -415,6 +419,7 @@ class Player {
 
     void draw_picture(const Overlay& overlay, ImVec2 image, bool shown) {
         const ImVec2 origin = ImGui::GetCursorScreenPos();
+        shown_height_ = std::max(shown_height_, image.y);
         if (shown && frames_) {
             if (auto frame = frames_->frame(current_)) {
                 texture_.show(*frame);
@@ -425,8 +430,9 @@ class Player {
                 }
             }
         }
-        if (shown && frames_ && error_.empty() && texture_.texture() != nullptr &&
-            texture_.frame_index() >= 0) {
+        // While the video opens again at another height, its last picture stays
+        if (shown && (frames_ || (reopening_ && opening_.valid())) && error_.empty() &&
+            texture_.texture() != nullptr && texture_.frame_index() >= 0) {
             ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture_.texture())), image);
             if (picture_clicks_ && ImGui::IsItemClicked()) {
                 toggle();
@@ -474,13 +480,59 @@ class Player {
         ImGui::End();
     }
 
+    /// Opens the video (in the background) at the current height.
+    void open() {
+        frames_.reset();
+        opening_ = std::async(std::launch::async, [&source = source_,
+                                                   path = std::filesystem::path(video_),
+                                                   cache = cache_, height = height_] {
+            return source.open(path, cache, height);
+        });
+    }
+
+    /// Frames kept at a height: as many as fit into kPlayerMemory (16:9 frames, 4:2:0).
+    [[nodiscard]] static std::size_t frames_kept(int height) {
+        constexpr double kBytesPerPixel = 1.5;
+        const double bytes = static_cast<double>(height) * height * 16.0 / 9.0 * kBytesPerPixel;
+        return std::clamp(static_cast<std::size_t>(kPlayerMemory / bytes), kMinPlayerFrames,
+                          kMaxPlayerFrames);
+    }
+
+    /// The height to read at for the size the picture is shown at.
+    [[nodiscard]] static int height_for(float shown) {
+        for (const int height : kPlayerHeights) {
+            if (static_cast<float>(height) >= shown) {
+                return height;
+            }
+        }
+        return kPlayerHeights.back();
+    }
+
+    /// Reads the video at another height once the picture has been shown at a size that needs
+    /// it for a moment (not on every step while a window is being resized).
+    void follow_shown_size() {
+        const int wanted = height_for(shown_height_);
+        if (video_.empty() || opening_.valid() || shown_height_ <= 0 || wanted == height_) {
+            settle_ = 0;
+            return;
+        }
+        if (++settle_ < kSettleFrames) {
+            return;
+        }
+        settle_ = 0;
+        height_ = wanted;
+        reopening_ = true;
+        open(); // continues at the frame shown now
+    }
+
     void collect_opened() {
         if (!opening_.valid() ||
             opening_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
             return;
         }
         try {
-            frames_ = std::make_unique<media::FramePrefetcher>(opening_.get(), kPlayerFrames);
+            frames_ =
+                std::make_unique<media::FramePrefetcher>(opening_.get(), frames_kept(height_));
             request();
         } catch (const std::exception& error) {
             error_ = error.what();
@@ -567,6 +619,11 @@ class Player {
     highlights::PlaybackSource& source_;
     FrameTexture texture_;
     std::string video_;
+    std::filesystem::path cache_; ///< of the video's match day
+    int height_ = kPlayerHeights.front(); ///< the frames are read at
+    float shown_height_ = 0;              ///< the largest the picture is shown in this frame
+    int settle_ = 0; ///< frames the shown size has wanted another height
+    bool reopening_ = false; ///< the same video opens again at another height
     std::future<std::unique_ptr<media::FrameDecoder>> opening_;
     std::unique_ptr<media::FramePrefetcher> frames_;
     std::string error_;

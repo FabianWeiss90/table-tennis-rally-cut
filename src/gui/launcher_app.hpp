@@ -19,7 +19,7 @@ struct LauncherOptions {
     std::string title = "ttrally";
     launcher::LauncherSettings* settings = nullptr; ///< remembers a library chosen in the window
     launcher::SceneStore* scenes = nullptr; ///< scenes of the videos; nullptr: not shown
-    /// White balance of the match days (with `scenes`); nullptr: no White balance tab
+    /// White balance of the match days; nullptr: no White balance tab
     cutting::WhiteBalanceStore* white_balance = nullptr;
     /// Highlight marks and playback for the Highlights tab; nullptr: the tab only explains
     highlights::MatchDayHighlights* highlights = nullptr;

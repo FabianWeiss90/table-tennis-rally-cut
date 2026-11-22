@@ -3,6 +3,8 @@
 #pragma once
 
 #include <array>
+#include <optional>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -42,32 +44,29 @@ struct YuvFormat {
 /// same brightness.
 [[nodiscard]] RgbGains neutral_gains(RgbColor measured);
 
-/// Gains that give `measured` the tint `reference` has (the same surface in another video),
-/// keeping its own brightness: the white balance of the other video, not its exposure.
-[[nodiscard]] RgbGains matching_gains(RgbColor measured, RgbColor reference);
+/// Gains that give `measured` the colour `target` has: its tint only, keeping the own
+/// brightness, or with `match_brightness` its brightness too.
+[[nodiscard]] RgbGains gains_towards(RgbColor measured, RgbColor target, bool match_brightness);
 
 /// The gains as a matrix on (Y, U - 128, V - 128): the correction applied directly to the YUV
 /// values of a frame (exact, since the conversion between RGB and YUV is linear). Row by row,
 /// each row giving the new Y, U - 128 or V - 128.
 [[nodiscard]] std::array<double, 9> yuv_matrix(RgbGains gains, YuvFormat format = {});
 
-/// What a video's white balance is set to.
-enum class WhiteBalanceChoice {
-    Unchanged, ///< as recorded
-    Neutral,   ///< the scene's area made a neutral grey
-    Like,      ///< the scene's area given the tint it has in another file
-};
+/// The colour after the gains.
+[[nodiscard]] RgbColor corrected(RgbColor color, RgbGains gains);
 
-/// The white balance chosen for one file (a video or a part of a match), with the gains that
-/// realise it.
-struct FileWhiteBalance {
-    std::string file; ///< file name in the match day folder
-    WhiteBalanceChoice choice = WhiteBalanceChoice::Unchanged;
-    std::string like; ///< for Like: the other file's name
-    RgbGains gains;
+/// Range of the temperature and tint sliders: -1 to 1 (shown as -100 to 100).
+inline constexpr double kMaxAdjustment = 1.0;
 
-    friend bool operator==(const FileWhiteBalance&, const FileWhiteBalance&) = default;
-};
+/// Gains of a temperature (positive: warmer, more red and less blue) and a tint (positive:
+/// more magenta, less green), each -1 to 1 (at most half as much or 1.5 times a channel),
+/// scaled so that `measured` keeps its brightness.
+[[nodiscard]] RgbGains temperature_tint_gains(double temperature, double tint,
+                                              RgbColor measured);
+
+/// The temperature and tint that make `measured` a neutral grey (within the sliders' range).
+[[nodiscard]] std::pair<double, double> neutral_temperature_tint(RgbColor measured);
 
 /// A rectangle as shares (0-1) of a picture's width and height.
 struct RelativeRect {
@@ -80,14 +79,40 @@ struct RelativeRect {
     friend bool operator==(const RelativeRect&, const RelativeRect&) = default;
 };
 
-/// The area of each scene that should be neutral (e.g. the white table edge or a wall), and the
-/// white balance chosen for each file of a match day.
+/// The white balance of one file (a video or a part of a match): the area of a spot that looks
+/// the same in every file of the match day, and the gains that correct the file.
+struct FileWhiteBalance {
+    std::string file; ///< file name in the match day folder
+    std::optional<RelativeRect> area; ///< none: the area of the file before it is taken
+    RgbGains gains;
+
+    friend bool operator==(const FileWhiteBalance&, const FileWhiteBalance&) = default;
+};
+
+/// The white balance of a match day: every file's area, and the reference file tuned with
+/// temperature and tint, to whose look of the area the other files are corrected.
 struct WhiteBalanceSettings {
-    std::vector<std::pair<std::string, RelativeRect>> areas; ///< scene -> area
     std::vector<FileWhiteBalance> files;
+    std::string reference; ///< file name; empty: none chosen
+    double temperature = 0.0;
+    double tint = 0.0;
+    bool match_brightness = false; ///< the other files also get the area's brightness
 
     friend bool operator==(const WhiteBalanceSettings&, const WhiteBalanceSettings&) = default;
 };
+
+/// The area of each file (same order): its own, else that of the nearest file before it with one;
+/// nullopt before the first area.
+[[nodiscard]] std::vector<std::optional<RelativeRect>>
+effective_areas(const std::vector<FileWhiteBalance>& files);
+
+/// The gains of every file (same order) from the colours measured in their areas: the reference
+/// tuned with temperature and tint, every other file corrected so that its area looks like the
+/// reference's tuned area (in tint, with `match_brightness` also in brightness). Files without a
+/// colour, and all if the reference has none, stay as recorded.
+[[nodiscard]] std::vector<RgbGains>
+balance_gains(const std::vector<std::optional<RgbColor>>& measured, std::size_t reference,
+              double temperature, double tint, bool match_brightness);
 
 /// A stretch of a video's timeline with the gains for its frames.
 struct ColorSpan {

@@ -4,7 +4,6 @@
 
 #include "gui/frame_texture.hpp"
 #include "gui/gui_context.hpp"
-#include "launcher/application/detect_scenes.hpp"
 #include "shared/kernel/parallel.hpp"
 
 #include <algorithm>
@@ -16,6 +15,7 @@
 #include <imgui.h>
 #include <map>
 #include <optional>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -27,26 +27,29 @@ using cutting::FileWhiteBalance;
 using cutting::RelativeRect;
 using cutting::RgbColor;
 using cutting::RgbGains;
-using cutting::WhiteBalanceChoice;
 
-constexpr int kBackgroundHeight = 216;     ///< lines of the backgrounds read
-constexpr unsigned kParallelFiles = 4;     ///< each decode uses several threads itself
-constexpr float kAreaImageWidth = 560.0F;  ///< the scene's picture the area is dragged on
-constexpr float kThumbnailWidth = 170.0F;  ///< a choice's picture
-constexpr float kFileLabelWidth = 260.0F;
+constexpr int kPictureHeight = 270;         ///< lines of the pictures read
+constexpr double kPictureFraction = 0.5;    ///< where in a file its picture is taken
+constexpr unsigned kParallelFiles = 4;      ///< each decode uses several threads itself
+constexpr float kAreaCardWidth = 280.0F;    ///< a file's picture the area is dragged on
+constexpr float kReferenceWidth = 560.0F;   ///< the reference's picture
+constexpr float kResultWidth = 200.0F;      ///< a corrected picture
+constexpr float kSliderWidth = 300.0F;
+constexpr float kSliderScale = 100.0F;      ///< the sliders show -100 to 100
+constexpr float kDefaultShape = 9.0F / 16.0F; ///< height per width before a picture is read
 constexpr int kLimitedBlack = 16;
 constexpr int kChromaZero = 128;
 const ImVec4 kMuted{0.6F, 0.6F, 0.65F, 1.0F};
 const ImVec4 kPartly{0.95F, 0.75F, 0.35F, 1.0F};
 const ImU32 kAreaColor = IM_COL32(255, 80, 80, 255);
-const ImU32 kChosenColor = IM_COL32(90, 170, 255, 255);
+const ImU32 kTakenAreaColor = IM_COL32(255, 180, 80, 255); ///< an area taken from before
+const ImVec4 kReferenceColor{0.55F, 0.75F, 1.0F, 1.0F};
 
 /// A file of the match day whose white balance is chosen: a single video or a part of a match.
 struct BalancedFile {
     std::string name;            ///< file name in the match day folder
     std::filesystem::path path;  ///< the file
     std::string label;           ///< e.g. "kaether-baumgarten, part 2"
-    std::string scene;
 };
 
 std::vector<BalancedFile> files_of(const launcher::WorkspaceSnapshot& workspace,
@@ -58,12 +61,12 @@ std::vector<BalancedFile> files_of(const launcher::WorkspaceSnapshot& workspace,
         }
         if (video.parts.empty()) {
             const std::filesystem::path path(video.original);
-            files.push_back({path.filename().string(), path, video.video_id, video.scene});
+            files.push_back({path.filename().string(), path, video.video_id});
         }
         for (std::size_t i = 0; i < video.parts.size(); ++i) {
             const std::filesystem::path path(video.parts[i]);
             files.push_back({path.filename().string(), path,
-                             std::format("{}, part {}", video.video_id, i + 1), video.scene});
+                             std::format("{}, part {}", video.video_id, i + 1)});
         }
     }
     return files;
@@ -144,18 +147,6 @@ std::optional<RgbColor> color_in(const media::VideoFrame& frame, RelativeRect ar
     return cutting::rgb_of(y / samples, u / samples, v / samples);
 }
 
-const char* choice_label(WhiteBalanceChoice choice) {
-    switch (choice) {
-    case WhiteBalanceChoice::Neutral:
-        return "Neutral";
-    case WhiteBalanceChoice::Like:
-        return "Like";
-    case WhiteBalanceChoice::Unchanged:
-        break;
-    }
-    return "As recorded";
-}
-
 } // namespace
 
 struct WhiteBalancePanel::Impl {
@@ -171,7 +162,7 @@ struct WhiteBalancePanel::Impl {
         }
     }
 
-    using Backgrounds = std::map<std::filesystem::path, std::optional<media::VideoFrame>>;
+    using Pictures = std::map<std::filesystem::path, std::optional<media::VideoFrame>>;
 
     /// A picture shown, with the gains it was made with.
     struct Shown {
@@ -187,49 +178,58 @@ struct WhiteBalancePanel::Impl {
     std::filesystem::path work_dir;
     cutting::WhiteBalanceSettings settings;
     std::vector<BalancedFile> files;
-    Backgrounds backgrounds;
-    std::future<Backgrounds> job;
-    std::map<std::string, Shown> shown; ///< by "<file>|<variant>"
+    Pictures pictures; ///< a frame from the middle of each file
+    std::future<Pictures> job;
+    std::map<std::string, Shown> shown; ///< by "<file>|<use>"
     std::int64_t uploads = 0;           ///< a new texture content each time
-    std::optional<std::string> dragging; ///< scene whose area is being dragged
+    std::optional<std::string> dragging; ///< file whose area is being dragged
     ImVec2 drag_start{};
     RelativeRect dragged{};
     std::string error;
 
     void open(const launcher::WorkspaceSnapshot& workspace, const std::string& match_day) {
         files = files_of(workspace, match_day);
-        if (match_day == day) {
-            return;
-        }
-        day = match_day;
-        work_dir.clear();
-        for (const launcher::VideoEntry& video : workspace.videos) {
-            if (video.match_day == day) {
-                work_dir = video.work_dir;
+        if (match_day != day) {
+            day = match_day;
+            work_dir.clear();
+            for (const launcher::VideoEntry& video : workspace.videos) {
+                if (video.match_day == day) {
+                    work_dir = video.work_dir;
+                }
+            }
+            try {
+                settings = store.load(work_dir);
+                error.clear();
+            } catch (const std::exception& failure) {
+                settings = {};
+                error = std::format("White balance of {}: {}", day, failure.what());
             }
         }
-        try {
-            settings = store.load(work_dir);
-            error.clear();
-        } catch (const std::exception& failure) {
-            settings = {};
-            error = std::format("White balance of {}: {}", day, failure.what());
+        // One entry per file, in the list's order (an area is taken from the file before)
+        std::vector<FileWhiteBalance> ordered;
+        for (const BalancedFile& file : files) {
+            const auto stored =
+                std::ranges::find(settings.files, file.name, &FileWhiteBalance::file);
+            ordered.push_back(stored != settings.files.end()
+                                  ? *stored
+                                  : FileWhiteBalance{file.name, std::nullopt, {}});
         }
+        settings.files = std::move(ordered);
     }
 
-    /// Starts reading the backgrounds of files that have none yet.
+    /// Starts reading the pictures of files that have none yet.
     void read_missing() {
         if (job.valid()) {
             if (job.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 return;
             }
             for (auto& [path, frame] : job.get()) {
-                backgrounds[path] = std::move(frame);
+                pictures[path] = std::move(frame);
             }
         }
         std::vector<std::filesystem::path> missing;
         for (const BalancedFile& file : files) {
-            if (!backgrounds.contains(file.path)) {
+            if (!pictures.contains(file.path)) {
                 missing.push_back(file.path);
             }
         }
@@ -239,9 +239,9 @@ struct WhiteBalancePanel::Impl {
         job = std::async(std::launch::async, [&preview = preview, missing] {
             std::vector<std::optional<media::VideoFrame>> read(missing.size());
             parallel_for(missing.size(), kParallelFiles, [&](std::size_t i) {
-                read[i] = launcher::color_background(preview, missing[i], kBackgroundHeight);
+                read[i] = preview.frame_at(missing[i], kPictureFraction, kPictureHeight);
             });
-            Backgrounds found;
+            Pictures found;
             for (std::size_t i = 0; i < missing.size(); ++i) {
                 found[missing[i]] = std::move(read[i]);
             }
@@ -249,48 +249,41 @@ struct WhiteBalancePanel::Impl {
         });
     }
 
-    [[nodiscard]] const media::VideoFrame* background(const BalancedFile& file) const {
-        const auto found = backgrounds.find(file.path);
-        return found == backgrounds.end() || !found->second ? nullptr : &*found->second;
+    [[nodiscard]] const media::VideoFrame* picture_of(const BalancedFile& file) const {
+        const auto found = pictures.find(file.path);
+        return found == pictures.end() || !found->second ? nullptr : &*found->second;
     }
 
-    [[nodiscard]] std::optional<RelativeRect> area_of(const std::string& scene) const {
-        const auto found = std::ranges::find(settings.areas, scene,
-                                             &std::pair<std::string, RelativeRect>::first);
-        return found == settings.areas.end() ? std::nullopt : std::optional(found->second);
+    [[nodiscard]] std::size_t reference_index() const {
+        const auto found = std::ranges::find(files, settings.reference, &BalancedFile::name);
+        return static_cast<std::size_t>(found - files.begin());
     }
 
-    FileWhiteBalance& balance_of(const BalancedFile& file) {
-        auto found = std::ranges::find(settings.files, file.name, &FileWhiteBalance::file);
-        if (found == settings.files.end()) {
-            settings.files.push_back({file.name, WhiteBalanceChoice::Unchanged, "", {}});
-            found = std::prev(settings.files.end());
+    /// Every file's gains again from the colours in their areas, then saved.
+    void update() {
+        const auto areas = cutting::effective_areas(settings.files);
+        if (settings.reference.empty() ||
+            std::ranges::find(files, settings.reference, &BalancedFile::name) == files.end()) {
+            const auto first =
+                std::ranges::find_if(areas, [](const auto& area) { return area.has_value(); });
+            const auto index = static_cast<std::size_t>(first - areas.begin());
+            settings.reference = first == areas.end() ? std::string() : files[index].name;
         }
-        return *found;
-    }
-
-    [[nodiscard]] std::optional<RgbColor> measured(const BalancedFile& file) const {
-        const media::VideoFrame* frame = background(file);
-        const auto area = area_of(file.scene);
-        return frame == nullptr || !area ? std::nullopt : color_in(*frame, *area);
-    }
-
-    /// The gains for a choice of a file (identity if its colour or the other's is unknown).
-    [[nodiscard]] RgbGains gains_for(const BalancedFile& file, WhiteBalanceChoice choice,
-                                     const std::string& like) const {
-        const auto own = measured(file);
-        if (!own || choice == WhiteBalanceChoice::Unchanged) {
-            return {};
+        std::vector<std::optional<RgbColor>> measured;
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            const media::VideoFrame* frame = picture_of(files[i]);
+            measured.push_back(frame == nullptr || !areas[i] ? std::nullopt
+                                                             : color_in(*frame, *areas[i]));
         }
-        if (choice == WhiteBalanceChoice::Neutral) {
-            return cutting::neutral_gains(*own);
+        const auto gains = cutting::balance_gains(measured, reference_index(), settings.temperature,
+                                                  settings.tint, settings.match_brightness);
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            settings.files[i].gains = gains[i];
         }
-        const auto other = std::ranges::find(files, like, &BalancedFile::name);
-        const auto reference = other == files.end() ? std::nullopt : measured(*other);
-        return reference ? cutting::matching_gains(*own, *reference) : RgbGains{};
     }
 
     void save() {
+        update();
         try {
             store.save(work_dir, settings);
             error.clear();
@@ -299,23 +292,13 @@ struct WhiteBalancePanel::Impl {
         }
     }
 
-    /// After the area of a scene changed: the gains of its files again.
-    void update_gains(const std::string& scene) {
-        for (const BalancedFile& file : files) {
-            if (file.scene == scene) {
-                FileWhiteBalance& balance = balance_of(file);
-                balance.gains = gains_for(file, balance.choice, balance.like);
-            }
-        }
-    }
-
-    /// The texture of a file's background with gains (made again when the gains changed).
-    SDL_Texture* picture(const BalancedFile& file, const std::string& variant, RgbGains gains) {
-        const media::VideoFrame* frame = background(file);
+    /// The texture of a file's picture with gains (made again when the gains changed).
+    SDL_Texture* texture_of(const BalancedFile& file, const std::string& use, RgbGains gains) {
+        const media::VideoFrame* frame = picture_of(file);
         if (frame == nullptr) {
             return nullptr;
         }
-        Shown& entry = shown[file.name + "|" + variant];
+        Shown& entry = shown[file.name + "|" + use];
         if (!entry.texture) {
             entry.texture = std::make_unique<FrameTexture>(renderer);
         }
@@ -329,66 +312,73 @@ struct WhiteBalancePanel::Impl {
         return entry.texture->texture();
     }
 
+    [[nodiscard]] ImVec2 extent_of(const BalancedFile& file, float width) const {
+        const media::VideoFrame* frame = picture_of(file);
+        const float shape = frame == nullptr ? kDefaultShape
+                                             : static_cast<float>(frame->size.height) /
+                                                   static_cast<float>(frame->size.width);
+        return {width, width * shape};
+    }
+
+    /// Places the next card next to the previous one while it fits, else on a new line.
+    static void next_card(std::size_t index, float width, float right_edge) {
+        if (index > 0 && ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <=
+                             right_edge) {
+            ImGui::SameLine();
+        }
+    }
+
     void draw(const launcher::WorkspaceSnapshot& workspace, const std::string& match_day) {
         open(workspace, match_day);
         read_missing();
+        update(); // the pictures may have arrived
         ImGui::TextWrapped(
-            "Correct the white balance of videos recorded with automatic white balance. Per "
-            "scene (same hall and camera position), drag a rectangle over something that should "
-            "be white or grey, e.g. the table's white edge or a wall. Then choose for every "
-            "file (each part of a match on its own) how it should look: as recorded, neutral, or "
-            "like another file of the scene. Cut and highlights apply it; the labels, features "
-            "and detections keep the colours as recorded.");
+            "Correct the white balance of videos recorded with automatic white balance (each "
+            "part of a match on its own, since the camera may change between files). 1: in every "
+            "file, drag a rectangle over the same spot, one that should look the same in all of "
+            "them (a file without one takes the rectangle of the file before it). 2: tune one of "
+            "them, the reference, with temperature and tint. 3: every other file is corrected so "
+            "that its spot looks like the reference's. Cut and highlights apply it; labels, "
+            "features and detections keep the colours as recorded.");
         if (job.valid()) {
-            ImGui::TextColored(kPartly, "Reading the backgrounds of the files (a few seconds "
-                                        "each)...");
+            ImGui::TextColored(kPartly, "Reading a picture from the middle of every file...");
         }
         if (!error.empty()) {
             ImGui::TextColored(ImVec4(1.0F, 0.45F, 0.4F, 1.0F), "%s", error.c_str());
         }
-        std::vector<std::string> scenes;
-        for (const BalancedFile& file : files) {
-            if (std::ranges::find(scenes, file.scene) == scenes.end()) {
-                scenes.push_back(file.scene);
-            }
-        }
-        std::ranges::sort(scenes);
-        for (const std::string& scene : scenes) {
-            ImGui::PushID(scene.c_str());
-            if (scene.empty()) {
-                ImGui::SeparatorText("Files without a scene");
-                ImGui::TextColored(kMuted, "Detect the scenes of the match day first (button "
-                                           "above): the area is set per scene.");
-            } else {
-                draw_scene(scene);
-            }
-            ImGui::PopID();
-        }
-    }
-
-    void draw_scene(const std::string& scene) {
-        ImGui::SeparatorText(std::format("Scene {}", scene).c_str());
-        const auto first = std::ranges::find(files, scene, &BalancedFile::scene);
-        draw_area(scene, *first);
-        const bool has_area = area_of(scene).has_value();
-        for (const BalancedFile& file : files) {
-            if (file.scene == scene) {
-                draw_choices(file, scene, has_area);
-            }
-        }
-    }
-
-    /// The scene's picture (its first file's background) with the area, dragged anew.
-    void draw_area(const std::string& scene, const BalancedFile& file) {
-        SDL_Texture* texture = picture(file, "area", {});
-        if (texture == nullptr) {
-            ImGui::TextColored(kMuted, "No background of %s yet", file.name.c_str());
+        if (files.empty()) {
             return;
         }
-        const float width = std::min(kAreaImageWidth, ImGui::GetContentRegionAvail().x);
-        const media::FrameSize size = background(file)->size;
-        const ImVec2 extent{width, width * static_cast<float>(size.height) /
-                                       static_cast<float>(size.width)};
+        draw_areas();
+        draw_reference();
+        draw_result();
+    }
+
+    void draw_areas() {
+        ImGui::SeparatorText("1. The same spot in every file");
+        const auto areas = cutting::effective_areas(settings.files);
+        const float right_edge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            next_card(i, kAreaCardWidth, right_edge);
+            ImGui::BeginGroup();
+            ImGui::PushID(static_cast<int>(i));
+            draw_area_card(i, areas[i]);
+            ImGui::PopID();
+            ImGui::EndGroup();
+        }
+    }
+
+    void draw_area_card(std::size_t i, const std::optional<RelativeRect>& area) {
+        const BalancedFile& file = files[i];
+        FileWhiteBalance& balance = settings.files[i];
+        ImGui::TextUnformatted(file.label.c_str());
+        ImGui::SetItemTooltip("%s", file.path.string().c_str());
+        SDL_Texture* texture = texture_of(file, "area", {});
+        const ImVec2 extent = extent_of(file, kAreaCardWidth);
+        if (texture == nullptr) {
+            ImGui::Button("...", extent);
+            return;
+        }
         const ImVec2 origin = ImGui::GetCursorScreenPos();
         ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture)), extent);
         ImGui::SetCursorScreenPos(origin);
@@ -398,10 +388,10 @@ struct WhiteBalancePanel::Impl {
                           std::clamp((point.y - origin.y) / extent.y, 0.0F, 1.0F)};
         };
         if (ImGui::IsItemActivated()) {
-            dragging = scene;
+            dragging = file.name;
             drag_start = relative(ImGui::GetIO().MousePos);
         }
-        const bool mine = dragging == scene;
+        const bool mine = dragging == file.name;
         if (mine) {
             const ImVec2 now = relative(ImGui::GetIO().MousePos);
             dragged = {std::min(drag_start.x, now.x), std::min(drag_start.y, now.y),
@@ -410,107 +400,131 @@ struct WhiteBalancePanel::Impl {
         if (mine && ImGui::IsItemDeactivated()) {
             dragging.reset();
             if (!dragged.empty()) {
-                auto found = std::ranges::find(settings.areas, scene,
-                                               &std::pair<std::string, RelativeRect>::first);
-                if (found == settings.areas.end()) {
-                    settings.areas.emplace_back(scene, dragged);
-                } else {
-                    found->second = dragged;
-                }
-                update_gains(scene);
+                balance.area = dragged;
                 save();
             }
         }
-        ImGui::SetItemTooltip("Drag a rectangle over something that should be white or grey");
-        const std::optional<RelativeRect> area = mine ? std::optional(dragged) : area_of(scene);
-        if (area) {
+        ImGui::SetItemTooltip("Drag a rectangle over the spot that looks the same in every file");
+        const std::optional<RelativeRect> shown_area = mine ? std::optional(dragged) : area;
+        if (shown_area) {
+            const bool own = mine || balance.area.has_value();
             ImGui::GetWindowDrawList()->AddRect(
-                {origin.x + static_cast<float>(area->left) * extent.x,
-                 origin.y + static_cast<float>(area->top) * extent.y},
-                {origin.x + static_cast<float>(area->right) * extent.x,
-                 origin.y + static_cast<float>(area->bottom) * extent.y},
-                kAreaColor, 0.0F, 0, 2.0F);
+                {origin.x + static_cast<float>(shown_area->left) * extent.x,
+                 origin.y + static_cast<float>(shown_area->top) * extent.y},
+                {origin.x + static_cast<float>(shown_area->right) * extent.x,
+                 origin.y + static_cast<float>(shown_area->bottom) * extent.y},
+                own ? kAreaColor : kTakenAreaColor, 0.0F, 0, 2.0F);
         }
-        ImGui::TextColored(kMuted, "Background of %s (the players removed)%s", file.name.c_str(),
-                           area ? "" : ": drag the area");
+        if (balance.area) {
+            if (ImGui::SmallButton(i == 0 ? "Remove" : "Take the one before")) {
+                balance.area.reset();
+                save();
+            }
+            ImGui::SetItemTooltip("Removes this file's own rectangle%s",
+                                  i == 0 ? "" : ": it takes the one of the file before it again");
+        } else {
+            ImGui::TextColored(kMuted, "%s", area ? "Taken from the file before" : "No area yet");
+        }
     }
 
-    /// The choices of one file, each as its background with that white balance.
-    void draw_choices(const BalancedFile& file, const std::string& scene, bool has_area) {
-        ImGui::PushID(file.name.c_str());
-        ImGui::Spacing();
+    void draw_reference() {
+        ImGui::SeparatorText("2. Tune the reference");
+        const std::size_t reference = reference_index();
+        if (reference >= files.size()) {
+            ImGui::TextColored(kMuted, "Drag a rectangle in a file first.");
+            return;
+        }
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Reference");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(360);
+        if (ImGui::BeginCombo("##reference", files[reference].label.c_str())) {
+            for (const BalancedFile& file : files) {
+                if (ImGui::Selectable(file.label.c_str(), file.name == settings.reference)) {
+                    settings.reference = file.name;
+                    save();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("The file whose look the others get");
+        const BalancedFile& file = files[reference];
         ImGui::BeginGroup();
-        ImGui::TextUnformatted(file.label.c_str());
-        ImGui::SetItemTooltip("%s", file.path.string().c_str());
-        ImGui::SameLine(kFileLabelWidth);
-        ImGui::TextColored(kMuted, "%s", file.name.c_str());
-        FileWhiteBalance& chosen = balance_of(file);
-        struct Variant {
-            WhiteBalanceChoice choice;
-            std::string like;
-            std::string caption;
+        if (SDL_Texture* texture =
+                texture_of(file, "reference", settings.files[reference].gains)) {
+            ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture)),
+                         extent_of(file, kReferenceWidth));
+        }
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        bool changed = false;
+        bool finished = false;
+        auto slider = [&](const char* label, double& value, const char* help) {
+            auto shown = static_cast<float>(value * kSliderScale);
+            ImGui::SetNextItemWidth(kSliderWidth);
+            if (ImGui::SliderFloat(label, &shown, -kSliderScale, kSliderScale, "%.0f")) {
+                value = shown / kSliderScale;
+                changed = true;
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+            ImGui::SetItemTooltip("%s", help);
         };
-        std::vector<Variant> variants{{WhiteBalanceChoice::Unchanged, "", "As recorded"},
-                                      {WhiteBalanceChoice::Neutral, "", "Neutral"}};
-        for (const BalancedFile& other : files) {
-            if (other.scene == scene && other.name != file.name) {
-                variants.push_back({WhiteBalanceChoice::Like, other.name,
-                                    std::format("Like {}", other.label)});
+        slider("Temperature", settings.temperature, "Higher: warmer (more red, less blue)");
+        slider("Tint", settings.tint, "Higher: more magenta, less green");
+        if (ImGui::Button("Area neutral")) {
+            const auto areas = cutting::effective_areas(settings.files);
+            const media::VideoFrame* frame = picture_of(file);
+            if (frame != nullptr && areas[reference]) {
+                if (const auto color = color_in(*frame, *areas[reference])) {
+                    std::tie(settings.temperature, settings.tint) =
+                        cutting::neutral_temperature_tint(*color);
+                    finished = true;
+                }
             }
         }
-        const ImGuiStyle& style = ImGui::GetStyle();
+        ImGui::SetItemTooltip("Temperature and tint that make the reference's spot grey: a "
+                              "start for spots that are white or grey");
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            settings.temperature = 0;
+            settings.tint = 0;
+            finished = true;
+        }
+        if (ImGui::Checkbox("Also match the brightness", &settings.match_brightness)) {
+            finished = true;
+        }
+        ImGui::SetItemTooltip("Off: the other files get the spot's colour tone and keep their "
+                              "own brightness. On: also its brightness (evens out exposure, but "
+                              "may brighten a dark video a lot)");
+        ImGui::EndGroup();
+        if (finished) {
+            save();
+        } else if (changed) {
+            update(); // shown at once, saved when the slider is let go
+        }
+    }
+
+    void draw_result() {
+        ImGui::SeparatorText("3. Result");
         const float right_edge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
-        for (std::size_t i = 0; i < variants.size(); ++i) {
-            const Variant& variant = variants[i];
-            // Next to the previous one while it fits, else on a new line
-            if (i > 0 && ImGui::GetItemRectMax().x + style.ItemSpacing.x + kThumbnailWidth +
-                                 2 * style.FramePadding.x <=
-                             right_edge) {
-                ImGui::SameLine();
-            }
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            next_card(i, kResultWidth, right_edge);
             ImGui::BeginGroup();
-            const RgbGains gains = gains_for(file, variant.choice, variant.like);
-            const std::string key =
-                std::format("{}:{}", choice_label(variant.choice), variant.like);
-            SDL_Texture* texture = picture(file, key, gains);
-            const bool usable = variant.choice == WhiteBalanceChoice::Unchanged || has_area;
-            const bool selected = chosen.choice == variant.choice &&
-                                  (variant.choice != WhiteBalanceChoice::Like ||
-                                   chosen.like == variant.like);
-            const media::VideoFrame* frame = background(file);
-            const float shape = frame == nullptr ? 9.0F / 16.0F
-                                                 : static_cast<float>(frame->size.height) /
-                                                       static_cast<float>(frame->size.width);
-            const ImVec2 extent{kThumbnailWidth, kThumbnailWidth * shape};
-            ImGui::BeginDisabled(!usable || texture == nullptr);
-            ImGui::PushID(static_cast<int>(i));
-            const bool clicked =
-                texture != nullptr
-                    ? ImGui::ImageButton("##choice",
-                                         ImTextureRef(reinterpret_cast<ImTextureID>(texture)),
-                                         extent)
-                    : ImGui::Button("...", extent);
-            ImGui::PopID();
-            ImGui::EndDisabled();
-            if (selected) {
-                ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
-                                                    ImGui::GetItemRectMax(), kChosenColor, 0.0F,
-                                                    0, 3.0F);
+            const BalancedFile& file = files[i];
+            if (SDL_Texture* texture = texture_of(file, "result", settings.files[i].gains)) {
+                ImGui::Image(ImTextureRef(reinterpret_cast<ImTextureID>(texture)),
+                             extent_of(file, kResultWidth));
+            } else {
+                ImGui::Button("...", extent_of(file, kResultWidth));
             }
-            if (clicked && usable) {
-                chosen.choice = variant.choice;
-                chosen.like = variant.like;
-                chosen.gains = gains;
-                save();
-            }
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + extent.x);
-            ImGui::TextColored(selected ? ImVec4(0.55F, 0.75F, 1.0F, 1.0F) : kMuted, "%s",
-                               variant.caption.c_str());
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kResultWidth);
+            ImGui::TextColored(file.name == settings.reference ? kReferenceColor : kMuted, "%s%s",
+                               file.label.c_str(),
+                               file.name == settings.reference ? " (reference)" : "");
             ImGui::PopTextWrapPos();
             ImGui::EndGroup();
         }
-        ImGui::EndGroup();
-        ImGui::PopID();
     }
 };
 

@@ -13,10 +13,10 @@ namespace ttrally::gui {
 
 class GuiContext;
 
-/// The white balance of a match day: per scene an area that should be neutral (dragged on the
-/// scene's background), then per file (each part of a match on its own) the choice among "as
-/// recorded", "neutral" and "like <another file of the scene>", each shown on the file's
-/// background. Every change is saved at once; cut and highlights apply it.
+/// The white balance of a match day: in a picture from the middle of every file (each part of a
+/// match on its own) a rectangle over the same spot, one file tuned with temperature and tint as
+/// the reference, and every other file corrected so that its spot looks like the reference's.
+/// Every change is saved at once; cut and highlights apply it.
 class WhiteBalancePanel {
   public:
     WhiteBalancePanel(const GuiContext& gui, launcher::VideoPreview& preview,
@@ -25,7 +25,7 @@ class WhiteBalancePanel {
     WhiteBalancePanel(const WhiteBalancePanel&) = delete;
     WhiteBalancePanel& operator=(const WhiteBalancePanel&) = delete;
 
-    /// Draws the panel for the match day; reads the files' backgrounds in the background first.
+    /// Draws the panel for the match day; reads the files' pictures in the background first.
     void draw(const launcher::WorkspaceSnapshot& workspace, const std::string& day);
 
   private:

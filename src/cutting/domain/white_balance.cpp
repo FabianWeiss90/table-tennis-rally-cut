@@ -15,6 +15,7 @@ constexpr double kLimitedLumaScale = 255.0 / 219.0;
 constexpr double kLimitedChromaScale = 255.0 / 224.0;
 constexpr double kChromaZero = 128.0;
 constexpr double kMinChannel = 1.0; ///< a black channel cannot be scaled
+constexpr double kAdjustmentStrength = 0.5; ///< a slider at its end changes a channel by half
 
 struct LumaWeights {
     double red;
@@ -118,11 +119,34 @@ RgbGains neutral_gains(RgbColor measured) {
                         measured);
 }
 
-RgbGains matching_gains(RgbColor measured, RgbColor reference) {
-    return keeping_luma({channel(reference.red) / channel(measured.red),
-                         channel(reference.green) / channel(measured.green),
-                         channel(reference.blue) / channel(measured.blue)},
-                        measured);
+RgbGains gains_towards(RgbColor measured, RgbColor target, bool match_brightness) {
+    const RgbGains ratio{channel(target.red) / channel(measured.red),
+                         channel(target.green) / channel(measured.green),
+                         channel(target.blue) / channel(measured.blue)};
+    return match_brightness ? ratio : keeping_luma(ratio, measured);
+}
+
+RgbColor corrected(RgbColor color, RgbGains gains) {
+    return {color.red * gains.red, color.green * gains.green, color.blue * gains.blue};
+}
+
+RgbGains temperature_tint_gains(double temperature, double tint, RgbColor measured) {
+    const auto limited = [](double value) {
+        return std::clamp(value, -kMaxAdjustment, kMaxAdjustment) * kAdjustmentStrength;
+    };
+    const double warm = limited(temperature);
+    const double magenta = limited(tint);
+    return keeping_luma({1.0 + warm, 1.0 - magenta, 1.0 - warm}, measured);
+}
+
+std::pair<double, double> neutral_temperature_tint(RgbColor measured) {
+    // Gains (1 + w, 1 - m, 1 - w) up to a common factor make the colour grey when
+    // (1 + w) / (1 - w) = blue / red and (1 + w) / (1 - m) = green / red
+    const double red_to_blue = channel(measured.blue) / channel(measured.red);
+    const double warm = (red_to_blue - 1.0) / (red_to_blue + 1.0);
+    const double magenta = 1.0 - (1.0 + warm) * channel(measured.red) / channel(measured.green);
+    return {std::clamp(warm / kAdjustmentStrength, -kMaxAdjustment, kMaxAdjustment),
+            std::clamp(magenta / kAdjustmentStrength, -kMaxAdjustment, kMaxAdjustment)};
 }
 
 std::array<double, 9> yuv_matrix(RgbGains gains, YuvFormat format) {
@@ -132,6 +156,37 @@ std::array<double, 9> yuv_matrix(RgbGains gains, YuvFormat format) {
     result = multiply(scale, result);
     result = multiply(yuv_from_rgb(format.bt709), result);
     return multiply(range_compression(format.full_range), result);
+}
+
+std::vector<std::optional<RelativeRect>>
+effective_areas(const std::vector<FileWhiteBalance>& files) {
+    std::vector<std::optional<RelativeRect>> areas;
+    std::optional<RelativeRect> last;
+    for (const FileWhiteBalance& file : files) {
+        if (file.area) {
+            last = file.area;
+        }
+        areas.push_back(last);
+    }
+    return areas;
+}
+
+std::vector<RgbGains> balance_gains(const std::vector<std::optional<RgbColor>>& measured,
+                                    std::size_t reference, double temperature, double tint,
+                                    bool match_brightness) {
+    std::vector<RgbGains> gains(measured.size());
+    if (reference >= measured.size() || !measured[reference]) {
+        return gains;
+    }
+    const RgbColor own = *measured[reference];
+    gains[reference] = temperature_tint_gains(temperature, tint, own);
+    const RgbColor target = corrected(own, gains[reference]);
+    for (std::size_t i = 0; i < measured.size(); ++i) {
+        if (i != reference && measured[i]) {
+            gains[i] = gains_towards(*measured[i], target, match_brightness);
+        }
+    }
+    return gains;
 }
 
 RgbGains gains_at(const std::vector<ColorSpan>& spans, double time_s) {

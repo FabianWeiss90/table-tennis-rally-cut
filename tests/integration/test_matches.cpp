@@ -176,11 +176,24 @@ TEST_CASE("the white balance chosen for a part corrects only that part's frames"
     launcher::CsvMatchStore().save(work, {{"warm", {"Warm-1.mp4", "Warm-2.mp4"}}});
     const fs::path list = work / "matches" / "warm.ffconcat";
     const cutting::RgbGains neutral = cutting::neutral_gains({200, 180, 150});
-    cutting::CsvWhiteBalanceStore().save(
-        work, {.areas = {{"A", {0.1, 0.1, 0.9, 0.9}}},
-               .files = {{"Warm-1.mp4", cutting::WhiteBalanceChoice::Neutral, "", neutral},
-                         {"Warm-2.mp4", cutting::WhiteBalanceChoice::Unchanged, "", {}}}});
-    CHECK(cutting::CsvWhiteBalanceStore().load(work).files.size() == 2);
+    const cutting::WhiteBalanceSettings settings{
+        .files = {{"Warm-1.mp4", cutting::RelativeRect{0.1, 0.1, 0.9, 0.9}, neutral},
+                  {"Warm-2.mp4", std::nullopt, {}}},
+        .reference = "Warm-1.mp4",
+        .temperature = -0.25,
+        .tint = 0.125,
+        .match_brightness = true};
+    cutting::CsvWhiteBalanceStore().save(work, settings);
+    const cutting::WhiteBalanceSettings read = cutting::CsvWhiteBalanceStore().load(work);
+    CHECK(read.files[0].file == "Warm-1.mp4");
+    REQUIRE(read.files[0].area);
+    CHECK(read.files[0].area->right == Catch::Approx(0.9));
+    CHECK_FALSE(read.files[1].area);
+    CHECK(read.files[0].gains.red == Catch::Approx(neutral.red).margin(1e-6));
+    CHECK(read.reference == "Warm-1.mp4");
+    CHECK(read.temperature == Catch::Approx(-0.25));
+    CHECK(read.tint == Catch::Approx(0.125));
+    CHECK(read.match_brightness);
     const auto spans = cutting::color_spans(list, work / "white-balance.csv");
     REQUIRE(spans.size() == 1); // the unchanged part needs none
     CHECK(spans[0].start_s == 0.0);

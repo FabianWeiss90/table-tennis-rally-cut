@@ -63,7 +63,12 @@ class MemoryWhiteBalance final : public cutting::WhiteBalanceStore {
               const cutting::WhiteBalanceSettings& settings) override {
         saved = settings;
     }
-    cutting::WhiteBalanceSettings saved{.areas = {{"A", {0.2, 0.2, 0.4, 0.3}}}, .files = {}};
+    cutting::WhiteBalanceSettings saved{
+        .files = {{"Match_FHD.mp4", cutting::RelativeRect{0.2, 0.2, 0.4, 0.3}, {}}},
+        .reference = "Match_FHD.mp4",
+        .temperature = 0.2,
+        .tint = 0.0,
+        .match_brightness = false};
 };
 
 /// Scenes in memory.

@@ -382,22 +382,23 @@ from what the names have in common, e.g. `Kaether-Baumgarten-1.MP4` and `-2.MP4`
 ### White balance
 
 Videos recorded with automatic white balance can differ in colour (more or less daylight).
-Each file is constant in itself, so one correction per file is enough. In the launcher, choose
-the whole match day, then the **White balance** tab:
+Each file is constant in itself, so one correction per file is enough; each part of a match is
+corrected on its own, since the camera may change between files. In the launcher, choose the
+whole match day, then the **White balance** tab:
 
-1. **Scenes:** "Detect scenes" groups the videos by hall and camera position (see the Train
-   tab); the area is set per scene.
-2. **Area:** on the scene's background (the median of frames spread over its first file, so the
-   players are gone) drag a rectangle over something that should be white or grey, e.g. the
-   table's white edge or a wall.
-3. **Choice per file** (each part of a match on its own, since the camera may have changed its
-   white balance between files): "As recorded", "Neutral" (the area becomes grey) or "Like
-   <file>" (the area gets the tint it has in that file of the scene). Each is shown as the
-   file's background with that correction; a click chooses it. The brightness stays; only the
-   colour balance changes.
+1. **The same spot in every file:** each file shows a picture from its middle. Drag a rectangle
+   over a spot that should look the same in all files (e.g. the table, a wall, a banner). A file
+   without its own rectangle takes the one of the file before it (shown in orange); drag to
+   change it.
+2. **Tune the reference:** choose one file and set its look with **Temperature** (warmer: more
+   red, less blue) and **Tint** (more magenta, less green). "Area neutral" sets them so that the
+   spot becomes grey (a start for white or grey spots), "Reset" returns to the recording.
+3. **Result:** every other file is corrected so that its spot looks like the reference's: in
+   colour tone, and with **Also match the brightness** in brightness too (evens out exposure,
+   but may brighten a dark video a lot). All files are shown corrected.
 
-Stored in `<match day>/ttrally-data/white-balance.csv` (per file: choice and the gains for red,
-green and blue) and `white-balance-areas.csv` (per scene). `cut` and `highlights` apply it with
+Stored in `<match day>/ttrally-data/white-balance.csv` (per file: its rectangle and the gains for
+red, green and blue) and `white-balance-reference.csv`. `cut` and `highlights` apply it with
 `--white-balance <that file>` (the launcher passes it); a fast cut cannot (it copies the video).
 Labels, features and detections keep the colours as recorded.
 

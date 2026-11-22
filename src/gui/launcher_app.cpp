@@ -264,7 +264,7 @@ class LauncherApp {
             highlights_ = std::make_unique<HighlightsPanel>(gui, *options.highlights,
                                                             *options.playback, *options.fonts);
         }
-        if (options.white_balance != nullptr && scenes_ != nullptr) {
+        if (options.white_balance != nullptr) {
             white_balance_ =
                 std::make_unique<WhiteBalancePanel>(gui, preview, *options.white_balance);
         }
@@ -645,7 +645,6 @@ class LauncherApp {
                                 first_tab_ == kWhiteBalanceTab ? ImGuiTabItemFlags_SetSelected
                                                                : 0)) {
             ImGui::BeginChild("##tab", {0, 0});
-            draw_scene_detection(*day);
             white_balance_->draw(session_.workspace(), *day);
             ImGui::EndChild();
             ImGui::EndTabItem();

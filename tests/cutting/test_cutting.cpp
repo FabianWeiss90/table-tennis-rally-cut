@@ -170,26 +170,60 @@ std::array<double, 3> yuv_of(RgbColor color) {
 
 } // namespace
 
-TEST_CASE("white balance gains make a surface neutral or like another video, at its brightness") {
+TEST_CASE("white balance: a reference tuned by temperature and tint, the others like it") {
     const RgbColor white = rgb_of(235, 128, 128);
     CHECK(white.red == Approx(255.0));
-    CHECK(white.green == Approx(255.0));
     CHECK(white.blue == Approx(255.0));
     const RgbColor warm{200, 180, 150};
-    const RgbGains neutral = neutral_gains(warm);
-    const RgbColor fixed{warm.red * neutral.red, warm.green * neutral.green,
-                         warm.blue * neutral.blue};
+    // The sliders that make the area neutral
+    const auto [temperature, tint] = neutral_temperature_tint(warm);
+    CHECK(temperature < 0); // cooler
+    const RgbColor fixed = corrected(warm, temperature_tint_gains(temperature, tint, warm));
     CHECK(fixed.red == Approx(fixed.green));
     CHECK(fixed.blue == Approx(fixed.green));
     CHECK(luma_of(fixed) == Approx(luma_of(warm)));
+    CHECK(temperature_tint_gains(0, 0, warm).identity());
+    const RgbGains warmer = temperature_tint_gains(0.5, 0, warm);
+    CHECK(warmer.red > warmer.green);
+    CHECK(warmer.blue < warmer.green);
+    const RgbGains magenta = temperature_tint_gains(0, 0.5, warm);
+    CHECK(magenta.green < magenta.red);
+
+    // The others look like the tuned reference: in tint, or in tint and brightness
     const RgbColor cool{150, 170, 200};
-    const RgbGains like = matching_gains(warm, cool);
-    const RgbColor matched{warm.red * like.red, warm.green * like.green, warm.blue * like.blue};
-    CHECK(matched.red / matched.green == Approx(cool.red / cool.green));
-    CHECK(matched.blue / matched.green == Approx(cool.blue / cool.green));
-    CHECK(luma_of(matched) == Approx(luma_of(warm)));
-    CHECK(RgbGains{}.identity());
-    CHECK_FALSE(neutral.identity());
+    const RgbColor dark{60, 50, 40};
+    const auto gains =
+        balance_gains({warm, cool, std::nullopt, dark}, 0, temperature, tint, false);
+    REQUIRE(gains.size() == 4);
+    const RgbColor target = corrected(warm, gains[0]);
+    const RgbColor other = corrected(cool, gains[1]);
+    CHECK(other.red / other.green == Approx(target.red / target.green));
+    CHECK(other.blue / other.green == Approx(target.blue / target.green));
+    CHECK(luma_of(other) == Approx(luma_of(cool))); // its own brightness
+    CHECK(gains[2].identity());                     // no area
+    const auto bright = balance_gains({warm, cool, std::nullopt, dark}, 0, temperature, tint, true);
+    const RgbColor lifted = corrected(dark, bright[3]);
+    CHECK(lifted.red == Approx(target.red));
+    CHECK(lifted.green == Approx(target.green));
+    CHECK(lifted.blue == Approx(target.blue));
+    // Without the reference's colour nothing is corrected
+    for (const RgbGains& none : balance_gains({std::nullopt, cool}, 0, 0.3, 0.1, false)) {
+        CHECK(none.identity());
+    }
+}
+
+TEST_CASE("a file without its own area takes the area of the file before it") {
+    const RelativeRect first{0.1, 0.1, 0.2, 0.2};
+    const RelativeRect third{0.5, 0.5, 0.6, 0.6};
+    const auto areas = effective_areas(
+        {{"a", std::nullopt, {}}, {"b", first, {}}, {"c", std::nullopt, {}}, {"d", third, {}},
+         {"e", std::nullopt, {}}});
+    REQUIRE(areas.size() == 5);
+    CHECK_FALSE(areas[0]);
+    CHECK(areas[1] == first);
+    CHECK(areas[2] == first);
+    CHECK(areas[3] == third);
+    CHECK(areas[4] == third);
 }
 
 TEST_CASE("the white balance applies to YUV values as a matrix") {

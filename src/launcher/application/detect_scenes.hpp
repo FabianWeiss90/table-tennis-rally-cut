@@ -7,7 +7,6 @@
 
 #include <filesystem>
 #include <map>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,11 +27,6 @@ class SceneStore {
 /// small grey image; empty if the video cannot be read.
 [[nodiscard]] Background video_background(VideoPreview& preview,
                                           const std::filesystem::path& video);
-
-/// The background of a video in colour (YUV 4:2:0, limited range, about `height` lines): the
-/// median of frames spread over it, so the players are gone; nullopt if it cannot be read.
-[[nodiscard]] std::optional<media::VideoFrame>
-color_background(VideoPreview& preview, const std::filesystem::path& video, int height);
 
 /// Suggests the scene of each video (same order): videos with similar backgrounds share one.
 /// The videos are read in parallel; this takes a few seconds per video.

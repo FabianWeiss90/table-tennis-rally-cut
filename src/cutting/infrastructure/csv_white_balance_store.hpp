@@ -11,8 +11,10 @@ namespace ttrally::cutting {
 /// File name of a match day's white balance per file, in its work folder.
 inline constexpr std::string_view kWhiteBalanceFile = "white-balance.csv";
 
-/// White balance in <work dir>/white-balance.csv (columns file,choice,like,red,green,blue) and
-/// the scenes' areas in <work dir>/white-balance-areas.csv (columns scene,left,top,right,bottom).
+/// White balance in <work dir>/white-balance.csv (columns file,left,top,right,bottom,red,green,
+/// blue: each file's area, empty if taken from the file before, and its gains) and the reference
+/// in <work dir>/white-balance-reference.csv (columns reference,temperature,tint,
+/// match_brightness). Columns are found by their names.
 class CsvWhiteBalanceStore final : public WhiteBalanceStore {
   public:
     [[nodiscard]] WhiteBalanceSettings load(const std::filesystem::path& work_dir) override;

@@ -712,16 +712,13 @@ struct HighlightsPanel::Impl {
         ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV |
         ImGuiTableFlags_SizingFixedFit;
 
-    /// The columns of a rally list; `sortable`: by clicking their headers.
-    static void setup_rally_columns(bool sortable) {
-        const ImGuiTableColumnFlags descending =
-            sortable ? ImGuiTableColumnFlags_PreferSortDescending : ImGuiTableColumnFlags_NoSort;
+    /// The columns of a rally list, sorted by clicking their headers (lengths and marks first
+    /// in descending order).
+    static void setup_rally_columns() {
+        constexpr ImGuiTableColumnFlags descending = ImGuiTableColumnFlags_PreferSortDescending;
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn(
-            "#", sortable ? ImGuiTableColumnFlags_DefaultSort : ImGuiTableColumnFlags_NoSort,
-            0.0F, kNumberColumn);
-        ImGui::TableSetupColumn("Start", sortable ? 0 : ImGuiTableColumnFlags_NoSort, 0.0F,
-                                kStartColumn);
+        ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_DefaultSort, 0.0F, kNumberColumn);
+        ImGui::TableSetupColumn("Start", ImGuiTableColumnFlags_None, 0.0F, kStartColumn);
         ImGui::TableSetupColumn("Length", descending, 0.0F, kLengthColumn);
         ImGui::TableSetupColumn("Game", descending, 0.0F, kGameColumn);
         ImGui::TableSetupColumn("Day", descending, 0.0F, kDayColumn);
@@ -787,7 +784,7 @@ struct HighlightsPanel::Impl {
                                kListFlags | ImGuiTableFlags_Sortable, {0, height})) {
             return;
         }
-        setup_rally_columns(true);
+        setup_rally_columns();
         for (const std::size_t i :
              sorted_rallies(marks.selection.rallies(), ImGui::TableGetSortSpecs())) {
             draw_rally_row(game, i, margins);
@@ -795,13 +792,16 @@ struct HighlightsPanel::Impl {
         ImGui::EndTable();
     }
 
-    /// Every game's rallies in one list, in time order, each game under a row with its name.
+    /// Every game's rallies in one list, each game under a row with its name; a click on a
+    /// column header sorts the rallies within each game (by time when unsorted).
     void draw_day_rallies(cutting::Margins margins, double crossfade_s, float bottom) {
         const float height = std::max(kMinListHeight, bottom - ImGui::GetCursorScreenPos().y);
-        if (!ImGui::BeginTable("##day_rallies", kRallyColumns, kListFlags, {0, height})) {
+        if (!ImGui::BeginTable("##day_rallies", kRallyColumns,
+                               kListFlags | ImGuiTableFlags_Sortable, {0, height})) {
             return;
         }
-        setup_rally_columns(false);
+        setup_rally_columns();
+        const ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs();
         for (Game& game : games) {
             ImGui::PushID(game.video.key().c_str());
             ImGui::TableNextRow();
@@ -831,7 +831,8 @@ struct HighlightsPanel::Impl {
             ImGui::TableSetColumnIndex(kDayColumn);
             ImGui::Text("%zu", selection.day_count());
             ImGui::SetItemTooltip("Match day highlights of this game");
-            for (std::size_t i = 0; i < selection.rallies().size(); ++i) {
+            // Sorted within the game; the game rows keep their order
+            for (const std::size_t i : sorted_rallies(selection.rallies(), specs)) {
                 draw_rally_row(game, i, margins);
             }
             ImGui::PopID();

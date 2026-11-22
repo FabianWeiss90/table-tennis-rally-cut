@@ -842,6 +842,7 @@ its name, its number of rallies, the length of its game video and its marks):
   with the current marks, margins and cross-fade (updated with every tick).
 - **Sorting:** a click on a column header sorts the list by it (e.g. by length, longest
   first), a second click reverses the order; the number stays the rally's number in the game.
+  In the match day list the rallies are sorted within each game; the games keep their order.
 - **Watching:** ">" plays the rally with the margins before and after (without sound) next to
   the list, with the title as it will appear.
 - **Match:** a second title over every clip of the game videos and the match day video, the

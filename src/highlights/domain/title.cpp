@@ -278,6 +278,27 @@ std::string match_from_folder_name(std::string_view folder) {
     return title_from_file_name(rest);
 }
 
+std::string without_date(std::string_view folder) {
+    std::size_t start = 0;
+    for (;;) {
+        const std::size_t dash = folder.find('-', start);
+        if (dash == std::string_view::npos) {
+            break;
+        }
+        const std::string_view part = folder.substr(start, dash - start);
+        if (part.empty() || !std::ranges::all_of(part, [](char c) {
+                return std::isdigit(static_cast<unsigned char>(c)) != 0;
+            })) {
+            break;
+        }
+        start = dash + 1;
+    }
+    const std::string_view rest = folder.substr(start);
+    const bool only_digits = std::ranges::all_of(
+        rest, [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+    return rest.empty() || only_digits ? std::string(folder) : std::string(rest);
+}
+
 Title default_match_title(std::string_view folder) {
     Title title;
     title.text = match_from_folder_name(folder);

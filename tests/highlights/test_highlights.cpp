@@ -313,6 +313,14 @@ TEST_CASE("swapping the players of a title") {
     CHECK(swap_players("Finale") == "Finale");
 }
 
+TEST_CASE("a match day folder's name without its date") {
+    CHECK(without_date("2026-11-21-Haldensleben_II-Bismark") == "Haldensleben_II-Bismark");
+    CHECK(without_date("2026-11-14-WolmirstedtII-Bismark") == "WolmirstedtII-Bismark");
+    CHECK(without_date("Bismark-Groeningen") == "Bismark-Groeningen");
+    CHECK(without_date("2026-11-21") == "2026-11-21"); // nothing but a date: kept
+    CHECK(without_date("") == "");
+}
+
 TEST_CASE("the match from the match day folder") {
     CHECK(match_from_folder_name("2026-11-14-WolmirstedtII-Bismark") == "WolmirstedtII - Bismark");
     CHECK(match_from_folder_name("2026-10-31-bismark-groeningen") == "Bismark - Groeningen");

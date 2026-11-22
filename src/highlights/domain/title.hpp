@@ -188,6 +188,10 @@ struct TitleLayout {
 /// if the name does not hold two teams.
 [[nodiscard]] std::string match_from_folder_name(std::string_view folder);
 
+/// A match day folder's name without the date in front: "2026-11-21-Haldensleben_II-Bismark"
+/// -> "Haldensleben_II-Bismark"; the name itself if it has no date (or only one).
+[[nodiscard]] std::string without_date(std::string_view folder);
+
 /// The title of a match day's match when none was saved: from the folder name, at the top centre.
 [[nodiscard]] Title default_match_title(std::string_view folder);
 

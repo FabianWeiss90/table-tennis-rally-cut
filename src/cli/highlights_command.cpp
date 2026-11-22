@@ -34,10 +34,14 @@ std::string match_day_name(const std::filesystem::path& highlights_dir) {
         .string();
 }
 
-/// "<match day>-highlights.mp4" next to the highlights.
+/// What a highlight video's name ends with (the height is added before the extension).
+constexpr std::string_view kHighlightsSuffix = "-Highlights.mp4";
+
+/// "<match day without its date>-Highlights.mp4" next to the highlights.
 std::filesystem::path match_day_video(const std::filesystem::path& highlights_dir) {
-    const std::string name = match_day_name(highlights_dir);
-    return highlights_dir / ((name.empty() ? std::string("match-day") : name) + "-highlights.mp4");
+    const std::string name = highlights::without_date(match_day_name(highlights_dir));
+    return highlights_dir /
+           ((name.empty() ? std::string("match-day") : name) + std::string(kHighlightsSuffix));
 }
 
 /// The library's shapes folder, if the match day lies in a library:
@@ -78,9 +82,9 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
         ->capture_default_str();
     command_->add_option("--out", out_,
                          "Output video; a bare name goes into --highlights-dir, \".mp4\" is added "
-                         "if there is no extension (default: <highlights-dir>/<video-id>-<height>p"
-                         ".mp4, for a match day <highlights-dir>/<match day>-highlights-<height>p"
-                         ".mp4, e.g. -1080p)");
+                         "if there is no extension (default: <highlights-dir>/<video-id>-"
+                         "Highlights-<height>p.mp4, for a match day <highlights-dir>/<match day "
+                         "without its date>-Highlights-<height>p.mp4, e.g. -1080p)");
     command_->add_option("--before", before_s_, "Seconds kept before each rally")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
@@ -139,7 +143,7 @@ int HighlightsCommand::run() {
     }
     if (default_name) { // the height is added once it is known
         out_ = match_day_ ? match_day_video(highlights_dir_)
-                          : highlights_dir_ / (video_id_ + ".mp4");
+                          : highlights_dir_ / (video_id_ + std::string(kHighlightsSuffix));
     }
     out_ = output_video(out_, highlights_dir_);
     if (shapes_dir_.empty()) {

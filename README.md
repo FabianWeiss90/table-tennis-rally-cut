@@ -980,8 +980,9 @@ ttrally highlights --highlights-dir <day>/ttrally-data/highlights --match-day --
   without its background.
 
 Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highlights`), `--out`
-(default `<video id>-<height>p.mp4` or `<match day>-highlights-<height>p.mp4` in the highlights
-directory, e.g. `-1080p`, with the height actually written; a bare
+(default `<video id>-Highlights-<height>p.mp4` or, for the match day video, the match day
+folder's name without its date, e.g. `Haldensleben_II-Bismark-Highlights-1080p.mp4`, in the
+highlights directory, with the height actually written; a bare
 name also goes there, and `.mp4` is added if it has no extension),
 `--before`, `--after`, `--crossfade`, `--rally-titles`, `--no-slow-motion`, `--slow-motion-of`,
 `--font`,

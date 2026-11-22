@@ -422,8 +422,9 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
                              in_work_dir(video, {"highlights"}), "data/highlights",
                              "The marks of every game; the videos are written here")),
              advanced(option("--out", "Output video", FieldKind::File, "", "",
-                             "Empty: <video id>-<height>p.mp4 or <match day>-highlights-"
-                             "<height>p.mp4 in the highlights directory (e.g. -1080p); a bare "
+                             "Empty: <video id>-Highlights-<height>p.mp4 or <match day without "
+                             "its date>-Highlights-<height>p.mp4 in the highlights directory "
+                             "(e.g. -1080p); a bare "
                              "name given here goes there as it is, \".mp4\" is added if "
                              "missing")),
              advanced(option("--font", "Title font", FieldKind::File, "", "",

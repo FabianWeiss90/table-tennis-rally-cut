@@ -868,6 +868,8 @@ its name, its number of rallies, the length of its game video and its marks):
   margins and cross-fade. Time left over is not filled with further rallies of single games;
   every game has the same number (a game with fewer rallies gives all it has). Game marks stay.
   The result can then be changed by hand.
+- **Average rally length** of each game (all its rallies, marked or not): in the row of each game
+  in the match day list ("12 rallies, avg 5.1 s") and above a game's list.
 - **Length:** directly above the list, how long the game video and the match day video are
   with the current marks (hh:mm:ss, with the number of rallies and clips): each marked rally
   with the margins, rallies whose margins overlap as one clip, minus the cross-fades between

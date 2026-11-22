@@ -856,12 +856,31 @@ struct HighlightsPanel::Impl {
         ImGui::PopID();
     }
 
+    /// The average length of all rallies of a game, in seconds (0 without rallies).
+    static double average_length(const GameHighlights& marks) {
+        const auto& rallies = marks.selection.rallies();
+        if (rallies.empty()) {
+            return 0.0;
+        }
+        std::int64_t frames = 0;
+        for (const highlights::HighlightRally& rally : rallies) {
+            frames += rally.frame_count();
+        }
+        const double fps = marks.fps > 0 ? marks.fps : kFallbackFps;
+        return static_cast<double>(frames) / fps / static_cast<double>(rallies.size());
+    }
+
     /// `bottom`: screen y down to which the list may reach (the player's bottom edge).
     void draw_rallies(Game& game, cutting::Margins margins, float bottom) {
         GameHighlights& marks = *game.highlights;
-        ImGui::TextColored(kMuted, "%zu rallies from the %s; %zu game highlights, %zu match day",
+        ImGui::TextColored(kMuted,
+                           "%zu rallies from the %s, average %.1f s; %zu game highlights, %zu "
+                           "match day",
                            marks.selection.rallies().size(), marks.source.c_str(),
-                           marks.selection.game_count(), marks.selection.day_count());
+                           average_length(marks), marks.selection.game_count(),
+                           marks.selection.day_count());
+        ImGui::SetItemTooltip("Average: the length of all rallies of this game (marked or "
+                              "not)");
         const float height = std::max(kMinListHeight, bottom - ImGui::GetCursorScreenPos().y);
         if (!ImGui::BeginTable("##rallies", kRallyColumns,
                                kListFlags | ImGuiTableFlags_Sortable, {0, height})) {
@@ -911,7 +930,10 @@ struct HighlightsPanel::Impl {
             const highlights::HighlightSelection& selection = game.highlights->selection;
             ImGui::TextUnformatted(game.video.video_id.c_str());
             ImGui::TableSetColumnIndex(kStartColumn);
-            ImGui::TextColored(kMuted, "%zu rallies", selection.rallies().size());
+            ImGui::TextColored(kMuted, "%zu rallies, avg %.1f s", selection.rallies().size(),
+                               average_length(*game.highlights));
+            ImGui::SetItemTooltip("Rallies of this game and their average length (marked or "
+                                  "not)");
             ImGui::TableSetColumnIndex(kLengthColumn);
             ImGui::TextColored(kMuted, "%s",
                                length_text(video_length(game, margins, crossfade_s))

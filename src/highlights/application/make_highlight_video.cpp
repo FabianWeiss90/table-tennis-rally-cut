@@ -46,6 +46,9 @@ std::vector<std::vector<OrderedRally>> runs_of(const std::vector<OrderedRally>& 
 } // namespace
 
 MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& request) {
+    if (request.slow_motion_only) {
+        return slow_motion_preview(request);
+    }
     const auto started = std::chrono::steady_clock::now();
     const bool match_day = !request.video_id.has_value();
     std::vector<std::string> ids =
@@ -126,6 +129,41 @@ MakeHighlightsResult MakeHighlightVideo::execute(const MakeHighlightsRequest& re
             request.output, cutting::output_height(info.video ? info.video->height : 0,
                                                    render.encoding.max_height));
     }
+    result.render = renderer_.render(clips, result.output, render, progress_);
+    result.seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    return result;
+}
+
+MakeHighlightsResult MakeHighlightVideo::slow_motion_preview(const MakeHighlightsRequest& request) {
+    const auto started = std::chrono::steady_clock::now();
+    const RallyKey& key = *request.slow_motion_only;
+    const std::optional<StoredHighlights> game = store_.load(key.game);
+    if (!game) {
+        throw std::invalid_argument("no highlights are marked for " + key.game);
+    }
+    const auto rally = std::ranges::find(game->rallies, key.start_frame,
+                                         &HighlightRally::start_frame);
+    if (rally == game->rallies.end() || !rally->slow) {
+        throw std::invalid_argument(std::format("rally at frame {} of {} has no slow motion",
+                                                key.start_frame, key.game));
+    }
+    const GameTimeline timeline = timeline_of(*game);
+    // The rally's own clip, from which the slow motion is taken right after it
+    const Clip whole{.video = game->video,
+                     .start_s = timeline.timeline.frame_to_time(rally->start_frame),
+                     .end_s = timeline.timeline.frame_to_time(rally->end_frame) + 1.0,
+                     .titles = {}};
+    std::vector<Clip> clips = with_slow_motions({whole}, {*rally}, timeline);
+    clips.erase(clips.begin()); // the slow motion only
+    progress_.report(std::format("Slow motion of rally at {} of {}", key.start_frame, key.game));
+    MakeHighlightsResult result;
+    result.rallies = 1;
+    result.clips = clips.size();
+    result.games = {key.game};
+    result.output = request.output;
+    RenderOptions render = request.render;
+    render.crossfade_s = 0.0;
     result.render = renderer_.render(clips, result.output, render, progress_);
     result.seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();

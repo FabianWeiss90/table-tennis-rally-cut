@@ -875,7 +875,11 @@ its name, its number of rallies, the length of its game video and its marks):
   slower pace at the same pitch. "Draw the section on the picture" lets you drag a section in
   the picture's shape over the player: the slow motion shows only that part, cut from the
   full-size original and then fitted to the output (from a 4K video into a 1080p one, the
-  section keeps the 4K detail). "Whole picture" undoes it. The white balance of its video
+  section keeps the 4K detail). "Whole picture" undoes it. "Preview" makes the slow motion
+  alone as it will be in the highlight video (slowed, with its sound and section, nothing
+  around it) into `<match day>/ttrally-data/cache/slow-motion-preview.mp4` and opens it in the
+  system's video player (`ttrally highlights --video-id <game> --slow-motion-of <rally's first
+  frame>`). The white balance of its video
   applies. Cross-fades join it like any clip, so a very short slow motion is mostly fade. `ttrally
   highlights --no-slow-motion` (in the launcher "Without slow motions") leaves them out.
 - **Order of the video:** by default the games in the order they were recorded (the videos'
@@ -966,7 +970,8 @@ Options: `--video-id` or `--match-day`, `--highlights-dir` (default `data/highli
 (default `<video id>-<height>p.mp4` or `<match day>-highlights-<height>p.mp4` in the highlights
 directory, e.g. `-1080p`, with the height actually written; a bare
 name also goes there, and `.mp4` is added if it has no extension),
-`--before`, `--after`, `--crossfade`, `--rally-titles`, `--no-slow-motion`, `--font`,
+`--before`, `--after`, `--crossfade`, `--rally-titles`, `--no-slow-motion`, `--slow-motion-of`,
+`--font`,
 `--shapes-dir`,
 `--resolution`, `--white-balance`, `--codec`,
 `--bitrate`, `--encoder`, `--cache-dir`.

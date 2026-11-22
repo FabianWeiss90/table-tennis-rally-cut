@@ -66,6 +66,7 @@ const ImVec4 kError{1.0F, 0.45F, 0.4F, 1.0F};
 constexpr const char* kHighlightsForm = "highlights";
 constexpr const char* kVideoIdFlag = "--video-id";
 constexpr const char* kMatchDayFlag = "--match-day";
+constexpr const char* kSlowMotionFlag = "--slow-motion-of";
 constexpr const char* kPipelineTab = "pipeline"; ///< for LauncherOptions::first_tab
 constexpr const char* kMatchesTab = "matches";   ///< for LauncherOptions::first_tab
 constexpr const char* kWhiteBalanceTab = "white-balance"; ///< for LauncherOptions::first_tab
@@ -273,6 +274,7 @@ class LauncherApp {
 
     void draw() {
         session_.poll();
+        open_finished_preview();
         apply_dialog_result();
         collect_thumbnails();
         collect_scenes();
@@ -707,9 +709,11 @@ class LauncherApp {
             highlights_->draw(session_.workspace(), video, opened, margins_of(form),
                               crossfade_of(form));
         }
+        run_slow_motion_preview(form, video);
         ImGui::SeparatorText("Highlight videos");
         auto set_by_buttons = [](const Field& field) {
-            return field.flag == kVideoIdFlag || field.flag == kMatchDayFlag;
+            return field.flag == kVideoIdFlag || field.flag == kMatchDayFlag ||
+                   field.flag == kSlowMotionFlag;
         };
         for (std::size_t i = 0; i < form.fields.size(); ++i) {
             if (!form.fields[i].advanced && !set_by_buttons(form.fields[i])) {
@@ -755,6 +759,51 @@ class LauncherApp {
             }
         }
         return kDefaultCrossfade;
+    }
+
+    /// Makes the slow motion preview the user asked for in the panel; it is opened in the
+    /// video player once made.
+    void run_slow_motion_preview(const CommandForm& form, const VideoEntry& video) {
+        const auto request = highlights_->take_slow_motion_preview();
+        if (!request) {
+            return;
+        }
+        if (session_.running()) {
+            error_ = "Wait for the running command before previewing";
+            return;
+        }
+        CommandForm call = form;
+        Field& video_id = *call.field(kVideoIdFlag);
+        video_id.value = request->game;
+        video_id.initial_value = video_id.value;
+        call.field(kMatchDayFlag)->value = "";
+        call.field(kSlowMotionFlag)->value = std::to_string(request->start_frame);
+        const std::filesystem::path out =
+            std::filesystem::path(video.work_dir) / "cache" / "slow-motion-preview.mp4";
+        call.field("--out")->value = out.string();
+        try {
+            session_.run(call);
+            preview_to_open_ = out;
+            error_.clear();
+        } catch (const std::exception& error) {
+            error_ = error.what();
+        }
+    }
+
+    /// Opens a made preview in the system's video player once its command has finished.
+    void open_finished_preview() {
+        if (preview_to_open_.empty() || session_.running()) {
+            return;
+        }
+        const bool made = session_.status().ends_with("finished");
+        if (made) {
+            const std::string path = std::filesystem::absolute(preview_to_open_).generic_string();
+            const std::string url = (path.starts_with("/") ? "file://" : "file:///") + path;
+            if (!SDL_OpenURL(url.c_str())) {
+                error_ = std::format("Opening {}: {}", path, SDL_GetError());
+            }
+        }
+        preview_to_open_.clear();
     }
 
     void draw_highlight_buttons(const CommandForm& form, const VideoEntry& video) {
@@ -1672,6 +1721,7 @@ class LauncherApp {
     std::unique_ptr<HighlightsPanel> highlights_; ///< nullptr: not available
     std::unique_ptr<WhiteBalancePanel> white_balance_; ///< nullptr: not available
     bool highlights_shown_ = false; ///< the tab was shown in the last frame
+    std::filesystem::path preview_to_open_; ///< a slow motion preview being made
     float log_share_ = kLogShare;   ///< of the right side's height taken by the output
     int fit_frames_ = 0; ///< frames left in which the output is fitted to the highlights player
     std::optional<std::string> shown_day_; ///< match day chosen as a whole when it was shown

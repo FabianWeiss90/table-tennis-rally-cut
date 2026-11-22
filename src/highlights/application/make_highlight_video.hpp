@@ -34,6 +34,9 @@ struct MakeHighlightsRequest {
     bool resolution_in_name = false;
     /// The slow motions of the rallies, each right after its rally's clip.
     bool slow_motions = true;
+    /// Only the slow motion of this rally (a preview), with nothing else; the game must be
+    /// `video_id`.
+    std::optional<RallyKey> slow_motion_only{};
 };
 
 struct MakeHighlightsResult {
@@ -62,6 +65,8 @@ class MakeHighlightVideo {
   private:
     /// The frame times of a game's video.
     [[nodiscard]] GameTimeline timeline_of(const StoredHighlights& game);
+    /// The video of only one rally's slow motion (see MakeHighlightsRequest::slow_motion_only).
+    [[nodiscard]] MakeHighlightsResult slow_motion_preview(const MakeHighlightsRequest& request);
     /// The clips with each rally's slow motion right after the clip that shows the rally.
     [[nodiscard]] static std::vector<Clip>
     with_slow_motions(std::vector<Clip> clips, const std::vector<HighlightRally>& rallies,

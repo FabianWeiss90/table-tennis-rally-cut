@@ -24,6 +24,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ttrally::gui {
@@ -614,6 +615,7 @@ struct HighlightsPanel::Impl {
     std::map<std::string, std::vector<highlights::RallyKey>> orders;
     std::string order_of; ///< the video of the order window (see orders)
     bool editing_section = false; ///< the slow motion's section is drawn on the picture
+    std::optional<highlights::RallyKey> preview_request; ///< a slow motion to be previewed
     std::optional<ImVec2> section_start; ///< where the drawing of the section began
     std::optional<highlights::SlowMotion> drawn_section; ///< while it is drawn
     bool open_order = false;
@@ -1643,7 +1645,14 @@ struct HighlightsPanel::Impl {
         if (ImGui::SmallButton("Watch the part")) {
             player.play(game->video, slow.start_frame, slow.end_frame, fps);
         }
-        ImGui::SetItemTooltip("Plays the part (at normal speed)");
+        ImGui::SetItemTooltip("Plays the part here (at normal speed, without sound)");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Preview")) {
+            preview_request = highlights::RallyKey{marks.video_id, rally.start_frame};
+        }
+        ImGui::SetItemTooltip("Makes the slow motion as it will be in the highlight video (slowed, "
+                              "with its sound and section) and opens it in the video player; "
+                              "takes a few seconds");
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Slower");
         for (int factor = highlights::SlowMotion::kMinFactor;
@@ -1982,6 +1991,10 @@ void HighlightsPanel::draw_match_day(const launcher::WorkspaceSnapshot& workspac
 }
 
 float HighlightsPanel::spare_height() const { return impl_->spare_height; }
+
+std::optional<highlights::RallyKey> HighlightsPanel::take_slow_motion_preview() {
+    return std::exchange(impl_->preview_request, std::nullopt);
+}
 
 HighlightCounts HighlightsPanel::counts() const {
     HighlightCounts counts;

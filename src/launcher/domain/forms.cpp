@@ -400,6 +400,8 @@ CommandForm highlights_form(const VideoEntry& video, const WorkspaceSnapshot& wo
             {advanced(option("--video-id", "Video id", FieldKind::Text, video.video_id, "",
                              "Set by the buttons below")),
              advanced(flag("--match-day", "Match day video", "Set by the buttons below")),
+             advanced(option("--slow-motion-of", "Slow motion preview", FieldKind::Number, "",
+                             "", "Set by the slow motion's Preview button")),
              option("--before", "Seconds before each rally", FieldKind::Number, "1", "1", ""),
              option("--after", "Seconds after each rally", FieldKind::Number, "1.5", "1.5", ""),
              option("--crossfade", "Cross-fade (s)", FieldKind::Number, "0.5", "0.5",

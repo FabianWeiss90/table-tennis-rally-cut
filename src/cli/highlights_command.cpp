@@ -95,6 +95,10 @@ HighlightsCommand::HighlightsCommand(CLI::App& app)
                        "Match day: show each game's title over its clips");
     command_->add_flag("--no-slow-motion", no_slow_motion_,
                        "Leave out the slow motions set for rallies in the launcher");
+    command_->add_option("--slow-motion-of", slow_motion_of_,
+                         "Only the slow motion of the game's rally that starts at this frame (a "
+                         "preview; with --video-id)")
+        ->check(CLI::NonNegativeNumber);
     command_->add_option("--font", font_,
                          "TrueType font for the titles (default: a bold system font)")
         ->check(CLI::ExistingFile);
@@ -125,7 +129,14 @@ int HighlightsCommand::run() {
     if (video_id_.empty() && !match_day_) {
         throw CLI::ValidationError("give --video-id for a game or --match-day");
     }
-    const bool default_name = out_.empty();
+    const bool preview = slow_motion_of_ >= 0;
+    if (preview && video_id_.empty()) {
+        throw CLI::ValidationError("--slow-motion-of needs --video-id");
+    }
+    const bool default_name = out_.empty() && !preview;
+    if (out_.empty() && preview) {
+        out_ = cache_dir_ / "slow-motion-preview.mp4";
+    }
     if (default_name) { // the height is added once it is known
         out_ = match_day_ ? match_day_video(highlights_dir_)
                           : highlights_dir_ / (video_id_ + ".mp4");
@@ -159,7 +170,10 @@ int HighlightsCommand::run() {
                     .font = font_,
                     .shapes = shapes_dir_},
          .resolution_in_name = default_name,
-         .slow_motions = !no_slow_motion_});
+         .slow_motions = !no_slow_motion_,
+         .slow_motion_only = preview ? std::optional<highlights::RallyKey>(
+                                           highlights::RallyKey{video_id_, slow_motion_of_})
+                                     : std::nullopt});
     std::cout << std::format("Done in {}: {} rallies from {} game(s) in {} clips, {} of "
                              "video (encoded with {} at {:.1f} Mbit/s).\n",
                              io::format_elapsed(result.seconds), result.rallies,

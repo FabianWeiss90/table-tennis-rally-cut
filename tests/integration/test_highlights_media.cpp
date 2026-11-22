@@ -231,6 +231,24 @@ TEST_CASE("highlight videos of a game and of a match day") {
                                            .render = render,
                                            .slow_motions = false});
         CHECK(without.clips == 2);
+        // The preview: the slow motion alone, 0.5 s twice as slow
+        const auto preview = make.execute({.video_id = "weiss-ohrstedt",
+                                           .output = day / "preview.mp4",
+                                           .match_day_name = "",
+                                           .margins = margins,
+                                           .render = render,
+                                           .slow_motion_only = RallyKey{"weiss-ohrstedt", 60}});
+        CHECK(preview.clips == 1);
+        const Written alone = inspect(day / "preview.mp4");
+        CHECK(alone.frames == 60);
+        CHECK(alone.audio_s == Catch::Approx(1.0).margin(0.05));
+        CHECK_THROWS_AS(make.execute({.video_id = "weiss-ohrstedt",
+                                      .output = day / "none.mp4",
+                                      .match_day_name = "",
+                                      .margins = margins,
+                                      .render = render,
+                                      .slow_motion_only = RallyKey{"weiss-ohrstedt", 300}}),
+                        std::invalid_argument); // that rally has none
     }
     SECTION("the games in the order they were recorded, unless another order is chosen") {
         media::FfmpegMediaProbe probe;

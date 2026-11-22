@@ -3,6 +3,7 @@
 #pragma once
 
 #include <CLI/CLI.hpp>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -29,6 +30,7 @@ class HighlightsCommand {
     double crossfade_s_ = 0.5;
     bool rally_titles_ = false;
     bool no_slow_motion_ = false;
+    std::int64_t slow_motion_of_ = -1;
     std::filesystem::path font_;
     std::filesystem::path shapes_dir_;
     std::string codec_ = "h265";

@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace ttrally::gui {
@@ -47,6 +48,9 @@ class HighlightsPanel {
                         double crossfade_s);
 
     [[nodiscard]] HighlightCounts counts() const;
+
+    /// The rally whose slow motion the user asked to preview (once), if any.
+    [[nodiscard]] std::optional<highlights::RallyKey> take_slow_motion_preview();
 
     /// The visible height of the tab below the player in the last drawn frame (negative: that
     /// much of the player is hidden). Moving the output down by it makes the rally list exactly
